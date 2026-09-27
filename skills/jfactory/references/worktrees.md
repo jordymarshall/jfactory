@@ -2,6 +2,16 @@
 
 Each worktree or cloud workspace has its own checkout. It may have different instructions, code and evidence. Local worktrees can still share Git history and external services; cloud workspaces can still share accounts, data and deployments. Separate folders do not prevent integration conflicts.
 
+## Workspaces, sessions and deployments
+
+jfactory guides an active coding agent. It is not a scheduler. Creating a branch, pushing a PR or merging one does not, through jfactory, create another workspace, start another session or choose the next objective. Existing host automation can do those things only when separately configured and authorized. At setup, inspect and record what actually triggers them.
+
+Use an isolated worktree or cloud workspace for a distinct objective. Additional sessions in the same workspace may share the same files, branch, processes and credentials; a fresh chat is not file isolation. Keep one writer per checkout unless explicit coordination gives agents disjoint ownership. A local worktree inside one cloud VM is also not a new cloud workspace or a test of fresh-VM provisioning.
+
+Prepare persistent bootstrap through the [host setup procedure](environments.md). New workspaces need the adoption commit on their starting branch, dependency setup and required environment access. A fresh session should read this checkout's instructions, loaded skill version, active task criteria and evidence, then choose the next unresolved step. It should not reopen settled product questions or treat old passing results as current proof.
+
+The project may create preview deployments on push/PR and production deployments on merge. Inspect those triggers separately from workspace creation. A preview link does not establish staging data isolation. Record the environment map and release policy before using those targets or enabling auto-merge.
+
 ## Start a task
 
 1. Read this checkout's applicable instructions and jfactory skill. Inspect the installed `.jfactory-install.json` for `source_commit` and `source_dirty` when present, and name the loaded version at kickoff. A receipt records installation provenance, not current compliance; investigate local modifications or conflicting instructions. Never claim that another workspace's update is installed here.

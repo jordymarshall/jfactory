@@ -36,6 +36,8 @@ def payload(root):
 def managed_block(skill_path):
     return (f'{START}\n\n**Engineering workflow.** '
             f'Use [jfactory]({skill_path}/SKILL.md) proactively for repository setup and engineering work. '
+            'For "Setup jfactory", follow its complete repository adoption procedure after installation: reconcile stale docs and instructions, prepare tools/environments, and report readiness with evidence and exact gaps. '
+            'Resume the same setup record on subsequent runs. '
             'Establish or resume the agreed objective, map acceptance criteria to actual verification, '
             'implement/check/correct within scope, and update existing canonical records. '
             'For meaningful UI changes, use its UX skill to inspect real interactions and motion; '
@@ -174,7 +176,9 @@ def main():
     args = parser.parse_args()
     try:
         dest = install(Path(__file__).resolve().parents[1], args.target, args.agent, args.update)
-        print(f'Installed {dest}. Review the diff, then follow its repository setup; reload the agent session.')
+        print(f'Installed {dest}. Repository adoption is still pending. Read {dest / "SKILL.md"} '
+              'and follow references/setup.md now. Reload skill discovery afterward if needed; '
+              'do not report the project ready from installation alone.')
         return 0
     except (ValueError, OSError, KeyError) as error:
         print(f'Installation refused: {error}', file=sys.stderr)

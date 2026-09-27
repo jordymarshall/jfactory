@@ -8,7 +8,11 @@ Inspect the repository's actual settings, branch protection/rulesets, required r
 
 On GitHub, enable **Allow auto-merge** under Settings → General → Pull Requests. On the target branch, require a PR and the real checks needed for this repository. Prefer checks against the latest base or a supported merge queue for concurrent PRs. Preserve existing required reviews and protections; do not remove them to make automation faster. Configure these settings when the owner authorizes auto-merge setup and credentials permit it. If settings are inaccessible, describe the exact missing permission or plan feature. Do not change repository visibility or purchase a plan as a workaround.
 
+Prefer squash merging when the repository has no established alternative. Keep shared task branches current by merging the base into them; use rebasing only when branch ownership and policy permit rewriting history. After any update, refresh affected proof before re-enabling auto-merge. Native auto-merge waits for gates; it does not itself maintain stale branches or start another agent session.
+
 Consumer applications must select their own meaningful checks. A tooling repository might require a single integrity/test job; an application may also require browser, storage or provider checks. A workflow existing or passing once does not prove it is a required merge gate. A human screenshot of settings or an authoritative API response can establish settings when the agent cannot read them directly, but an unsupported assumption cannot.
+
+A required check must fail when its mandatory work is missing. GitHub can accept a skipped job as a successful required status, so use an unconditional aggregate check that rejects failed, cancelled or skipped dependencies where those dependencies are required. Give narrower manual diagnostic runs a different check name so they cannot satisfy a full-suite gate. Shared test accounts/data require isolation or common concurrency control across branches, not only a per-branch lock.
 
 ## Enable it per PR
 
