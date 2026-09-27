@@ -27,7 +27,7 @@ class InstallTests(unittest.TestCase):
         installer.install(ROOT, self.target)
         self.assertEqual(once, entry.read_bytes())
         self.assertTrue(once.startswith(b'# My project\nDo not erase this.\n'))
-        receipt = json.loads((dest / '.jstack-install.json').read_text())
+        receipt = json.loads((dest / '.jfactory-install.json').read_text())
         self.assertIn('vendor/pstack/LICENSE', receipt['files'])
 
     def test_modified_payload_refuses_update_without_mutation(self):
@@ -44,21 +44,21 @@ class InstallTests(unittest.TestCase):
         dest = installer.install(ROOT, self.target)
         entry = self.target / 'AGENTS.md'
         entry.write_text(entry.read_text().replace('Deliver authorized', 'Never deliver'))
-        before = (dest / '.jstack-install.json').read_bytes()
+        before = (dest / '.jfactory-install.json').read_bytes()
         with self.assertRaisesRegex(ValueError, 'modified'):
             installer.install(ROOT, self.target, update=True)
-        self.assertEqual(before, (dest / '.jstack-install.json').read_bytes())
+        self.assertEqual(before, (dest / '.jfactory-install.json').read_bytes())
 
     def test_reviewed_update_removes_old_payload_preserves_surrounding_text(self):
         source = Path(self.tmp.name) / 'source'
         shutil.copytree(ROOT / 'skills', source / 'skills')
-        removed = source / 'skills/jstack/obsolete.txt'
+        removed = source / 'skills/jfactory/obsolete.txt'
         removed.write_text('old')
         dest = installer.install(source, self.target)
         entry = self.target / 'AGENTS.md'
         entry.write_text(entry.read_text() + '\nOwner addition\n')
         removed.unlink()
-        (source / 'skills/jstack/new.txt').write_text('new')
+        (source / 'skills/jfactory/new.txt').write_text('new')
         with self.assertRaisesRegex(ValueError, '--update'):
             installer.install(source, self.target)
         installer.install(source, self.target, update=True)
@@ -78,7 +78,7 @@ class InstallTests(unittest.TestCase):
     def test_update_handles_directory_to_file_transition(self):
         source = Path(self.tmp.name) / 'source'
         shutil.copytree(ROOT / 'skills', source / 'skills')
-        nested = source / 'skills/jstack/transition/old.md'
+        nested = source / 'skills/jfactory/transition/old.md'
         nested.parent.mkdir()
         nested.write_text('old')
         dest = installer.install(source, self.target)
@@ -115,7 +115,7 @@ class InstallTests(unittest.TestCase):
         installer.install(ROOT, self.target)
 
     def test_unmanaged_or_symlink_destination_refused(self):
-        dest = self.target / '.agents/skills/jstack'
+        dest = self.target / '.agents/skills/jfactory'
         dest.mkdir(parents=True)
         (dest / 'mine.txt').write_text('keep')
         with self.assertRaisesRegex(ValueError, 'no installation receipt'):
@@ -127,6 +127,103 @@ class InstallTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'symlink'):
             installer.install(ROOT, self.target)
         self.assertEqual(list(outside.iterdir()), [])
+
+    def legacy_install(self, target=None, agent='codex'):
+        target = target or self.target
+        relative, entry_name = installer.LAYOUTS[agent]
+        legacy = (target / relative).with_name('jstack')
+        legacy.mkdir(parents=True)
+        (legacy / 'SKILL.md').write_text('---\nname: jstack\n---\nOld workflow\n')
+        block = '<!-- jstack:start -->\nUse the old workflow.\n<!-- jstack:end -->'
+        receipt = {'schema': 1, 'agent': agent,
+                   'files': {'SKILL.md': installer.digest((legacy / 'SKILL.md').read_bytes())},
+                   'instruction_block': block}
+        (legacy / '.jstack-install.json').write_text(json.dumps(receipt))
+        (target / entry_name).write_text('# Owner instructions\n\n' + block + '\n\nKeep this appendix.\n')
+        return legacy, target / entry_name
+
+    def test_legacy_upgrade_all_hosts_preserves_owner_text_and_is_idempotent(self):
+        for agent, (relative, entry_name) in installer.LAYOUTS.items():
+            with self.subTest(agent=agent):
+                target = self.target / agent
+                legacy, entry = self.legacy_install(target, agent)
+                dest = installer.install(ROOT, target, agent, update=True)
+                self.assertEqual(dest, target / relative)
+                self.assertFalse(legacy.exists())
+                self.assertIn('name: jfactory\n', (dest / 'SKILL.md').read_text())
+                self.assertTrue((dest / 'skills/jfactory-ux/SKILL.md').is_file())
+                self.assertFalse((dest / '.jstack-install.json').exists())
+                receipt = json.loads((dest / '.jfactory-install.json').read_text())
+                self.assertEqual(receipt['repository'], 'https://github.com/jordymarshall/jfactory')
+                self.assertEqual(entry.read_text(), '# Owner instructions\n\n'
+                                 + receipt['instruction_block'] + '\n\nKeep this appendix.\n')
+                before = installer.payload(target)
+                installer.install(ROOT, target, agent, update=True)
+                self.assertEqual(before, installer.payload(target))
+
+    def test_legacy_requires_opt_in_and_refuses_local_edits(self):
+        legacy, entry = self.legacy_install()
+        before = installer.payload(self.target)
+        with self.assertRaisesRegex(ValueError, '--update'):
+            installer.install(ROOT, self.target)
+        self.assertEqual(before, installer.payload(self.target))
+        skill = legacy / 'SKILL.md'
+        skill.write_text('Owner customized this skill')
+        before = installer.payload(self.target)
+        with self.assertRaisesRegex(ValueError, 'modified'):
+            installer.install(ROOT, self.target, update=True)
+        self.assertEqual(before, installer.payload(self.target))
+
+    def test_legacy_refuses_modified_or_mixed_instruction_blocks(self):
+        for edit in ('modified', 'mixed'):
+            with self.subTest(edit=edit):
+                target = self.target / edit
+                legacy, entry = self.legacy_install(target)
+                if edit == 'modified':
+                    entry.write_text(entry.read_text().replace('old workflow', 'custom workflow'))
+                else:
+                    entry.write_text(entry.read_text() + '\n<!-- jfactory:start -->\n<!-- jfactory:end -->')
+                before = installer.payload(target)
+                with self.assertRaises(ValueError):
+                    installer.install(ROOT, target, update=True)
+                self.assertEqual(before, installer.payload(target))
+
+    def test_legacy_refuses_dual_installation(self):
+        self.legacy_install()
+        dest = self.target / '.agents/skills/jfactory'
+        dest.mkdir()
+        (dest / 'mine.txt').write_text('keep')
+        before = installer.payload(self.target)
+        with self.assertRaisesRegex(ValueError, 'Both'):
+            installer.install(ROOT, self.target, update=True)
+        self.assertEqual(before, installer.payload(self.target))
+
+    def test_legacy_symlink_refused(self):
+        legacy = self.target / '.agents/skills/jstack'
+        legacy.parent.mkdir(parents=True)
+        outside = Path(self.tmp.name) / 'outside'
+        outside.mkdir()
+        legacy.symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'symlink'):
+            installer.install(ROOT, self.target, update=True)
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_cancelled_migration_restores_old_path_and_instructions(self):
+        legacy, entry = self.legacy_install()
+        before = installer.payload(self.target)
+        replace = installer.os.replace
+        for point in ('new', 'instructions'):
+            with self.subTest(point=point):
+                def cancel(src, dst):
+                    if Path(src).name == point:
+                        raise KeyboardInterrupt()
+                    return replace(src, dst)
+                with patch.object(installer.os, 'replace', side_effect=cancel):
+                    with self.assertRaises(KeyboardInterrupt):
+                        installer.install(ROOT, self.target, update=True)
+                self.assertEqual(before, installer.payload(self.target))
+                self.assertTrue(legacy.is_dir())
+                self.assertFalse(legacy.with_name('jfactory').exists())
 
 
 if __name__ == '__main__':

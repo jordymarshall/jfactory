@@ -39,6 +39,6 @@ The generated `report.json` has these fields:
 }
 ```
 
-File references must exist inside `artifacts/`. Use trace links in addition to images/video where replay matters. The renderer rejects missing files and escapes text, but cannot decide if evidence supports a claim. Its output is a private local HTML walkthrough, not a published preview. Captures can include private customer data or session tokens in traces; inspect and redact before sharing. Never put raw competitor sessions in the public jstack repo.
+File references must exist inside `artifacts/`. Use trace links in addition to images/video where replay matters. The renderer rejects missing files and escapes text, but cannot decide if evidence supports a claim. Its output is a private local HTML walkthrough, not a published preview. Captures can include private customer data or session tokens in traces; inspect and redact before sharing. Never put raw competitor sessions in the public jfactory repo.
 
 For our own app, identify the code revision/environment and distinguish a component fixture from the actual authenticated journey. An isolated component review can examine focus, layout, loading, errors and motion cheaply. Application review verifies navigation and state across boundaries. Provider/deployed proof remains separate where required. A polished demo does not replace any of these checks.

@@ -14,7 +14,7 @@ from threading import Thread
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / 'skills/jstack/skills/jstack-ux/scripts/study.py'
+SCRIPT = ROOT / 'skills/jfactory/skills/jfactory-ux/scripts/study.py'
 spec = importlib.util.spec_from_file_location('study', SCRIPT)
 study = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(study)
@@ -27,7 +27,7 @@ button{font:inherit;border:0;border-radius:10px;padding:14px 22px;background:#65
 article{background:white;padding:32px;border-radius:18px;border:1px solid #ddd5ef;margin-top:32px}
 aside{margin-top:24px;background:#eae3fa;border-radius:14px;padding:24px}#saved{font-weight:600;color:#46337b}
 </style><main><small>FIELDNOTES / LOCAL BROWSER TEST</small><h1>A place for useful ideas</h1>
-<p>This disposable demo exercises the jstack browser workflow. It is not competitor research.</p>
+<p>This disposable demo exercises the jfactory browser workflow. It is not competitor research.</p>
 <article><h2>Research collection</h2><p>Open an item, save it, then reload to check the result.</p>
 <button id="open">Open item</button><aside id="panel" hidden><h2>Keeping context while exploring</h2>
 <p>The detail panel opens alongside the collection. The save action persists across reloads.</p>

@@ -11,7 +11,7 @@ Check `CONDUCTOR_IS_LOCAL` and the installed `conductor preview set --help`. The
 From the repository, adapt the installed path for the chosen agent host:
 
 ```sh
-UX="$PWD/.agents/skills/jstack/skills/jstack-ux/scripts/study.py"
+UX="$PWD/.agents/skills/jfactory/skills/jfactory-ux/scripts/study.py"
 python3 "$UX" init reference-study --url https://app.example.com --objective 'Understand how users organize saved items'
 STUDY="$PWD/.context/ux/reference-study"
 python3 "$UX" browser "$STUDY" install-browser ffmpeg

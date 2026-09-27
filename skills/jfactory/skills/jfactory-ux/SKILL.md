@@ -1,5 +1,5 @@
 ---
-name: jstack-ux
+name: jfactory-ux
 description: Explore approved web apps to understand their journeys, interaction patterns and motion, or review a running product against its customer task. Use for competitor UX research, experience reviews and meaningful interface changes.
 ---
 

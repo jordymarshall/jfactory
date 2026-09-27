@@ -19,7 +19,7 @@ from urllib.request import urlopen
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / 'skills/jstack/skills/jstack-ux/scripts/study.py'
+SCRIPT = ROOT / 'skills/jfactory/skills/jfactory-ux/scripts/study.py'
 spec = importlib.util.spec_from_file_location('study', SCRIPT)
 study = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(study)
