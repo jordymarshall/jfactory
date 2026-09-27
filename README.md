@@ -1,110 +1,115 @@
 # jstack
 
-jstack helps a coding agent work independently toward an agreed customer outcome, show what it learned and verified, and return a pull request you can review.
+## 1. Value
 
-## The methodology
+### What
 
-Four connected loops answer different questions. The agent chooses the loops relevant to the task and continues within the agreed scope. You set direction and review consequential decisions and the resulting experience.
+jstack is a set of skills and tools that your coding agent uses inside a project. It helps the agent agree on a clear goal, build or investigate, check what actually happened, and return a result you can understand and review.
 
-| Loop | Question | Work and feedback | What it produces |
-| --- | --- | --- | --- |
-| **Product** | Are we solving the right problem for this customer? | Inspect existing decisions, interview unresolved customer/experience choices, agree on a bounded outcome, then review what users or the owner learn from trying it. | Customer hypothesis, experience goal, scope and observable acceptance criteria in the existing product/task documents. |
-| **UX** | Can someone understand and comfortably complete the task? | Explore approved reference apps when useful, map real journeys and states, inspect our running experience, propose changes, then try it again. | Evidence-backed app maps, screenshots and motion recordings, coverage gaps, proposed interaction choices and a reviewable walkthrough. |
-| **Engineering** | Does the implementation actually behave as agreed? | Implement, run a meaningful check, drive the real user path, inspect resulting state and side effects, fix discrepancies and repeat. | Working changes, component/application/provider evidence at the required scopes, and a PR. |
-| **Workflow improvement** | Is the agent's way of working reliable? | Investigate recurring misses, compare skill changes on realistic isolated tasks, inspect actual tool use and artifacts, and encode mechanical rules in tests/types/CI. | A corrected tool, check or skill backed by an appropriate eval. A model's self-rating is insufficient. |
+It connects four loops:
 
-### How they work together
+| Loop | What it does |
+| --- | --- |
+| **Product** | Clarifies the customer, their problem and the outcome worth building. |
+| **UX** | Studies real apps and tests whether the experience is understandable, usable and appropriate for that customer. |
+| **Engineering** | Implements the agreed behavior, runs checks, inspects results and fixes failures. |
+| **Workflow improvement** | Examines recurring agent mistakes and improves the skills, tools or automated checks. |
 
-```mermaid
-flowchart TD
-    P[Product: agree on customer outcome and acceptance] --> U[UX: research or inspect the task and choose an experience]
-    U --> E[Engineering: implement and verify behavior]
-    E --> V[UX: try the running experience and inspect evidence]
-    V -->|Friction or defect| E
-    V --> R[Owner reviews preview, evidence and PR]
-    R -->|Experience or value needs changing| P
-    R -->|Accepted| A[Merge or release only when authorized]
-    E -. Recurring agent failure .-> W[Workflow eval and structural improvement]
-    V -. Recurring research failure .-> W
-    W -. Improve how the next iteration runs .-> E
-```
+### Why
 
-These are feedback loops, not four mandatory ceremonies. A settled bug may need only the engineering loop. A substantial feature needs product alignment and an experience review. An in-depth competitor study runs the UX loop and returns findings before any product implementation. Research can send an unresolved customer choice back to the product loop at any point.
+You should be able to leave an agent working and return to a result you can evaluate. jstack gives it a bounded objective and feedback it can use while you are away. You make consequential product decisions and review the experience; the agent handles routine implementation, checks and corrections within that scope.
 
-The agent's inner loop can run many times while you are away. Every iteration needs new evidence. The outer product/experience checkpoint is where you try the result and decide whether it is what you want. Workflow evals are separate experiments on the agent's methods; passing an app test is not a skill eval, and a skill eval does not prove the app works.
+Every handoff should distinguish **what you decided, what the agent inferred, what exists, what was verified, and what you accepted**. The default delivery is a pull request. Merging and release need your authorization.
 
-For example, if the goal is “save an item and find it later,” the product loop establishes who needs it and why. UX research examines organization, feedback and recovery in approved apps, then recommends a flow for our customer. Engineering implements it and checks save, reload and independent readback. UX review checks whether the flow is understandable on the relevant devices, including loading, errors, focus and motion. You receive the walkthrough and PR, with unresolved choices visible.
+## 2. How to use
 
-### The record you should be able to understand
+### Initial setup
 
-**What you decided → what the agent inferred → what exists → what was verified → what you accepted.**
+**Do this once per project. Your agent performs the technical setup.**
 
-Keep `AGENTS.md` as a short entry point to the product brief, system map, feature/status map and agent instructions. Detailed facts have one canonical home. The agent updates affected decisions and evidence as it works, preserves historical proof and marks stale claims. It resumes the current objective instead of generating a new roadmap each turn.
+1. **Open the project in your coding agent**, locally or in a Conductor cloud workspace.
+2. **Paste this prompt:**
 
-The [verification contract](skills/jstack/references/verification.md) separates unit, component, integration, application, provider and deployed claims. Component checks can cover states and interactions cheaply; an authenticated journey still needs application evidence. Optional command receipts reject failed, stale or insufficient-scope evidence, but cannot judge whether a check proves the intended outcome.
+   > Set up https://github.com/jordymarshall/jstack in this repository. Read its README and installer before installing. Preserve our existing instructions and documents. Inspect what actually exists, interview me about unresolved customer and experience goals, and establish one useful first objective. Set up and demonstrate the checks needed to verify it. Return a setup PR with what works, what is missing and how we will use it. Do not merge or release.
 
-## Learning an app in depth
+3. **Answer the product questions.** The agent should recommend options and clarify who the product serves, what the customer needs to accomplish and what is out of scope. Existing settled decisions carry forward.
+4. **Provide the access needed for verification.** That might mean a development account, test data or a running app. For a subscribed reference app, use the browser login process below. Missing access stays an explicit gap.
+5. **Review the setup result.** Expect a short `AGENTS.md` linking to the product brief, system map, feature/status map and agent instructions. Detailed facts have one home. Expect at least one demonstrated check of the first runnable journey, or a precise explanation of what blocks it.
+6. **Review and merge the setup PR when satisfied.** Start a fresh agent session after installation and have it confirm that it can see jstack, state the current objective and name the checks it will use.
 
-The bundled [jstack-ux skill](skills/jstack/skills/jstack-ux/SKILL.md) uses real browser interaction. Start with:
+An empty repository starts with an agreed first runnable slice. An existing repository starts by reconciling its current code, decisions and checks. Installation alone does not mean the app has been verified.
 
-> Study [app URL] in depth for [customer tasks]. Use my approved dedicated account. Map navigation, objects, journeys, state transitions and motion. Show what you observed, inferred and recommend for our product. Keep a coverage map and return a visual walkthrough with gaps. Do not change shared data or implement the findings yet.
+#### Signing into an app from cloud Conductor
 
-The agent first inventories the app, prioritizes journeys, then explores each with a persistent browser session. It follows controls, checks resulting states and readback, records successful paths and motion, and returns linked evidence. It carries unanswered questions into the next pass. “In depth” means systematic coverage of a stated scope, not a promise to know every hidden role, plan or backend.
+You can keep the agent and browser in the cloud. Ask:
 
-The optional browser helper uses [Microsoft's Playwright CLI](https://github.com/microsoft/playwright-cli) for named sessions, screenshots, traces and video. Use a capable existing host browser tool when available. [Browser setup](skills/jstack/skills/jstack-ux/references/browser.md) covers the pinned CLI, human login, capture commands and motion observation. [Research records](skills/jstack/skills/jstack-ux/references/research.md) explain the app map and private HTML walkthrough.
+> Set up a dedicated cloud browser for [app URL] using jstack. Give me the Conductor preview link so I can sign in myself, then wait for me to hand control back before researching [customer task].
 
-For a subscribed competitor app, sign into a dedicated visible browser yourself. Cloud agents do not inherit a Mac browser login. Use a local workspace or a supported remote browser; do not paste credentials into chat. Profiles, traces and research captures stay in gitignored `.context/ux/` until reviewed for sharing. The helper organizes sessions; it does not enforce permissions on clicks or make every app automatable. Native-only apps need another driver. Customer usability still requires customer evidence.
+The agent starts that study's browser and interactive dashboard, then shares it through Conductor's authenticated workspace preview. You open the link, select the browser, click inside the page and sign in normally, including MFA. Press Escape to release control and tell the agent you are done. It checks that the expected account is open and continues in the same session.
 
-## Use in a project
+You do not send your password in chat. Workspace members with preview access can reach the dashboard, so use a suitable account and workspace. The agent closes the dashboard link after handoff; the browser can remain signed in until its session expires. A new or reset workspace may require login again. Some apps restrict cloud or automated browsers; access must be checked for the actual app.
 
-Tell your coding agent:
+The agent's exact commands, access checks and cleanup are in [cloud browser handoff](skills/jstack/skills/jstack-ux/references/cloud-conductor.md). For local work, you sign into a dedicated visible browser instead.
 
-> Adopt the product, UX and engineering workflow from https://github.com/jordymarshall/jstack in this repository. Inspect the README and installer first, install the skill, preserve existing instructions, then follow jstack's repository setup. Establish our objective and real application verification. Deliver changes as a PR; use a draft if required evidence is blocked.
+### Continued use
 
-Or inspect a checkout, then install with Python 3.10+:
+**Describe the outcome in ordinary language. You do not need to invoke each skill.**
+
+1. **Give the agent one useful outcome.** For example: “Let someone save a reference and find it again after returning later.” Include constraints you already know.
+2. **Settle consequential choices.** The agent clarifies unresolved customer/experience decisions and records observable completion criteria. A routine fix with settled behavior can proceed directly.
+3. **Let it run the relevant loops.** It investigates, implements, exercises the real path, inspects state and side effects, and corrects failures. Meaningful UI changes also get an experience review. It updates the existing documents as decisions change.
+4. **Review the result.** Expect a preview or walkthrough, evidence tied to the agreed criteria, important assumptions and remaining gaps, and a PR. Try the customer task yourself. A screenshot or passing build alone does not prove the whole journey.
+5. **Give specific feedback or approve the next step.** “Saving works, but finding the item adds an unnecessary step” starts another iteration. Owner acceptance, merge and release are separate decisions. The agent does not silently start another feature when the objective is complete.
+
+Copy this for normal feature work:
+
+> Implement [customer outcome] within [scope]. Clarify consequential choices, verify the agreed behavior through the real application, review the UX, update the existing records and return a PR with a walkthrough. Continue routine work and corrections without waiting for “keep going.” Do not merge or release.
+
+Copy this to learn from another app:
+
+> Study [app URL] for [customer tasks]. Use a dedicated browser and arrange login if needed. Map navigation, objects, journeys, states and motion. Return a visual walkthrough separating observations, inferred intent, recommendations for our customer and unexplored areas. Do not change shared data or implement the findings yet.
+
+An in-depth study begins with an inventory, then covers prioritized journeys across successive passes. The coverage map makes remaining work visible. Competitor choices inform proposals; they do not automatically become requirements. Customer usability claims still need customer evidence.
+
+For the feedback paths between these loops and the distinction between app checks and skill evals, read [how the loops work together](skills/jstack/references/methodology.md).
+
+<details>
+<summary>Manual installation and updates</summary>
+
+Inspect a checkout, then install with Python 3.10+:
 
 ```sh
 git clone https://github.com/jordymarshall/jstack.git /tmp/jstack
 python3 /tmp/jstack/scripts/install.py /path/to/project
 ```
 
-The default installer copies the self-contained bundle into `.agents/skills/jstack` and adds a small managed section to root `AGENTS.md`. It preserves surrounding text, refuses conflicting local modifications, and records payload hashes and the source commit. Repeating the same installation is safe. Updating requires a reviewed source checkout and `--update`; locally modified managed files still cause a refusal. No remote shell pipe, automatic dependency installation, credentials, commits, pushes or deployment.
+The default installer copies the bundle into `.agents/skills/jstack` and adds a managed section to `AGENTS.md`. It preserves surrounding text and refuses conflicting local edits. `--agent claude` uses `.claude/skills/jstack` and `CLAUDE.md`; `--agent cursor` uses `.cursor/skills/jstack` and `AGENTS.md`. Other agents can read [SKILL.md](skills/jstack/SKILL.md) directly. Verify instruction discovery in your chosen host.
 
-`--agent claude` uses `.claude/skills/jstack` and `CLAUDE.md`; `--agent cursor` uses `.cursor/skills/jstack` and `AGENTS.md`. These installation layouts are tested; actual model behavior and those hosts' runtime integrations must be verified in your project. Other agents can read [SKILL.md](skills/jstack/SKILL.md) directly. Reload/start a fresh agent session after adoption and confirm it sees the instructions.
+To update, inspect the newer checkout, then rerun the installer with `--update`. Locally modified managed files still cause a refusal. Close active study browsers with the old helper before upgrading their session tooling. Installation does not install dependencies, sign into apps, commit, push or deploy. Browser commands fetch the pinned Playwright CLI and need Node/npm, Chrome and the documented video encoder. Python process control and the dashboard helper support POSIX; use WSL or host-native tools on Windows.
 
-## Daily use
+</details>
 
-After adoption, describe the outcome in ordinary language. jstack's managed instructions route meaningful UI work into UX review and route uncertain intent into product clarification; you do not need to name every skill.
-
-> Build [outcome] within [scope]. Clarify consequential choices, inspect the real experience, verify the agreed criteria, update the existing records and return a PR with a walkthrough. Continue routine implementation and corrections without waiting for “keep going.”
-
-Instructions guide the agent during your session; they are not a background scheduler or a guarantee of compliance. Check that the agent can state the objective, produce real evidence and explain gaps. The default finish is a ready PR when required proof passes, or a draft when proof is blocked. Merging and deployment require separate authorization.
-
-## What this does not promise
-
-- Installing instructions does not guarantee an agent follows them or make an application correct.
-- No application-specific tests, customer hypotheses, production credentials or business documents are bundled.
-- No background daemon, automated merge, production deployment, or remote branch protection is configured.
-- No universal model benchmark or cross-model reliability claim. `evals/scenarios.md` provides realistic evaluation cases; model trials must be run and inspected separately.
-- Python command capture is POSIX-only; use WSL or host-native tools on Windows. Installation tests do not demonstrate macOS/Claude/Cursor runtime behavior.
-
-## Develop and verify jstack
+<details>
+<summary>Develop, verify and understand the limits</summary>
 
 ```sh
 python3 -m unittest discover -s tests -v
 python3 skills/jstack/scripts/check-upstream.py
 npx --yes @playwright/cli@0.1.21 install-browser ffmpeg
 python3 tests/browser_smoke.py
+python3 tests/dashboard_smoke.py
 ```
 
-The browser smoke check is documented in `tests/browser_smoke.py` and runs in CI with Chrome. It uses a local disposable app, not a real subscribed competitor account.
+Tests cover installation preservation, evidence freshness/scopes, private report serving, real browser actions and dashboard handoff. CI uses disposable local pages, not real competitor accounts. Conductor's external authentication gateway and a real user's login require separate validation. See [browser setup](skills/jstack/skills/jstack-ux/references/browser.md) and [cloud handoff](skills/jstack/skills/jstack-ux/references/cloud-conductor.md) for current limits.
 
-Tests exercise non-destructive installation, updates, failure capture, stale evidence and component/application scope separation. CI runs these checks on PRs. Changes to the workflow itself should also use the bundled pstack eval playbook with actual tool transcripts and artifacts. A passing packaging test is not a behavioral eval.
+Instructions guide the agent during a session. They do not schedule background work or guarantee compliance. No customer brief, application tests, production credentials, automatic merge or branch protection is bundled. A component check cannot prove an authenticated application journey. [Verification scopes](skills/jstack/references/verification.md) define those distinctions. Command receipts check freshness and coverage, not whether a test is meaningful.
 
-## Attribution and updates
+Skill changes should also be evaluated on realistic isolated tasks using [the evaluation cases](evals/scenarios.md) and the bundled pstack eval playbook. Packaging tests are not a cross-model reliability benchmark.
 
-Built around selected [Lauren Tan pstack](https://github.com/cursor/plugins/tree/ecc249f1e306fc64ddf83c7bed16cacf7c2239db/pstack) skills. This is an independent adaptation, not an official Cursor, Microsoft or OpenAI plugin. Microsoft Playwright CLI is an optional runtime dependency and its upstream skill is not vendored.
+</details>
 
-Original pstack files: copyright Lauren Tan 2026, MIT, version 0.15.5 at `ecc249f1e306fc64ddf83c7bed16cacf7c2239db`. See [upstream provenance](skills/jstack/vendor/pstack/UPSTREAM.md) and [license](skills/jstack/vendor/pstack/LICENSE). jstack additions are MIT, copyright Jordan Marshall 2026.
+## Attribution
 
-Update upstream in a separate checkout, review its diff and compatibility, retain the original license, regenerate the receipt from original bytes and run integrity/behavior checks. Never silently follow upstream main or customize the vendored originals in place.
+Built around selected [Lauren Tan pstack](https://github.com/cursor/plugins/tree/ecc249f1e306fc64ddf83c7bed16cacf7c2239db/pstack) skills. Original files remain unchanged, MIT, copyright Lauren Tan 2026, version 0.15.5 at `ecc249f1e306fc64ddf83c7bed16cacf7c2239db`. See [provenance](skills/jstack/vendor/pstack/UPSTREAM.md) and [license](skills/jstack/vendor/pstack/LICENSE). jstack additions are MIT, copyright Jordan Marshall 2026.
+
+This is an independent adaptation. Microsoft Playwright CLI is an optional runtime dependency; its upstream skill is not vendored. Update pinned dependencies in a separate change, review compatibility and rerun the applicable integrity and behavior checks.

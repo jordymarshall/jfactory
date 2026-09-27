@@ -7,6 +7,8 @@ description: Run connected product, UX and engineering loops with explicit objec
 
 Work proactively inside the user's objective. This is a portable engineering workflow built around selected, pinned Lauren Tan pstack skills. Read [host compatibility](references/compatibility.md) before using upstream methods. Repository decisions and current user authorization govern scope. Do not import another project's customer assumptions, architecture, credentials or release permissions.
 
+For a plain explanation of the feedback paths and owner checkpoints, use [how the loops work together](references/methodology.md).
+
 ## Set up the repository once, reconcile when needed
 
 Follow [repository setup](references/setup.md) when adopting jstack or when missing context prevents sound work. Inspect the repo before asking factual questions. Preserve existing AGENTS.md and product documents. Identify the actual user interface, dev commands, architecture, acceptance records, tests, CI, safe data environment and default branch. On a blank project, architecture is proposed and capabilities are unimplemented until built.

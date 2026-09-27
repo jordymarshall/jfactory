@@ -20,3 +20,4 @@ jobs:
           node-version: '22'
       - run: npx --yes @playwright/cli@0.1.21 install-browser ffmpeg
       - run: python3 tests/browser_smoke.py
+      - run: python3 tests/dashboard_smoke.py
