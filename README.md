@@ -93,6 +93,7 @@ Instructions guide the agent during your session; they are not a background sche
 ```sh
 python3 -m unittest discover -s tests -v
 python3 skills/jstack/scripts/check-upstream.py
+npx --yes @playwright/cli@0.1.21 install-browser ffmpeg
 python3 tests/browser_smoke.py
 ```
 

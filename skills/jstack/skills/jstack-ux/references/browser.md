@@ -11,11 +11,14 @@ UX="$PWD/.agents/skills/jstack/skills/jstack-ux/scripts/study.py"
 python3 "$UX" init reference-study --url https://app.example.com --objective 'Understand how users organize saved items'
 STUDY="$PWD/.context/ux/reference-study"
 python3 "$UX" browser "$STUDY" --help
+python3 "$UX" browser "$STUDY" install-browser ffmpeg
 python3 "$UX" browser "$STUDY" open https://app.example.com
 python3 "$UX" browser "$STUDY" snapshot
 ```
 
 Replace the example domain with the approved app. Read `study.json`, fill its account/scope fields, and keep one study per objective. The helper creates a unique session and dedicated persistent profile. It runs CLI calls from the private study folder, directs automatic captures to `artifacts/`, and refuses global browser cleanup. It does not enforce URL or mutation permissions. Edit `browser.json` to use an installed browser executable or appropriate viewport when necessary. `install-browser --help` describes the CLI's browser installation. Do not use another agent's profile.
+
+Video requires Playwright's cached ffmpeg binary even when Chrome is already installed. The setup command above downloads that encoder without changing system-wide settings. This prerequisite was caught by the clean CI runner; an existing project's working Playwright cache can otherwise hide it.
 
 Read the snapshot file the CLI returns. Use fresh element references or semantic locators, then inspect the new snapshot and screenshot. References can become stale after navigation. Some command failures appear in the CLI response even with a zero process exit; inspect the response and resulting page instead of treating exit status as verification. Use `--help <command>` to check the pinned CLI's options. Never enter passwords or tokens through command arguments.
 
