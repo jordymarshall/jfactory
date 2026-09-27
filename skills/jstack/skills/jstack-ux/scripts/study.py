@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Private UX study folders, named Playwright CLI sessions and local walkthroughs."""
 import argparse
+import hashlib
 from datetime import datetime, timezone
 from html import escape
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -14,6 +15,29 @@ from urllib.parse import quote, unquote, urlsplit
 import uuid
 
 CLI_PACKAGE = '@playwright/cli@0.1.21'
+
+
+def cli_environment(folder):
+    """Isolate the pinned CLI's browser registry and dashboard singleton per study."""
+    env = os.environ.copy()
+    env.pop('PLAYWRIGHT_CLI_SESSION', None)
+    # These are internal Playwright hooks. Browser/dashboard smoke tests cover
+    # them against CLI_PACKAGE; revalidate when updating the pinned dependency.
+    registry = folder / '.browser-control'
+    tag = hashlib.sha256(str(folder).encode()).hexdigest()[:16]
+    # Unix socket paths must stay short even for deeply nested study folders.
+    sockets = Path('/tmp') / f'jstack-ux-{os.getuid()}-{tag}'
+    for directory in (registry, sockets):
+        if directory.is_symlink():
+            raise ValueError('Browser control directories must not be symlinks')
+        directory.mkdir(mode=0o700, exist_ok=True)
+        if directory.stat().st_uid != os.getuid():
+            raise ValueError('Browser control directory belongs to another user')
+        directory.chmod(0o700)
+    env['PWTEST_DAEMON_SESSION_DIR'] = str(registry)
+    env['PWTEST_SERVER_REGISTRY'] = str(registry / 'browsers')
+    env['PWTEST_SOCKETS_DIR'] = str(sockets)
+    return env
 
 
 def write_json(path, value):
@@ -78,9 +102,7 @@ def browser(folder, args):
         command += ['--config=' + str(folder / 'browser.json'), '--profile=' + str(folder / 'profile')]
     # No shell parsing. Relative captures/scripts resolve inside the private study.
     # This is a convenience wrapper, not a restriction on browser actions or URLs.
-    env = os.environ.copy()
-    env.pop('PLAYWRIGHT_CLI_SESSION', None)
-    return subprocess.run(command, cwd=folder, env=env).returncode
+    return subprocess.run(command, cwd=folder, env=cli_environment(folder)).returncode
 
 
 def render(folder):
@@ -241,6 +263,10 @@ def main():
     drive = sub.add_parser('browser')
     drive.add_argument('study')
     drive.add_argument('args', nargs=argparse.REMAINDER)
+    dashboard = sub.add_parser('dashboard', help='Run this study\'s interactive browser dashboard')
+    dashboard.add_argument('study')
+    dashboard.add_argument('--port', type=int, default=8931)
+    dashboard.add_argument('--host', choices=['127.0.0.1', '0.0.0.0'], default='127.0.0.1')
     report = sub.add_parser('report')
     report.add_argument('study')
     serve = sub.add_parser('serve')
@@ -254,6 +280,11 @@ def main():
             print(init(args.project, args.name, args.url, args.objective))
         elif args.command == 'browser':
             return browser(args.study, args.args)
+        elif args.command == 'dashboard':
+            if not 1 <= args.port <= 65535:
+                raise ValueError('Dashboard port must be between 1 and 65535')
+            print('Interactive browser control. Share only through an authenticated workspace preview.', flush=True)
+            return browser(args.study, ['show', f'--port={args.port}', f'--host={args.host}'])
         elif args.command == 'serve':
             with review_server(args.study, args.port) as server:
                 print(f'http://127.0.0.1:{server.server_port}/walkthrough.html', flush=True)
@@ -266,6 +297,8 @@ def main():
     except (ValueError, OSError, KeyError, TypeError) as error:
         print(f'UX study: {error}', file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        return 130
     return 0
 
 
