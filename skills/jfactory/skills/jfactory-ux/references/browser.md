@@ -1,13 +1,13 @@
 # Browser sessions and capture
 
-Use an existing host browser tool if it can interact with the actual app and capture the necessary evidence. Otherwise the helper drives [Microsoft Playwright CLI](https://github.com/microsoft/playwright-cli), pinned to `@playwright/cli@0.1.21`. Python 3.10+, Node/npm and Chrome are prerequisites. The first browser command downloads that npm package through `npx`; installing jstack itself does not install browser tools. The CLI's transitive dependencies follow its published package metadata, so the pin is not a complete dependency lock.
+Use an existing host browser tool if it can interact with the actual app and capture the necessary evidence. Otherwise the helper drives [Microsoft Playwright CLI](https://github.com/microsoft/playwright-cli), pinned to `@playwright/cli@0.1.21`. Python 3.10+, Node/npm and Chrome are prerequisites. The first browser command downloads that npm package through `npx`; installing jfactory itself does not install browser tools. The CLI's transitive dependencies follow its published package metadata, so the pin is not a complete dependency lock.
 
 ## Start and explore
 
 From the target repository, substitute its installed skill path for `UX`. Claude/Cursor installations use their host directory instead of `.agents`.
 
 ```sh
-UX="$PWD/.agents/skills/jstack/skills/jstack-ux/scripts/study.py"
+UX="$PWD/.agents/skills/jfactory/skills/jfactory-ux/scripts/study.py"
 python3 "$UX" init reference-study --url https://app.example.com --objective 'Understand how users organize saved items'
 STUDY="$PWD/.context/ux/reference-study"
 python3 "$UX" browser "$STUDY" --help
@@ -83,4 +83,4 @@ Open `walkthrough.html` locally with its neighboring artifacts. Do not expose it
 
 The CLI blocks `file://` navigation. To inspect the walkthrough through it, run `python3 "$UX" serve "$STUDY"` in an owned terminal session, then navigate to the printed loopback URL. The server exposes only the walkthrough and artifacts, not the profile or scope files. It is reachable on that machine only; a Mac cannot use a cloud localhost URL directly. Stop that owned server when finished. Private captures remain sensitive even on localhost; do not tunnel or publish the server as an incidental review step.
 
-The helper is a study driver, not a deterministic app verifier. Convert stable expectations into the repository's actual tests and use jstack's [verification contract](../../../references/verification.md) for completion claims. Browser exploration can reveal a problem without proving a regression test exists.
+The helper is a study driver, not a deterministic app verifier. Convert stable expectations into the repository's actual tests and use jfactory's [verification contract](../../../references/verification.md) for completion claims. Browser exploration can reveal a problem without proving a regression test exists.

@@ -1,6 +1,6 @@
 # Host and tool compatibility
 
-jstack is an instruction bundle with Python 3.10+ utilities. The installer supports repository layouts for Codex (`.agents/skills`), Claude Code (`.claude/skills`) and Cursor (`.cursor/skills`). Native discovery/tool behavior must still be checked in the chosen host. Other agents can read this SKILL.md directly. No claim of equal behavior across models or platforms.
+jfactory is an instruction bundle with Python 3.10+ utilities. The installer supports repository layouts for Codex (`.agents/skills`), Claude Code (`.claude/skills`) and Cursor (`.cursor/skills`). Native discovery/tool behavior must still be checked in the chosen host. Other agents can read this SKILL.md directly. No claim of equal behavior across models or platforms.
 
 - Read source methods from `../vendor/pstack/skills/<name>/SKILL.md` relative to this directory. Preserve originals, including Lauren Tan's MIT license and pinned receipt. Imported Cursor-specific paths/commands are translated below, not executed blindly.
 - Cursor Task becomes the host's actual subagent facility. Omit unsupported parameters and inherit the current model unless the user selects another supported model. A role label is not proof of model diversity. If delegation is unavailable, perform a scoped review and disclose the missing independent review.

@@ -8,7 +8,7 @@ import time
 import unittest
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[1] / 'skills/jstack/scripts/evidence.py'
+SCRIPT = Path(__file__).resolve().parents[1] / 'skills/jfactory/scripts/evidence.py'
 
 
 @unittest.skipUnless(os.name == 'posix', 'POSIX capture')
@@ -60,7 +60,7 @@ class EvidenceTests(unittest.TestCase):
 
     def test_modified_log_is_rejected(self):
         self.assertEqual(self.capture().returncode, 0)
-        log = next((self.root / '.context/jstack').glob('*/output.log'))
+        log = next((self.root / '.context/jfactory').glob('*/output.log'))
         log.write_text('different output')
         self.assertIn('changed output', self.check().stdout)
 
@@ -71,18 +71,18 @@ class EvidenceTests(unittest.TestCase):
 
     def test_launch_failure_and_timeout_preserve_evidence(self):
         failed = self.invoke('run', '--task', str(self.task), '--criterion', 'save', '--scope', 'application',
-                             '--environment', 'disposable', '--', '/nonexistent-jstack-command')
+                             '--environment', 'disposable', '--', '/nonexistent-jfactory-command')
         self.assertNotEqual(failed.returncode, 0)
         self.assertIn('launch-failed', failed.stdout)
         result = self.capture(code='import time; print("started", flush=True); time.sleep(30)', timeout='0.1')
         self.assertEqual(result.returncode, 124)
         self.assertIn('timeout', result.stdout)
         self.assertNotEqual(self.check().returncode, 0)
-        self.assertEqual(len(list((self.root / '.context/jstack').glob('*/receipt.json'))), 2)
+        self.assertEqual(len(list((self.root / '.context/jfactory').glob('*/receipt.json'))), 2)
 
     def test_cancellation_preserves_receipt_and_kills_owned_child(self):
         self.assertEqual(self.capture().returncode, 0)
-        marker = self.root / '.context/jstack/child.pid'
+        marker = self.root / '.context/jfactory/child.pid'
         code = f'import os,time; from pathlib import Path; Path({str(marker)!r}).write_text(str(os.getpid())); time.sleep(30)'
         process = subprocess.Popen([sys.executable, str(SCRIPT), 'run', '--task', str(self.task),
             '--criterion', 'save', '--scope', 'application', '--environment', 'disposable', '--',

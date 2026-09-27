@@ -1,9 +1,9 @@
 ---
-name: jstack
+name: jfactory
 description: Run connected product, UX and engineering loops with explicit objectives, browser research, executable verification, evidence and a pull request. Use for repository setup, features, fixes, app experience research and preparing changes for review.
 ---
 
-# jstack
+# jfactory
 
 Work proactively inside the user's objective. This is a portable engineering workflow built around selected, pinned Lauren Tan pstack skills. Read [host compatibility](references/compatibility.md) before using upstream methods. Repository decisions and current user authorization govern scope. Do not import another project's customer assumptions, architecture, credentials or release permissions.
 
@@ -11,21 +11,21 @@ For a plain explanation of the feedback paths and owner checkpoints, use [how th
 
 ## Set up the repository once, reconcile when needed
 
-Follow [repository setup](references/setup.md) when adopting jstack or when missing context prevents sound work. Inspect the repo before asking factual questions. Preserve existing AGENTS.md and product documents. Identify the actual user interface, dev commands, architecture, acceptance records, tests, CI, safe data environment and default branch. On a blank project, architecture is proposed and capabilities are unimplemented until built.
+Follow [repository setup](references/setup.md) when adopting jfactory or when missing context prevents sound work. Inspect the repo before asking factual questions. Preserve existing AGENTS.md and product documents. Identify the actual user interface, dev commands, architecture, acceptance records, tests, CI, safe data environment and default branch. On a blank project, architecture is proposed and capabilities are unimplemented until built.
 
-Clarify unresolved intent and consequential experience choices before dependent implementation. Use an existing product/grilling skill if available; otherwise ask focused questions with recommendations. jstack does not mandate a whole-product interview for every bug or replace the owner's product process.
+Clarify unresolved intent and consequential experience choices before dependent implementation. Use an existing product/grilling skill if available; otherwise ask focused questions with recommendations. jfactory does not mandate a whole-product interview for every bug or replace the owner's product process.
 
 ## Establish and resume an objective
 
 Record the useful outcome, owner decisions versus agent assumptions, scope/non-goals, observable acceptance criteria and next review point in the existing task. State the objective and how it will be checked before substantial implementation. On continuation, read that record and relevant code/evidence; do not require the user to repeat it. If the objective is complete, propose the next one rather than silently expanding scope.
 
-At the start of repository work, identify the loaded jstack path and installed source revision when available. For concurrent workspaces or overlapping PRs, follow [worktree coordination](references/worktrees.md). Instructions and evidence in another checkout are not automatically current here.
+At the start of repository work, identify the loaded jfactory path and installed source revision when available. For concurrent workspaces or overlapping PRs, follow [worktree coordination](references/worktrees.md). Instructions and evidence in another checkout are not automatically current here.
 
 Use the [verification contract](references/verification.md) to map every criterion to required evidence scopes. The supplied evidence runner can record real commands and check freshness/coverage. It does not judge whether a test meaningfully proves the customer outcome. Inspect the assertions and actual result yourself.
 
 ## Implement, observe, correct
 
-For meaningful interface changes, proactively use the [UX skill](skills/jstack-ux/SKILL.md) to inspect the running experience and iterate against the agreed customer task. Use its reference-research mode when the user requests app research or a specific design uncertainty warrants it. Competitor observations inform proposals; they do not become requirements without product alignment. A CLI/API-only change does not need browser research.
+For meaningful interface changes, proactively use the [UX skill](skills/jfactory-ux/SKILL.md) to inspect the running experience and iterate against the agreed customer task. Use its reference-research mode when the user requests app research or a specific design uncertainty warrants it. Competitor observations inform proposals; they do not become requirements without product alignment. A CLI/API-only change does not need browser research.
 
 Choose the next unresolved criterion. Investigate actual code, implement the smallest coherent change, run the relevant check, inspect the result and side effects, and correct failures. Continue without waiting for “keep going.” Preserve the acceptance standard. After repeated failure without new evidence, change the investigation or identify a concrete blocker; continue independent in-scope work.
 

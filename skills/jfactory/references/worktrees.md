@@ -4,7 +4,7 @@ Each worktree or cloud workspace has its own checkout. It may have different ins
 
 ## Start a task
 
-1. Read this checkout's applicable instructions and jstack skill. Inspect the installed `.jstack-install.json` for `source_commit` and `source_dirty` when present, and name the loaded version at kickoff. A receipt records installation provenance, not current compliance; investigate local modifications or conflicting instructions. Never claim that another workspace's update is installed here.
+1. Read this checkout's applicable instructions and jfactory skill. Inspect the installed `.jfactory-install.json` for `source_commit` and `source_dirty` when present, and name the loaded version at kickoff. A receipt records installation provenance, not current compliance; investigate local modifications or conflicting instructions. Never claim that another workspace's update is installed here.
 2. Inspect branch, dirty files and remotes, fetch the intended remote, and identify the actual base. Preserve ongoing work. Use one branch and PR per coherent objective, with one writer per checkout. Do not switch another active agent's branch or write into its files.
 3. List open PRs in the repository and inspect likely overlaps using their changed files and descriptions. For GitHub, use `gh pr list` and `gh pr view <number> --json files,headRefName,baseRefName,body`. Record dependencies and shared-file ownership in the existing task or PR, rather than starting a new global status document. Local worktree listings cannot discover separate cloud workspaces or unpublished changes. Disclose that visibility limit and clarify suspected unpublished overlap.
 4. Independent changes branch from the current base and target it. When a task needs another unmerged change, wait for that PR or explicitly stack the dependent branch/PR onto it and record merge order. Avoid copying the same feature into sibling branches. Coordinate shared API/schema changes before dependent work.
@@ -12,7 +12,7 @@ Each worktree or cloud workspace has its own checkout. It may have different ins
 
 ## Keep the installed workflow current
 
-Update jstack in one adoption PR in the application repository. Review and merge it through that repository's normal process. New workspaces inherit it only when their starting branch includes that commit. Existing workspaces do not auto-update, and a merged jstack upstream PR does not update consumer repositories.
+Update jfactory in one adoption PR in the application repository. Review and merge it through that repository's normal process. New workspaces inherit it only when their starting branch includes that commit. Existing workspaces do not auto-update, and a merged jfactory upstream PR does not update consumer repositories.
 
 For an existing workspace, preserve or commit its work, fetch, and integrate the reviewed adoption commit through the normal branch update. Alternatively, install the reviewed upstream version with `--update` in that checkout and deliver its adoption diff. Avoid independently editing the managed bundle in every feature branch. Reload instructions or start a fresh session and confirm the loaded version. Do not silently replace local customizations; the installer refuses them for reconciliation.
 

@@ -26,7 +26,7 @@ def cli_environment(folder):
     registry = folder / '.browser-control'
     tag = hashlib.sha256(str(folder).encode()).hexdigest()[:16]
     # Unix socket paths must stay short even for deeply nested study folders.
-    sockets = Path('/tmp') / f'jstack-ux-{os.getuid()}-{tag}'
+    sockets = Path('/tmp') / f'jfactory-ux-{os.getuid()}-{tag}'
     for directory in (registry, sockets):
         if directory.is_symlink():
             raise ValueError('Browser control directories must not be symlinks')

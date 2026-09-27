@@ -12,7 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 
 SCOPES = {'unit', 'component', 'integration', 'application', 'provider', 'deployed', 'static'}
-EVIDENCE = Path('.context/jstack')
+EVIDENCE = Path('.context/jfactory')
 
 
 def sha(data):
@@ -61,7 +61,7 @@ def fingerprint(root):
 def load_task(root, path):
     p = path.resolve()
     if not p.is_relative_to(root) or p.is_relative_to(root / EVIDENCE):
-        raise ValueError('Acceptance file must live in the repo, outside .context/jstack')
+        raise ValueError('Acceptance file must live in the repo, outside .context/jfactory')
     task = json.loads(p.read_text())
     if not isinstance(task.get('objective'), str) or not task['objective'].strip() or not task.get('criteria'):
         raise ValueError('Task needs an objective and nonempty criteria')

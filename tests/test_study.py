@@ -7,7 +7,7 @@ from threading import Thread
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-SCRIPT = Path(__file__).resolve().parents[1] / 'skills/jstack/skills/jstack-ux/scripts/study.py'
+SCRIPT = Path(__file__).resolve().parents[1] / 'skills/jfactory/skills/jfactory-ux/scripts/study.py'
 spec = importlib.util.spec_from_file_location('study', SCRIPT)
 study = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(study)
