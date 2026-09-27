@@ -39,8 +39,10 @@ def managed_block(skill_path):
             'For meaningful UI changes, use its UX skill to inspect real interactions and motion; '
             'research approved reference apps when requested or needed for a design decision. '
             'Required application behavior needs application evidence; component checks alone cannot close it. '
-            'Deliver authorized changes as a PR on a task branch. Use a draft when required proof is blocked; '
-            'do not merge, push the base branch or deploy without explicit authorization. '
+            'Deliver authorized changes as a ready-for-review PR on a task branch by default; use drafts only when requested or required by repository rules. '
+            'Report the objective, decisions/assumptions, implemented behavior, actual verification evidence and gaps, and PR link in the completion message. '
+            'Check the installed version and overlapping PRs when working across worktrees. '
+            'Review status does not establish verification or merge readiness. Do not merge, push the base branch or deploy without explicit authorization. '
             'Preserve this repository’s product decisions and applicable instructions.\n\n'
             f'{END}')
 

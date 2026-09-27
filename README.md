@@ -19,7 +19,7 @@ It connects four loops:
 
 You should be able to leave an agent working and return to a result you can evaluate. jstack gives it a bounded objective and feedback it can use while you are away. You make consequential product decisions and review the experience; the agent handles routine implementation, checks and corrections within that scope.
 
-Every handoff should distinguish **what you decided, what the agent inferred, what exists, what was verified, and what you accepted**. The default delivery is a pull request. Merging and release need your authorization.
+Every handoff should distinguish **what you decided, what the agent inferred, what exists, what was verified, and what you accepted**. The default delivery is a pull request open for human review, without draft status. Missing proof stays visible; opening a PR does not mean it is verified or safe to merge. Merging and release need your authorization.
 
 ## 2. How to use
 
@@ -58,7 +58,7 @@ The agent's exact commands, access checks and cleanup are in [cloud browser hand
 1. **Give the agent one useful outcome.** For example: “Let someone save a reference and find it again after returning later.” Include constraints you already know.
 2. **Settle consequential choices.** The agent clarifies unresolved customer/experience decisions and records observable completion criteria. A routine fix with settled behavior can proceed directly.
 3. **Let it run the relevant loops.** It investigates, implements, exercises the real path, inspects state and side effects, and corrects failures. Meaningful UI changes also get an experience review. It updates the existing documents as decisions change.
-4. **Review the result.** Expect a preview or walkthrough, evidence tied to the agreed criteria, important assumptions and remaining gaps, and a PR. Try the customer task yourself. A screenshot or passing build alone does not prove the whole journey.
+4. **Review the result.** The final message must include the outcome, decisions/assumptions, what changed, actual checks/results and evidence links, remaining gaps, and a ready-for-review PR with its commit. Try the customer task yourself. A screenshot, passing build or bare "confirmed" does not prove the whole journey.
 5. **Give specific feedback or approve the next step.** “Saving works, but finding the item adds an unnecessary step” starts another iteration. Owner acceptance, merge and release are separate decisions. The agent does not silently start another feature when the objective is complete.
 
 Copy this for normal feature work:
@@ -72,6 +72,18 @@ Copy this to learn from another app:
 An in-depth study begins with an inventory, then covers prioritized journeys across successive passes. The coverage map makes remaining work visible. Competitor choices inform proposals; they do not automatically become requirements. Customer usability claims still need customer evidence.
 
 For the feedback paths between these loops and the distinction between app checks and skill evals, read [how the loops work together](skills/jstack/references/methodology.md).
+
+#### Working in several worktrees
+
+Use one worktree, branch and PR per coherent task. Agents check open PRs for overlapping files and dependencies before implementing and again before delivery. Independent work targets the base branch. Dependent work waits or uses an explicit PR stack with a stated merge order. Before integrating overlapping PRs, refresh the branches, resolve conflicts and rerun affected checks, including the combined user journey. Worktrees isolate files; they cannot promise conflict-free behavior.
+
+Update jstack through one adoption PR in each project. Once merged, new workspaces starting from that updated branch inherit it. Existing workspaces must integrate the update and reload their instructions. Updating this upstream repository or one workspace does not update every worktree. The agent should identify its loaded jstack version when it starts work. See [worktree coordination](skills/jstack/references/worktrees.md).
+
+If an agent returns an unsupported success claim, ask:
+
+> Show the agreed criteria, what you actually ran on this revision, observed results and evidence links, and remaining gaps. Identify the jstack version and instructions you loaded. Finish any missing verification and open the PR for review; do not merge.
+
+This should already be part of its handoff. The prompt helps recover a missed step; an installed skill alone does not guarantee the agent followed it. Repository CI can enforce configured tests, while evidence review checks whether those tests prove the intended behavior.
 
 <details>
 <summary>Manual installation and updates</summary>

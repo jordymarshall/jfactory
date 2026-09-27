@@ -12,6 +12,7 @@ Inventory executable capabilities:
 - The safe test target and whether concurrent instances have separate ports, accounts and data.
 - CI triggers, skipped checks, required checks and release triggers. A workflow file alone does not prove branch protection is enabled.
 - Agent host capabilities: shell, browser, subagents, PR tools, evidence storage and instruction discovery.
+- Installed jstack version, concurrent workspaces, shared resources and PR dependencies, using [worktree coordination](worktrees.md). Establish one adoption PR as the source of workflow updates for this project.
 
 For a browser product, establish a real browser session and evidence path using the [UX skill](../skills/jstack-ux/SKILL.md). Distinguish public access, a dedicated signed-in account, and missing access. Prove the driver on a safe local task before claiming it works with a subscribed app. Reuse the host's browser tools when they provide the required observation and capture; the bundled Playwright CLI helper is a fallback. Keep private research artifacts and profiles out of commits and public preview services.
 

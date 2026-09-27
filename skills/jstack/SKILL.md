@@ -19,6 +19,8 @@ Clarify unresolved intent and consequential experience choices before dependent 
 
 Record the useful outcome, owner decisions versus agent assumptions, scope/non-goals, observable acceptance criteria and next review point in the existing task. State the objective and how it will be checked before substantial implementation. On continuation, read that record and relevant code/evidence; do not require the user to repeat it. If the objective is complete, propose the next one rather than silently expanding scope.
 
+At the start of repository work, identify the loaded jstack path and installed source revision when available. For concurrent workspaces or overlapping PRs, follow [worktree coordination](references/worktrees.md). Instructions and evidence in another checkout are not automatically current here.
+
 Use the [verification contract](references/verification.md) to map every criterion to required evidence scopes. The supplied evidence runner can record real commands and check freshness/coverage. It does not judge whether a test meaningfully proves the customer outcome. Inspect the assertions and actual result yourself.
 
 ## Implement, observe, correct
@@ -35,7 +37,7 @@ Update affected canonical documentation with material decisions and results. Kee
 
 Follow [PR delivery](references/delivery.md). Use a task branch or isolated checkout, commit only the requested work, push that branch and open a PR against the repository's actual base branch. This is the default delivery for authorized repository changes. Do not merge, push the base branch, or deploy without explicit authorization. An explicit one-time exception does not change future defaults.
 
-Required checks passed and meaningful evidence reviewed: open/update a ready PR. Required behavior failed, unchecked, or blocked: continue feasible work and otherwise open/update a draft PR that names the missing proof. Documentation-only work needs appropriate documentation checks, not invented browser tests. Explain the result, decisions/inferences, checks and limitations, and how the user can try it. Confirm the PR URL and remote commit; a local commit is not a delivered PR.
+Open PRs ready for human review by default, without `--draft`; use drafts only when requested or required by an applicable repository rule. Review status is separate from verification and merge readiness. If required behavior failed, is unchecked or blocked, continue feasible work, then name the missing proof prominently in the PR and handoff. Never call incomplete verification complete. Documentation-only work needs appropriate documentation checks, not invented browser tests. Every completion message must include the concise evidence handoff in [PR delivery](references/delivery.md), including the PR URL and remote commit. A local commit or a bare "confirmed" is not a delivered, verified result.
 
 ## Improve the workflow from failures
 
