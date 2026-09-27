@@ -36,6 +36,8 @@ def managed_block(skill_path):
             f'Use [jstack]({skill_path}/SKILL.md) proactively for repository setup and engineering work. '
             'Establish or resume the agreed objective, map acceptance criteria to actual verification, '
             'implement/check/correct within scope, and update existing canonical records. '
+            'For meaningful UI changes, use its UX skill to inspect real interactions and motion; '
+            'research approved reference apps when requested or needed for a design decision. '
             'Required application behavior needs application evidence; component checks alone cannot close it. '
             'Deliver authorized changes as a PR on a task branch. Use a draft when required proof is blocked; '
             'do not merge, push the base branch or deploy without explicit authorization. '

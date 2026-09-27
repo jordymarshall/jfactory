@@ -1,6 +1,6 @@
 ---
 name: jstack
-description: Set up and run a repository-specific engineering loop with explicit objectives, executable verification, evidence, and a pull request. Use for engineering harness setup, implementing features, fixing bugs, and preparing changes for review.
+description: Run connected product, UX and engineering loops with explicit objectives, browser research, executable verification, evidence and a pull request. Use for repository setup, features, fixes, app experience research and preparing changes for review.
 ---
 
 # jstack
@@ -20,6 +20,8 @@ Record the useful outcome, owner decisions versus agent assumptions, scope/non-g
 Use the [verification contract](references/verification.md) to map every criterion to required evidence scopes. The supplied evidence runner can record real commands and check freshness/coverage. It does not judge whether a test meaningfully proves the customer outcome. Inspect the assertions and actual result yourself.
 
 ## Implement, observe, correct
+
+For meaningful interface changes, proactively use the [UX skill](skills/jstack-ux/SKILL.md) to inspect the running experience and iterate against the agreed customer task. Use its reference-research mode when the user requests app research or a specific design uncertainty warrants it. Competitor observations inform proposals; they do not become requirements without product alignment. A CLI/API-only change does not need browser research.
 
 Choose the next unresolved criterion. Investigate actual code, implement the smallest coherent change, run the relevant check, inspect the result and side effects, and correct failures. Continue without waiting for “keep going.” Preserve the acceptance standard. After repeated failure without new evidence, change the investigation or identify a concrete blocker; continue independent in-scope work.
 
