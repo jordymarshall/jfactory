@@ -22,4 +22,6 @@ Map the initial critical customer journey, including navigation, authorization, 
 
 Integrate recurring deterministic checks into existing CI where authorized. Require a review of CI changes; do not edit remote branch protection or enable production automation as an incidental setup action. Document gaps that still rely on instructions.
 
+When adopting the default auto-merge workflow, establish the owner's standing merge/release policy and the actual server-side gates using [auto-merge setup](auto-merge.md). Configure authorized settings where access permits; report inaccessible settings without claiming activation.
+
 Setup handoff: canonical document links, first agreed task and acceptance criteria, actual commands executed and proof, remaining gaps and PR. No universal “works everywhere” claim: verify the chosen host and application in the target repository.

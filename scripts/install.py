@@ -42,7 +42,8 @@ def managed_block(skill_path):
             'Deliver authorized changes as a ready-for-review PR on a task branch by default; use drafts only when requested or required by repository rules. '
             'Report the objective, decisions/assumptions, implemented behavior, actual verification evidence and gaps, and PR link in the completion message. '
             'Check the installed version and overlapping PRs when working across worktrees. '
-            'Review status does not establish verification or merge readiness. Do not merge, push the base branch or deploy without explicit authorization. '
+            'Review status does not establish verification or merge readiness. After verification, enable protected auto-merge under the repository\'s standing authorization; follow jstack\'s auto-merge procedure. '
+            'Keep auto-merge off when required proof, permissions or enforced checks are missing. Never bypass checks or push the base branch directly. Respect the repository\'s release policy. '
             'Preserve this repository’s product decisions and applicable instructions.\n\n'
             f'{END}')
 
@@ -100,7 +101,7 @@ def install(source, target, agent='codex', update=False):
                                                     stderr=subprocess.DEVNULL))
     except subprocess.CalledProcessError:
         source_dirty = None
-    receipt = {'schema': 1, 'repository': 'https://github.com/jordymarshall/jstack',
+    receipt = {'schema': 1, 'repository': 'https://github.com/jordymarshall/jfactory',
         'source_commit': revision, 'source_dirty': source_dirty, 'agent': agent,
         'files': hashes, 'instruction_block': block}
     dest.parent.mkdir(parents=True, exist_ok=True)

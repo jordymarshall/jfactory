@@ -8,9 +8,9 @@ flowchart TD
     U --> E[Engineering: implement and verify behavior]
     E --> V[UX: try the running experience and inspect evidence]
     V -->|Friction or defect| E
-    V --> R[Owner reviews preview, evidence and PR]
+    V --> R[Review preview, evidence and PR]
     R -->|Experience or value needs changing| P
-    R -->|Accepted| A[Merge or release only when authorized]
+    R -->|Verified and required decisions settled| A[Protected auto-merge under standing policy]
     E -. Recurring agent failure .-> W[Workflow eval and structural improvement]
     V -. Recurring research failure .-> W
     W -. Improve how the next iteration runs .-> E
@@ -26,7 +26,7 @@ For example, to let a user save an item and find it later:
 2. UX research examines organization, feedback and recovery in approved apps, then proposes a flow for our customer.
 3. Engineering implements it and checks save, reload and independent readback.
 4. UX review checks navigation, feedback, loading/errors, focus, motion and relevant devices in the running application.
-5. The owner receives a walkthrough and PR, tries the task and accepts it or gives specific feedback.
+5. The owner receives a walkthrough and PR, tries the task and accepts it or gives specific feedback. Protected auto-merge can land technically verified work before this feedback; required product decisions must be settled before it is queued.
 
 Workflow evals are separate experiments on the agent's methods. Passing an app test does not prove a skill makes good decisions. A skill eval does not prove an app works. Inspect actual tool use and artifacts; compare variants on equivalent isolated tasks where practical. Prefer a deterministic test, type or CI check for repeated mechanical errors.
 
