@@ -2,6 +2,21 @@
 
 Choose evidence from the claim, not from whichever test is easiest to run. Engineering correctness, experience quality, customer value and agent-workflow effectiveness are separate conclusions.
 
+## Objective contract
+
+Before substantial implementation, put the following in the existing task or issue. Keep one canonical acceptance record; link machine-readable tests/criteria to it when useful.
+
+- Customer and experience outcome, with owner decisions, agent assumptions and unsettled questions distinguished.
+- Scope and non-goals, including constraints and dependencies on other PRs.
+- Observable criteria. For each, give the starting state, user action, expected result, independent side-effect/readback check, required scopes and the command or manual observation that can prove it. A missing test is work to implement, not a reason to remove the criterion.
+- Execution target, account/data ownership, permitted side effects and any cost/time limits. Note access still needed.
+- Review/checkpoint and stop conditions. Carry forward the agreed merge/release policy; identify choices that still need owner judgment.
+- Current criterion results, evidence links/revision, unresolved blockers and next action for a resumed session.
+
+For example, "make saving good" is incomplete. "A signed-in customer saves an item, sees it after reload and in a new session, and receives a recoverable error if saving fails" identifies observable behavior. The tests must exercise the real application's auth/storage boundary for that claim. An additional customer interview may still be needed to determine whether saving solves the right problem.
+
+Work through unresolved criteria autonomously. Use failed checks and observations to choose the next correction. Keep the original acceptance standard visible when a proposal changes it; an agent cannot mark a requirement done by deleting its failing assertion. Stop dependent work for a material unresolved decision, inaccessible required service or exhausted agreed budget; continue feasible independent work. Once criteria and required reviews pass, deliver under the recorded PR policy and stop at the agreed boundary.
+
 ## Required scopes
 
 | Scope | What it can demonstrate |

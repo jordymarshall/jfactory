@@ -1,6 +1,6 @@
 ---
 name: jfactory
-description: Run connected product, UX and engineering loops with explicit objectives, browser research, executable verification, evidence and a pull request. Use for repository setup, features, fixes, app experience research and preparing changes for review.
+description: Run connected product, UX and engineering loops with explicit objectives, browser research, executable verification, evidence and a pull request. Use for "Setup jfactory", repository adoption or cleanup, features, fixes, app experience research and preparing changes for review.
 ---
 
 # jfactory
@@ -11,13 +11,13 @@ For a plain explanation of the feedback paths and owner checkpoints, use [how th
 
 ## Set up the repository once, reconcile when needed
 
-Follow [repository setup](references/setup.md) when adopting jfactory or when missing context prevents sound work. Inspect the repo before asking factual questions. Preserve existing AGENTS.md and product documents. Identify the actual user interface, dev commands, architecture, acceptance records, tests, CI, safe data environment and default branch. On a blank project, architecture is proposed and capabilities are unimplemented until built.
+Treat "Setup jfactory" as the full [repository adoption procedure](references/setup.md), including document reconciliation, product alignment, executable tools, environment setup and delivery gates. Continue after installation without requiring another prompt. Reuse canonical documents, preserve unique decisions, and reconcile stale or conflicting project-owned guidance in the adoption diff. Re-running setup resumes the same record and repairs drift. Report readiness per capability with evidence and exact gaps. On a blank project, architecture is proposed and capabilities are unimplemented until built.
 
-Clarify unresolved intent and consequential experience choices before dependent implementation. Use an existing product/grilling skill if available; otherwise ask focused questions with recommendations. jfactory does not mandate a whole-product interview for every bug or replace the owner's product process.
+Before each substantial feature, review the customer hypothesis and intended experience in depth, reusing settled answers and clarifying unresolved choices before dependent implementation. Use an existing product/grilling skill if available; otherwise ask focused questions with recommendations. jfactory does not mandate a whole-product interview for every bug or replace the owner's product process.
 
 ## Establish and resume an objective
 
-Record the useful outcome, owner decisions versus agent assumptions, scope/non-goals, observable acceptance criteria and next review point in the existing task. State the objective and how it will be checked before substantial implementation. On continuation, read that record and relevant code/evidence; do not require the user to repeat it. If the objective is complete, propose the next one rather than silently expanding scope.
+Use the [objective contract](references/verification.md#objective-contract) to record the useful outcome, owner decisions versus agent assumptions, scope/non-goals, observable acceptance criteria and next review point in the existing task. State the objective and how it will be checked before substantial implementation. On continuation, read that record and relevant code/evidence; do not require the user to repeat it. If the objective is complete, propose the next one rather than silently expanding scope.
 
 At the start of repository work, identify the loaded jfactory path and installed source revision when available. For concurrent workspaces or overlapping PRs, follow [worktree coordination](references/worktrees.md). Instructions and evidence in another checkout are not automatically current here.
 
@@ -31,7 +31,7 @@ Choose the next unresolved criterion. Investigate actual code, implement the sma
 
 Select only relevant original methods from [pstack routing](references/pstack.md). Use focused regression tests where practical, real application journeys for user-facing changes, and independent review proportionate to the change. Investigation/review instructions may request bounded subagents when the host permits them. Larger competing implementations or unattended campaigns require the user's request.
 
-Update affected canonical documentation with material decisions and results. Keep requirement, implementation, verification and owner acceptance separate. Preserve historical proof and mark affected old evidence stale. Avoid a new plan or status file every turn.
+Update affected canonical documentation with material decisions and results, using [documentation reconciliation](references/documentation.md) when guidance is stale or duplicated. Keep requirement, implementation, verification and owner acceptance separate. Preserve historical proof and mark affected old evidence stale. Avoid a new plan or status file every turn.
 
 ## Deliver a pull request
 

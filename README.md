@@ -25,19 +25,27 @@ Every handoff should distinguish **what you decided, what the agent inferred, wh
 
 ### Initial setup
 
-**Do this once per project. Tell the agent to set up jfactory; it handles the technical steps.**
+Open the project in your coding agent and say:
 
-1. **Open the project in your coding agent**, locally or in a Conductor cloud workspace.
-2. **Paste this prompt:**
+> Setup jfactory
 
-   > Set up https://github.com/jordymarshall/jfactory for this project. Help me clarify what we are building and establish the product, UX and engineering workflow. Preserve our existing work and configure verified PR delivery with auto-merge.
+If the project does not already have jfactory, give the agent its location once:
 
-3. **Answer the product questions.** The agent should recommend options and clarify who the product serves, what the customer needs to accomplish and what is out of scope. Existing settled decisions carry forward.
-4. **Respond when the agent needs access.** It identifies missing accounts, test data or environment setup and guides you through the necessary step. If an app needs you to sign in, it prepares the browser and gives you access to it. You do not need to know which tool or skill to request.
-5. **Review the setup result.** Expect a short `AGENTS.md` linking to the product brief, system map, feature/status map and agent instructions. Detailed facts have one home. Expect at least one demonstrated check of the first runnable journey, or a precise explanation of what blocks it.
-6. **Establish merge gates.** The agent configures authorized required checks and auto-merge, or names the exact access/plan blocker. Verified PRs can merge automatically once the required checks and reviews pass; you may see the final result after merge. Start a fresh agent session after installation and have it confirm the loaded jfactory version, current objective and checks.
+> Setup jfactory from https://github.com/jordymarshall/jfactory in this project.
 
-An empty repository starts with an agreed first runnable slice. An existing repository starts by reconciling its current code, decisions and checks. Installation alone does not mean the app has been verified.
+The agent checks the installed version, respects any project version pin, installs or updates the reviewed workflow, then carries out the adoption. You do not need to invoke each skill or know which files to create.
+
+1. **It audits and cleans up the existing foundation.** It reconciles stale documents, duplicate status pages, old commands and conflicting agent instructions. It preserves unique decisions and historical evidence, repairs references, and gives current facts one home.
+2. **It clarifies the product with you.** It investigates first, then asks about unresolved customer needs, the intended experience and what success would look like. It carries forward settled decisions and proposes one bounded next outcome.
+3. **It prepares the tools and environments.** It reuses or repairs setup commands, diagnostics and verification tools. It maps local, preview and staging services, including which data and accounts they use. When login or settings access needs you, it prepares the handoff and gives you the exact next step.
+4. **It defines how autonomous work finishes.** Each objective has observable criteria, appropriate checks, evidence requirements and a review point. The agent establishes your standing merge/release policy and configures authorized CI and protected auto-merge gates, or identifies the precise blocker.
+5. **It opens the adoption PR.** Review the cleanup and a readiness report showing what is verified, configured but unverified, blocked or deliberately deferred. Installation alone does not prove the app, environment or merge gates work.
+
+Expect a short `AGENTS.md` with four sections linking to canonical details: product brief, system map, feature/status map and agent instructions. These reuse existing documents. You should also get the next task's goal and criteria, demonstrated verification of an existing critical journey when possible, and any remaining owner actions.
+
+An empty repo needs agreement on its first runnable slice before product implementation begins. Repeating **"Setup jfactory"** resumes the same setup record and reconciles drift. It should not multiply plans or erase decisions to make the docs agree with unfinished code.
+
+Merge the adoption through the project's recorded policy so new workspaces inherit it. Start a fresh agent session if the host needs to reload skill discovery. In an existing worktree, integrate the adoption commit first. The agent should confirm its loaded version and current objective.
 
 #### When an app needs you to sign in
 
@@ -54,7 +62,7 @@ The [cloud handoff procedure](skills/jfactory/skills/jfactory-ux/references/clou
 **Describe the outcome in ordinary language. You do not need to invoke each skill or tell the agent to set up its tools.** The installed instructions tell it to choose the relevant loops, arrange access, verify its work and deliver a PR. This happens during an active agent session; jfactory does not run a background service.
 
 1. **Give the agent one useful outcome.** For example: “Let someone save a reference and find it again after returning later.” Include constraints you already know.
-2. **Settle consequential choices.** The agent clarifies unresolved customer/experience decisions and records observable completion criteria. A routine fix with settled behavior can proceed directly.
+2. **Settle consequential choices.** The agent clarifies unresolved customer/experience decisions and records observable completion criteria. Before a substantial feature, it reviews the customer hypothesis and intended experience in depth. A routine fix with settled behavior can proceed directly.
 3. **Let it run the relevant loops.** It investigates, implements, exercises the real path, inspects state and side effects, and corrects failures. Meaningful UI changes also get an experience review. It updates the existing documents as decisions change.
 4. **Review the result.** The final message must include the outcome, decisions/assumptions, what changed, actual checks/results and evidence links, remaining gaps, and a ready-for-review PR with its commit. Try the customer task yourself. A screenshot, passing build or bare "confirmed" does not prove the whole journey.
 5. **Give specific feedback or approve the next step.** “Saving works, but finding the item adds an unnecessary step” starts another iteration. Customer acceptance remains separate from technical verification. Auto-merge follows the agreed repository policy; release follows its recorded deployment policy. The agent does not silently start another feature when the objective is complete.
@@ -75,9 +83,13 @@ For the feedback paths between these loops and the distinction between app check
 
 #### Working in several worktrees
 
-Use one worktree, branch and PR per coherent task. Agents check open PRs for overlapping files and dependencies before implementing and again before delivery. Independent work targets the base branch. Dependent work waits or uses an explicit PR stack with a stated merge order. Before integrating overlapping PRs, refresh the branches, resolve conflicts and rerun affected checks, including the combined user journey. Worktrees isolate files; they cannot promise conflict-free behavior.
+Open a worktree or cloud workspace for each coherent task. jfactory does not create the next workspace/session or begin the next feature after merge. Extra sessions in one workspace share its files; they are not independent worktrees. Use one branch and PR per task. Agents check open PRs for overlapping files and dependencies before implementing and again before delivery. Independent work targets the base branch. Dependent work waits or uses an explicit PR stack with a stated merge order. Before integrating overlapping PRs, refresh the branches, resolve conflicts and rerun affected checks, including the combined user journey. Worktrees isolate files; they cannot promise conflict-free behavior.
 
 Update jfactory through one adoption PR in each project. Once merged, new workspaces starting from that updated branch inherit it. Existing workspaces must integrate the update and reload their instructions. Updating this upstream repository or one workspace does not update every worktree. The agent should identify its loaded jfactory version when it starts work. See [worktree coordination](skills/jfactory/references/worktrees.md).
+
+In Conductor cloud, setup also prepares the repository bootstrap command and registers it when authorized tools allow, or gives you the exact organization-setting step. A committed local setup file alone does not configure cloud workspaces. The [environment setup procedure](skills/jfactory/references/environments.md) explains this distinction.
+
+A workspace preview lets you access a running dev server. A PR preview is a hosted build. Staging is a deliberately configured non-production environment, including its backing services and data. A PR preview can use staging services, but its URL alone does not prove isolation. Setup records where UX checks can safely run and which revision they exercised.
 
 If an agent returns an unsupported success claim, ask:
 

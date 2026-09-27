@@ -1,27 +1,73 @@
-# Repository adoption
+# Set up or reconcile a repository
 
-First read existing owner instructions, relevant product requirements, task/status records and the code. Find the project's existing homes for intent, architecture, status and agent instructions. Preserve them. Keep the root AGENTS.md entry point short and link details rather than copying them. Missing context triggers investigation and consequential questions; it does not authorize a rewrite or speculative feature work.
+"Setup jfactory" invokes this whole procedure. Installation only places the tools and entry instructions. Continue through repository adoption in the same session by reading the installed skill directly; reload discovery afterward if the host needs it. Do not stop at a successful copy or require the owner to name the remaining skills.
 
-Establish the first bounded outcome and its acceptance criteria. Identify the riskiest unproven dependency, such as source data, auth or provider behavior. Distinguish owner choices, recommendations and unknowns. In an empty repo, build the agreed first runnable slice before writing verification instructions against actual controls.
+Setup authorizes the repository's workflow work, including reconciling stale documentation. It does not select a new product direction, build a speculative feature, or grant production access. Carry existing decisions and authorizations forward. Ask only for unresolved intent or access that affects the next action, and continue independent work while waiting.
 
-Inventory executable capabilities:
+## 1. Inspect and resume
 
-- Start/build/test commands and dependency prerequisites.
-- Actual customer entry points, routes/commands and account/data prerequisites.
-- Existing unit, component, integration, application and provider checks. Note which are mocked.
-- The safe test target and whether concurrent instances have separate ports, accounts and data.
-- CI triggers, skipped checks, required checks and release triggers. A workflow file alone does not prove branch protection is enabled.
-- Agent host capabilities: shell, browser, subagents, PR tools, evidence storage and instruction discovery.
-- Installed jfactory version, concurrent workspaces, shared resources and PR dependencies, using [worktree coordination](worktrees.md). Establish one adoption PR as the source of workflow updates for this project.
+Inspect applicable instructions, Git state, remote/base, installed version and host capabilities. Follow [worktree coordination](worktrees.md) to preserve ongoing work and identify an existing adoption PR. Reuse that work where possible. Do not overwrite another agent's branch or run parallel adoptions against the same files.
 
-For a browser product, establish a real browser session and evidence path using the [UX skill](../skills/jfactory-ux/SKILL.md). Distinguish public access, a dedicated signed-in account, and missing access. Prove the driver on a safe local task before claiming it works with a subscribed app. Reuse the host's browser tools when they provide the required observation and capture; the bundled Playwright CLI helper is a fallback. Keep private research artifacts and profiles out of commits and public preview services.
+On an explicit setup/update request, compare the installed receipt with the project's chosen upstream revision. Respect an intentional pin. If unpinned, fetch and inspect the current upstream default branch, install the reviewed revision with the supported installer, then read the newly installed instructions. Record the source revision and any local modifications; an unavailable upstream check is a visible gap. Normal feature work uses the installed version and does not silently upgrade it.
 
-Reuse existing tests. Read the original `create-verification-skill` to create missing project instructions; use `maintain-verification-skill` for drift. Apply jfactory's verification contract as the local scope constraint. Generate a project-local verifier under the host's skill directory with launch, doctor, drive, evidence, cleanup and a feature map. Prove a mapped journey end to end before calling the verifier operational. Component-only success is partial readiness if the target behavior requires the full application.
+Read the existing setup/task record, if any. Use one durable setup section in the existing engineering runbook or adoption task. If there is no suitable home, create one short setup record and link it from agent instructions. Record current readiness, evidence and remaining actions there. Re-running setup refreshes this record and repairs drift; it does not create a new checklist, roadmap or dated status file.
 
-Map the initial critical customer journey, including navigation, authorization, persistence/readback, failures/retries and downstream handoffs that apply. Do not stop at whichever fixture is easiest. If safe auth/data/provider access is missing, record the exact missing prerequisite and continue lower-scope checks without promoting their claims.
+Inventory the docs and their callers, implementation entry points, commands, tests, CI/release triggers, safe data environments and host tools. For a large repo, inventory broadly, then read documents that govern current product, architecture, verification and delivery. Mark anything not audited. Do not claim every historical document is current after a sampled review.
 
-Integrate recurring deterministic checks into existing CI where authorized. Require a review of CI changes; do not edit remote branch protection or enable production automation as an incidental setup action. Document gaps that still rely on instructions.
+If installed files or their managed instruction block were customized, reconcile the installer refusal before updating. Preserve useful project-specific behavior in project-owned instructions or verifier skills, then update the reviewed bundle. Do not bypass conflict detection or edit receipts to make a modified installation look clean.
 
-When adopting the default auto-merge workflow, establish the owner's standing merge/release policy and the actual server-side gates using [auto-merge setup](auto-merge.md). Configure authorized settings where access permits; report inaccessible settings without claiming activation.
+## 2. Reconcile the foundation
 
-Setup handoff: canonical document links, first agreed task and acceptance criteria, actual commands executed and proof, remaining gaps and PR. No universal “works everywhere” claim: verify the chosen host and application in the target repository.
+Apply [documentation reconciliation](documentation.md), including nested agent instructions and project-owned skill adapters. Make the cleanup in the adoption diff, rather than merely recommending it. Keep four short entry sections in AGENTS.md, or the host's equivalent:
+
+| Section | Canonical detail |
+| --- | --- |
+| Product brief | Customer, problem, customer hypothesis, experience goal, non-goals and unsettled decisions |
+| System map | Current components, data flow, external services and environment boundaries |
+| Feature/status map | Important journeys, implementation state, verified scope/revision and remaining gaps |
+| Agent instructions | How to start/check the app, active task location, workflow, coordination and merge/release policy |
+
+Use the existing homes for these facts; these are sections, not four mandatory new files. Keep the installation-managed block intact. Avoid maintaining separate competing instructions for different agent hosts; link their entry points to shared project policy where supported.
+
+Explain the main customer journey and largest gaps in plain language. Code establishes what exists, not what the customer should want. Interview the owner deeply where the customer hypothesis or experience goal is unresolved. Cover who is struggling, their present workaround, the desired outcome, the end-to-end experience, what would demonstrate improvement, and what is excluded. Offer a recommended first outcome and alternatives with tradeoffs. Reuse settled answers; mark recommendations as proposals until accepted. Do not delay unrelated tooling or documentation work for a product answer.
+
+## 3. Prepare the development and verification tools
+
+Read [environments and host setup](environments.md). Reuse or repair the project's existing bootstrap and doctor commands. Add a small repeatable command only where one is missing. Match the project's runtime and lockfile, install required dependencies, and handle fresh-workspace prerequisites. A doctor should report missing tools, configuration and access clearly without printing secrets or crashing on an absent executable. Separate dependency presence, reachable application and validated authentication.
+
+Reuse existing tests. Read the original `create-verification-skill` for a missing project-local verifier or `maintain-verification-skill` for drift, subject to the [verification contract](verification.md). Keep project verification outside the managed jfactory bundle. Include launch, doctor, drive, evidence, cleanup and the feature map; link existing commands instead of rebuilding their test framework.
+
+For browser products, set up the [UX skill](../skills/jfactory-ux/SKILL.md) and a private evidence location. Use a host browser when it supports the needed interaction/capture, otherwise the supplied Playwright helper. A missing login triggers its proactive human handoff. Do not request credentials in chat or assume another worktree's profile is available. Competitor exploration happens when requested or relevant to a specific design question; adoption alone does not require studying a subscribed app.
+
+Select an existing critical journey, not whichever fixture is easiest. Verify the applicable navigation, authorization, action, resulting state, persistence/readback and downstream side effects. Component checks cover responsive layout, interaction states and substituted boundaries. They cannot establish full-app or provider readiness. Include error/recovery, keyboard and motion checks where relevant to the journey. Capture the revision, target and observed evidence.
+
+An empty repo has no existing journey to prove. Establish the first proposed runnable slice and prerequisites, record application verification as not yet available, and wait for agreement before building product behavior. If the owner explicitly defers live testing, prepare the commands and criteria, record "not run by request", and never mark that scope verified. Missing access keeps the affected scope open while independent setup continues.
+
+## 4. Establish the autonomous loop and delivery policy
+
+Put the next bounded objective in the existing task location using the [objective contract](verification.md#objective-contract). Connect the customer outcome to concrete observations, executable checks and required evidence scopes. Identify the riskiest unknown, permitted data/services, any cost or iteration limits, next owner checkpoint and conditions for stopping. Setup has its own objective; suggesting a product task does not authorize implementing it.
+
+The agent chooses an unresolved criterion, implements or investigates, runs the check, reads the result and side effects, corrects failures, and repeats within scope. It must not weaken criteria to make the loop finish. Failed attempts should inform the next attempt. If no new evidence supports another retry, diagnose the blocker or ask the consequential question while advancing independent work. A completed objective ends that loop. Record the next action so another session can resume without asking the owner to reconstruct the conversation.
+
+Inspect actual CI coverage, including skips, and integrate appropriate deterministic checks into existing CI. Establish what is checked locally, in a PR preview, in a staging environment and after release. Follow [auto-merge setup](auto-merge.md) to carry forward or establish the standing merge/release policy. Configure authorized server-side gates when access permits. Missing settings access, proof or authorization remains a named blocker; a workflow file is not proof of branch protection.
+
+Record whether pushing or opening a PR creates a preview and whether merging deploys. Identify deployment integrations outside CI too. Default to a non-draft PR. Enable protected auto-merge only when the repository policy, task proof and enforced gates permit it. Setup does not silently turn on a campaign, create follow-on workspaces/sessions, or start a new feature after merge. Explain [workspace and session lifecycles](worktrees.md#workspaces-sessions-and-deployments) in the project instructions when the host supports them.
+
+## 5. Deliver an honest setup result
+
+Review the adoption diff, document moves/deletions and repaired references. Run checks appropriate to the changed tools/docs and any approved live verification. Open one adoption PR following [delivery](delivery.md). Link to the existing records instead of pasting an entire audit into the handoff.
+
+Report each applicable area separately in the setup record:
+
+| Area | Evidence needed to call it ready |
+| --- | --- |
+| Documentation | Canonical links resolve; current instruction conflicts are reconciled; retained historical material is clearly marked |
+| Product direction | Agreed customer/experience goal and bounded task, with assumptions and open decisions visible |
+| Workspace tools | Bootstrap/doctor actually ran in the named host; persistent host setup registration verified separately |
+| Verification | Each demonstrated scope has commands/actions, observed results and revision; missing scopes stay open |
+| Environments | Test target, dependencies, account/data isolation and deployment identity established for the intended checks |
+| PR delivery | Actual PR access and triggers established; merge/release policy and server-enforced checks confirmed |
+
+Use `verified`, `configured but unverified`, `blocked`, `not run by request`, or `not applicable` with evidence or a reason for each area. Never collapse these into an unsupported "everything is ready". For each gap give the affected capability, next action and who can take it. Prepare everything feasible before handing off a settings or access step, then resume from this record when resolved.
+
+End with what the owner decided, what the agent inferred, what now exists, what was actually verified, the PR and the next simple prompt. Do not call setup fully operational while required areas remain blocked. Commit portable instructions and sanitized evidence summaries; keep secrets, private profiles and raw sensitive artifacts out of Git.
