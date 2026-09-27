@@ -124,6 +124,8 @@ python3 tests/browser_smoke.py
 python3 tests/dashboard_smoke.py
 ```
 
+For this repository, [the main ruleset](.github/rulesets/main.json) requires the GitHub Actions `checks` job against current `main`, PRs and squash merges. An administrator must activate the rule in GitHub; committing its JSON does not activate it. Agents enable auto-merge only after verifying both the task and the active server rules.
+
 Tests cover installation preservation, evidence freshness/scopes, private report serving, real browser actions and dashboard handoff. CI uses disposable local pages, not real competitor accounts. Conductor's external authentication gateway and a real user's login require separate validation. See [browser setup](skills/jfactory/skills/jfactory-ux/references/browser.md) and [cloud handoff](skills/jfactory/skills/jfactory-ux/references/cloud-conductor.md) for current limits.
 
 Instructions guide the agent during a session. They do not schedule background work or guarantee compliance. No customer brief, application tests or production credentials are bundled. The auto-merge procedure requires actual repository settings and enforced checks; the installer itself does not configure them. A component check cannot prove an authenticated application journey. [Verification scopes](skills/jfactory/references/verification.md) define those distinctions. Command receipts check freshness and coverage, not whether a test is meaningful.
