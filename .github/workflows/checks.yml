@@ -15,3 +15,8 @@ jobs:
           python-version: '3.10'
       - run: python3 -m unittest discover -s tests -v
       - run: python3 skills/jstack/scripts/check-upstream.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npx --yes @playwright/cli@0.1.21 install-browser ffmpeg
+      - run: python3 tests/browser_smoke.py
