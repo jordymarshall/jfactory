@@ -6,10 +6,6 @@
 
 jfactory is a set of skills and tools that your coding agent uses inside a project. It helps the agent agree on a clear goal, build or investigate, check what actually happened, and return a result you can understand and review.
 
-This methodology's auto-merge default applies to adopting projects. jfactory's own PRs stay open for owner review, as recorded in its `AGENTS.md`.
-
-The repository, skills and installation paths use **jfactory**. Existing installations under the former `jstack` name migrate with `--update`; see the upgrade instructions below.
-
 It connects four loops:
 
 | Loop | What it does |
@@ -29,35 +25,33 @@ Every handoff should distinguish **what you decided, what the agent inferred, wh
 
 ### Initial setup
 
-**Do this once per project. Your agent performs the technical setup.**
+**Do this once per project. Tell the agent to set up jfactory; it handles the technical steps.**
 
 1. **Open the project in your coding agent**, locally or in a Conductor cloud workspace.
 2. **Paste this prompt:**
 
-   > Set up https://github.com/jordymarshall/jfactory in this repository. Read its README and installer before installing. Preserve our existing instructions and documents. Inspect what actually exists, interview me about unresolved customer and experience goals, and establish one useful first objective. Set up and demonstrate the checks needed to verify it. Return a setup PR with what works, what is missing and how we will use it. Set up protected auto-merge for verified PRs and establish the release policy, including any deployment triggered by merging.
+   > Set up https://github.com/jordymarshall/jfactory for this project. Help me clarify what we are building and establish the product, UX and engineering workflow. Preserve our existing work and configure verified PR delivery with auto-merge.
 
 3. **Answer the product questions.** The agent should recommend options and clarify who the product serves, what the customer needs to accomplish and what is out of scope. Existing settled decisions carry forward.
-4. **Provide the access needed for verification.** That might mean a development account, test data or a running app. For a subscribed reference app, use the browser login process below. Missing access stays an explicit gap.
+4. **Respond when the agent needs access.** It identifies missing accounts, test data or environment setup and guides you through the necessary step. If an app needs you to sign in, it prepares the browser and gives you access to it. You do not need to know which tool or skill to request.
 5. **Review the setup result.** Expect a short `AGENTS.md` linking to the product brief, system map, feature/status map and agent instructions. Detailed facts have one home. Expect at least one demonstrated check of the first runnable journey, or a precise explanation of what blocks it.
 6. **Establish merge gates.** The agent configures authorized required checks and auto-merge, or names the exact access/plan blocker. Verified PRs can merge automatically once the required checks and reviews pass; you may see the final result after merge. Start a fresh agent session after installation and have it confirm the loaded jfactory version, current objective and checks.
 
 An empty repository starts with an agreed first runnable slice. An existing repository starts by reconciling its current code, decisions and checks. Installation alone does not mean the app has been verified.
 
-#### Signing into an app from cloud Conductor
+#### When an app needs you to sign in
 
-You can keep the agent and browser in the cloud. Ask:
+You do not need to ask for a browser or know the setup commands. When your requested work needs a signed-in app, the agent checks for a usable session and initiates the login handoff if necessary.
 
-> Set up a dedicated cloud browser for [app URL] using jfactory. Give me the Conductor preview link so I can sign in myself, then wait for me to hand control back before researching [customer task].
+In cloud Conductor, the agent starts a dedicated browser and gives you an authenticated preview link. It tells you how to select the app and take control. You sign in, including MFA, then hand control back as instructed. The agent checks the resulting session and continues the task. Locally, it prepares a dedicated visible browser instead.
 
-The agent starts that study's browser and interactive dashboard, then shares it through Conductor's authenticated workspace preview. You open the link, select the browser, click inside the page and sign in normally, including MFA. Press Escape to release control and tell the agent you are done. It checks that the expected account is open and continues in the same session.
+Your part is signing in; the agent handles setup, access checks and cleanup. Do not put passwords in chat. Workspace members with preview access can reach the cloud dashboard. A new workspace or expired session may need another login. If the host or app cannot support the handoff, the agent explains the specific blocker and continues work that does not require that access.
 
-You do not send your password in chat. Workspace members with preview access can reach the dashboard, so use a suitable account and workspace. The agent closes the dashboard link after handoff; the browser can remain signed in until its session expires. A new or reset workspace may require login again. Some apps restrict cloud or automated browsers; access must be checked for the actual app.
-
-The agent's exact commands, access checks and cleanup are in [cloud browser handoff](skills/jfactory/skills/jfactory-ux/references/cloud-conductor.md). For local work, you sign into a dedicated visible browser instead.
+The [cloud handoff procedure](skills/jfactory/skills/jfactory-ux/references/cloud-conductor.md) contains the technical steps for the agent.
 
 ### Continued use
 
-**Describe the outcome in ordinary language. You do not need to invoke each skill.**
+**Describe the outcome in ordinary language. You do not need to invoke each skill or tell the agent to set up its tools.** The installed instructions tell it to choose the relevant loops, arrange access, verify its work and deliver a PR. This happens during an active agent session; jfactory does not run a background service.
 
 1. **Give the agent one useful outcome.** For example: “Let someone save a reference and find it again after returning later.” Include constraints you already know.
 2. **Settle consequential choices.** The agent clarifies unresolved customer/experience decisions and records observable completion criteria. A routine fix with settled behavior can proceed directly.
@@ -67,11 +61,11 @@ The agent's exact commands, access checks and cleanup are in [cloud browser hand
 
 Copy this for normal feature work:
 
-> Implement [customer outcome] within [scope]. Clarify consequential choices, verify the agreed behavior through the real application, review the UX, update the existing records and return a PR with a walkthrough. Continue routine work and corrections without waiting for “keep going.” Enable protected auto-merge after verification under our standing repository policy.
+> Let users save a reference and find it again when they return later.
 
 Copy this to learn from another app:
 
-> Study [app URL] for [customer tasks]. Use a dedicated browser and arrange login if needed. Map navigation, objects, journeys, states and motion. Return a visual walkthrough separating observations, inferred intent, recommendations for our customer and unexplored areas. Do not change shared data or implement the findings yet.
+> Study [app URL] to understand how people organize and find saved items, including the interactions and animations. Show me what we can learn for our product.
 
 An in-depth study begins with an inventory, then covers prioritized journeys across successive passes. The coverage map makes remaining work visible. Competitor choices inform proposals; they do not automatically become requirements. Customer usability claims still need customer evidence.
 
