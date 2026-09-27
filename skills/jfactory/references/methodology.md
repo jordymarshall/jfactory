@@ -31,3 +31,18 @@ For example, to let a user save an item and find it later:
 Workflow evals are separate experiments on the agent's methods. Passing an app test does not prove a skill makes good decisions. A skill eval does not prove an app works. Inspect actual tool use and artifacts; compare variants on equivalent isolated tasks where practical. Prefer a deterministic test, type or CI check for repeated mechanical errors.
 
 Keep owner decisions, agent assumptions, implementation, verification and acceptance distinct in existing canonical records. A screenshot cannot prove persistence; a component fixture cannot prove an authenticated app path; an agent's UX critique cannot establish customer usability. The [verification contract](verification.md) defines evidence scopes.
+
+## Relationship to Lauren Tan's published workflow
+
+The [published workshop outline](https://maven.com/p/e23d9c/how-cursor-turned-ai-agents-into-better-engineers) covers verification skills and feature maps, skill maintenance through evals, moving verification into cloud agents, and CI constraints. This comparison uses that outline and the pinned original pstack source; it is not a claim to have audited every statement in the video transcript.
+
+| Published mechanism | jfactory implementation | Evidence boundary |
+| --- | --- | --- |
+| Drive the real app and observe behavior | Original [verification generator](../vendor/pstack/skills/create-verification-skill/SKILL.md), repository-local verifier and scoped evidence | Each repository must demonstrate its own journey and side effects; a generated file is not proof |
+| Keep the feature map and verification instructions current | Original [verification maintenance skill](../vendor/pstack/skills/maintain-verification-skill/SKILL.md), plus updates during affected work | Only exercised journeys gain current runtime evidence |
+| Evaluate the agent's skills separately from the app | Original [eval playbook](../vendor/pstack/skills/poteto-mode/playbooks/eval.md), with isolated tasks, blinded judging and inspection of actual actions/artifacts | Evaluation scenarios are specified; full adoption and cross-model trials have not yet been demonstrated |
+| Increase autonomy with observed evidence and enforceable checks | Bounded objectives, observed checks, protected PR delivery and explicit environment readiness | CI enforces selected tests; it cannot establish customer value or cover untested behavior |
+
+There are two different outer feedback paths. Product/UX feedback asks whether we chose a useful outcome and experience. Workflow evals ask whether the agent followed an effective method and produced correct artifacts. Neither can be substituted for the engineering loop that runs and checks the application.
+
+jfactory adds the product interview, competitor UX research, documentation reconciliation, host setup and update procedures. It does not activate all pstack orchestration or claim to reproduce Cursor's internal tools. Adding instructions is not equivalent to validating them across models. The next confidence-building step is an observed repository adoption and a bounded task, followed by realistic skill evals for material workflow changes. Keep those results separate from packaging and browser-helper tests.
