@@ -45,6 +45,30 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(self.capture().returncode, 0)
         self.assertEqual(self.check().returncode, 0)
 
+    def test_judgment_needs_rubric_independent_judge_and_inspected_artifacts(self):
+        self.task.write_text(json.dumps({'objective': 'Clear saving', 'criteria': [
+            {'id': 'clear', 'expected': 'Saving is obvious', 'required_scopes': ['judgment']}]}))
+        self.assertIn('needs a judgment rubric', self.check().stderr)
+        self.task.write_text(json.dumps({'objective': 'Clear saving', 'criteria': [
+            {'id': 'clear', 'expected': 'Saving is obvious', 'required_scopes': ['judgment'],
+             'rubric': '1 visible without scrolling; 2 at most two actions'}]}))
+        command = self.invoke('run', '--task', str(self.task), '--criterion', 'clear', '--scope', 'judgment',
+                              '--environment', 'x', '--', 'true')
+        self.assertIn('A command cannot prove a judgment', command.stderr)
+        shot = self.root / 'shot.png'
+        shot.write_bytes(b'png')
+
+        def judge(judge='codex/gpt-6-luna', result='pass', inspected='shot.png'):
+            return self.invoke('judge', '--task', str(self.task), '--criterion', 'clear', '--judge', judge,
+                               '--implementer', 'claude/opus-5-5-1m', '--result', result, '--scores', '1 yes; 2 yes',
+                               '--inspected', inspected)
+        self.assertIn('must be independent', judge(judge='claude/sonnet-5-1m').stderr)
+        self.assertIn('is not a file', judge(inspected='missing.png').stderr)
+        self.assertNotEqual(judge(result='fail').returncode, 0)
+        self.assertNotEqual(self.check().returncode, 0)
+        self.assertEqual(judge().returncode, 0, judge().stderr)
+        self.assertEqual(self.check().returncode, 0, self.check().stdout)
+
     def test_new_failure_does_not_reuse_old_success(self):
         self.assertEqual(self.capture().returncode, 0)
         self.assertNotEqual(self.capture(code='raise SystemExit(7)').returncode, 0)

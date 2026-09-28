@@ -98,7 +98,7 @@ OBJECTIVE      One sentence a stranger can execute, with the customer outcome.
 DECISIONS      Owner decisions, recorded assumptions, and questions that are out of scope for this unit.
 SCOPE          Paths this unit may change; paths it must not change; its branch name.
 CONTEXT        Links to the program issue, task record, relevant files and PRs. Paste upstream unit results it depends on.
-ACCEPTANCE     Observable criteria, one per line, with required evidence scopes.
+ACCEPTANCE     Observable criteria, one per line, with required evidence scopes; a judgment criterion carries its rubric.
 VERIFY         Exact commands, application journey and environment; known limits of each.
 SHARED         Accounts, databases, ports, previews and services, and whether this unit may mutate them.
 LIMITS         Time or spend cap; on reaching it, push work, report partial results and stop.

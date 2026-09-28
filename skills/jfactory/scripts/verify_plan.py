@@ -29,7 +29,10 @@ class Refused(Exception):
 
 def run(tool, *args):
     exe = os.environ.get(f'JFACTORY_{tool.upper()}', tool)
-    proc = subprocess.run([exe, *args], capture_output=True, text=True)
+    try:
+        proc = subprocess.run([exe, *args], capture_output=True, text=True)
+    except FileNotFoundError:
+        raise Refused(f'{tool} is not installed or not on PATH')
     if proc.returncode:
         raise Refused(f'{tool} {" ".join(args[:3])} failed: {proc.stderr.strip() or proc.stdout.strip()}')
     return proc.stdout

@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -11,7 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-SCOPES = {'unit', 'component', 'integration', 'application', 'provider', 'deployed', 'static'}
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import verify_plan  # noqa: E402
+
+SCOPES = {'unit', 'component', 'integration', 'application', 'provider', 'deployed', 'static', 'judgment'}
 EVIDENCE = Path('.context/jfactory')
 
 
@@ -72,6 +76,8 @@ def load_task(root, path):
             raise ValueError('Criteria need unique IDs and expected behavior')
         if not isinstance(scopes, list) or not scopes or not set(scopes) <= SCOPES:
             raise ValueError('Each criterion needs valid required_scopes')
+        if 'judgment' in scopes and not str(criterion.get('rubric') or '').strip():
+            raise ValueError(f'Criterion {key} needs a judgment rubric agreed before building')
         seen.add(key)
     return task, sha(p.read_bytes()), str(p.relative_to(root))
 
@@ -83,6 +89,8 @@ def run(args):
     task, task_hash, task_name = load_task(root, args.task)
     if args.criterion not in {c['id'] for c in task['criteria']}:
         raise ValueError('Criterion is absent from the acceptance file')
+    if args.scope == 'judgment':
+        raise ValueError('A command cannot prove a judgment; record the independent score with `judge`')
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
     if not command or args.timeout <= 0:
         raise ValueError('Provide a command and positive timeout')
@@ -140,6 +148,43 @@ def run(args):
     return 0 if record['status'] == 'passed' else (record['exit_code'] or 1)
 
 
+def judge(args):
+    """Record an independent reviewer's rubric score for a judgment criterion."""
+    root = root_dir()
+    task, task_hash, task_name = load_task(root, args.task)
+    criterion = next((c for c in task['criteria'] if c['id'] == args.criterion), None)
+    if not criterion or 'judgment' not in criterion['required_scopes']:
+        raise ValueError('Criterion is absent or does not require judgment')
+    refusal = verify_plan.same_family_refusal(args.judge, args.implementer, False)
+    if refusal:
+        raise ValueError(f'The judge must be independent: {refusal}')
+    inspected = []
+    for item in args.inspected:
+        if re.match(r'^https?://', item):
+            inspected.append({'url': item})
+            continue
+        path = (root / item).resolve()
+        if not path.is_file() or not path.is_relative_to(root):
+            raise ValueError(f'Inspected artifact {item} is not a file in the repository or an http(s) link')
+        inspected.append({'path': item, 'sha256': sha(path.read_bytes())})
+    source = fingerprint(root)
+    directory = root / EVIDENCE / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '-' + uuid4().hex[:8])
+    directory.mkdir(parents=True)
+    log = directory / 'output.log'
+    log.write_text(f'Rubric: {criterion["rubric"]}\nScores: {args.scores}\nResult: {args.result}\n')
+    passed = args.result == 'pass'
+    record = {'schema': 1, 'kind': 'judgment', 'task': task_name, 'task_sha256': task_hash,
+              'criterion': args.criterion, 'scope': 'judgment', 'judge': args.judge,
+              'implementer': args.implementer, 'inspected': inspected, 'scores': args.scores,
+              'source_before': source, 'source_after': source,
+              'revision': git(root, 'rev-parse', 'HEAD').decode().strip(),
+              'status': 'passed' if passed else 'failed', 'exit_code': 0 if passed else 1,
+              'log_sha256': sha(log.read_bytes()), 'finished': datetime.now(timezone.utc).isoformat()}
+    write_receipt(directory, record)
+    print(json.dumps({'receipt': str(directory / 'receipt.json'), 'status': record['status']}))
+    return 0 if passed else 1
+
+
 def check(args):
     root = root_dir()
     task, task_hash, task_name = load_task(root, args.task)
@@ -160,6 +205,8 @@ def check(args):
                 log = path.parent / 'output.log'
                 if receipt.get('task_sha256') != task_hash or receipt.get('source_before') != source or receipt.get('source_after') != source:
                     reason = 'stale'
+                elif scope == 'judgment' and receipt.get('kind') != 'judgment':
+                    reason = 'not an independent judgment'
                 elif receipt.get('status') != 'passed' or receipt.get('exit_code') != 0:
                     reason = receipt.get('status', 'invalid')
                 elif not log.is_file() or sha(log.read_bytes()) != receipt.get('log_sha256'):
@@ -182,11 +229,20 @@ def main():
     capture.add_argument('--environment', required=True)
     capture.add_argument('--timeout', type=float, default=180)
     capture.add_argument('command', nargs=argparse.REMAINDER)
+    score = commands.add_parser('judge', help='Record an independent rubric score for a judgment criterion')
+    score.add_argument('--task', type=Path, required=True)
+    score.add_argument('--criterion', required=True)
+    score.add_argument('--judge', required=True, help='agent/model of the independent reviewer')
+    score.add_argument('--implementer', required=True, help='agent/model that built the change')
+    score.add_argument('--result', choices=['pass', 'fail'], required=True)
+    score.add_argument('--scores', required=True, help='Score per rubric point, e.g. "1 yes; 2 yes; 3 no"')
+    score.add_argument('--inspected', action='append', required=True,
+                       help='Artifact the judge inspected: a repository file or an http(s) link; repeat')
     verify = commands.add_parser('check')
     verify.add_argument('--task', type=Path, required=True)
     args = parser.parse_args()
     try:
-        return run(args) if args.action == 'run' else check(args)
+        return {'run': run, 'judge': judge, 'check': check}[args.action](args)
     except (ValueError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
         print(f'Evidence error: {error}', file=sys.stderr)
         return 1

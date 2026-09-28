@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "static": ["README.md", "LICENSE", "evals/**", ".gitignore"],
+  "static": ["README.md", "LICENSE", "evals/**", ".gitignore", "docs/**"],
   "static_suites": ["checks"],
   "always_suites": ["checks"],
   "full_suites": ["checks"],
@@ -35,13 +35,18 @@
       "recipe": "Run tests/test_usage.py, whose policy test compares usage.POLICY with the models.md table, and tests/test_coord.py, whose roles are built from it; run usage.py --no-probe in a Conductor workspace and compare its readings with the provider's usage page",
       "suites": ["checks"]
     },
+    "setup-check": {
+      "paths": ["skills/jfactory/scripts/setup_check.py", "tests/test_setup_check.py", "skills/jfactory/templates/setup-record.md", "skills/jfactory/templates/objective.md"],
+      "recipe": "Run tests/test_setup_check.py, including its negative controls; run setup_check.py --remote on this repository and on a fresh disposable install",
+      "suites": ["checks"]
+    },
     "ux-helpers": {
       "paths": ["skills/jfactory/skills/jfactory-ux/scripts/**", "tests/test_study.py", "tests/browser_smoke.py", "tests/dashboard_smoke.py"],
       "recipe": "Run tests/test_study.py, tests/browser_smoke.py and tests/dashboard_smoke.py",
       "suites": ["checks"]
     },
     "repository-tests": {
-      "paths": ["tests/test_links.py"],
+      "paths": ["tests/test_links.py", "scripts/render_diagrams.py"],
       "recipe": "Run the full unittest suite and a negative control for the changed test",
       "suites": ["checks"]
     }

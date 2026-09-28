@@ -28,7 +28,7 @@ ACTIVE = {'running'}
 # `done` is for units without their own PR, such as a verifier whose target merged.
 TERMINAL = {'merged', 'done', 'abandoned'}
 VERDICTS = {'verified', 'partially-verified', 'blocked', 'failed'}
-SCOPES = {'unit', 'component', 'integration', 'application', 'provider', 'deployed', 'static'}
+SCOPES = {'unit', 'component', 'integration', 'application', 'provider', 'deployed', 'static', 'judgment'}
 # Auto-merge is allowed only when merging the base cannot release production.
 SAFE_MERGE_TARGETS = {'staging', 'none'}
 MAX_ATTEMPTS = 3

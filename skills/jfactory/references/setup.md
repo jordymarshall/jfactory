@@ -1,5 +1,15 @@
 # Set up or reconcile a repository
 
+Setup has five steps, and each leaves something `scripts/setup_check.py` can check:
+
+1. **Inspect and resume:** install or update the bundle, then read the setup record at `.jfactory/setup.md`.
+2. **Reconcile the foundation:** clean up the docs, put the four entry sections in `AGENTS.md`, and interview the owner. The answers go in the record.
+3. **Prepare tools and verification:** set up bootstrap and doctor, the project verifier, `.jfactory/verification.json` and the `jfactory verified` workflow.
+4. **Establish the loop and delivery:** name the task location, write the next objective, record `merge_deploys`, and set up the GitHub gates.
+5. **Deliver:** run `setup_check.py --remote` and open one adoption PR with the readiness report.
+
+The same steps apply to every repository. Keep project facts in project-owned files, never in the jfactory bundle, and never tailor the bundle to one product.
+
 "Setup jfactory" invokes this whole procedure. Installation only places the tools and entry instructions. Continue through repository adoption in the same session by reading the installed skill directly; reload discovery afterward if the host needs it. Do not stop at a successful copy or require the owner to name the remaining skills.
 
 Setup authorizes the repository's workflow work, including reconciling stale documentation. It does not select a new product direction, build a speculative feature, or grant production access. Carry existing decisions and authorizations forward. Ask only for unresolved intent or access that affects the next action, and continue independent work while waiting.
@@ -8,9 +18,9 @@ Setup authorizes the repository's workflow work, including reconciling stale doc
 
 Inspect applicable instructions, Git state, remote/base, installed version and host capabilities. Follow [worktree coordination](worktrees.md) to preserve ongoing work and identify an existing adoption PR. Reuse that work where possible. Do not overwrite another agent's branch or run parallel adoptions against the same files.
 
-On an explicit setup/update request, compare the installed receipt with the project's chosen upstream revision. Respect an intentional pin. If unpinned, fetch and inspect the current upstream default branch, install the reviewed revision with the supported installer, then read the newly installed instructions. Record the source revision and any local modifications; an unavailable upstream check is a visible gap. Normal feature work uses the installed version and does not silently upgrade it.
+On an explicit setup/update request, compare the installed receipt with the project's chosen upstream revision. Respect an intentional pin. If unpinned, fetch and inspect the current upstream default branch, install the reviewed revision with the supported installer, then read the newly installed instructions and run `setup_check.py`. An update can add setup requirements; the checker reports each one the project does not meet yet, so fix them in the same adoption PR. Record the source revision and any local modifications; an unavailable upstream check is a visible gap. Normal feature work uses the installed version and does not silently upgrade it.
 
-Read the existing setup/task record, if any. Use one durable setup section in the existing engineering runbook or adoption task. If there is no suitable home, create one short setup record and link it from agent instructions. Record current readiness, evidence and remaining actions there. Re-running setup refreshes this record and repairs drift; it does not create a new checklist, roadmap or dated status file.
+Read the existing setup record, if any. It lives at `.jfactory/setup.md`, created from [the template](../templates/setup-record.md) and linked from the agent instructions. If an older adoption kept its record elsewhere, move it there and leave a pointer. The checker reads its readiness table, owner interview and task location, so keep those headings. Record current readiness, evidence and remaining actions there. Re-running setup refreshes this record and repairs drift; it does not create a new checklist, roadmap or dated status file.
 
 Inventory the docs and their callers, implementation entry points, commands, tests, CI/release triggers, safe data environments and host tools. For a large repo, inventory broadly, then read documents that govern current product, architecture, verification and delivery. Mark anything not audited. Do not claim every historical document is current after a sampled review.
 
@@ -29,7 +39,17 @@ Apply [documentation reconciliation](documentation.md), including nested agent i
 
 Use the existing homes for these facts; these are sections, not four mandatory new files. Keep the installation-managed block intact. Avoid maintaining separate competing instructions for different agent hosts; link their entry points to shared project policy where supported.
 
-Explain the main customer journey and largest gaps in plain language. Code establishes what exists, not what the customer should want. Interview the owner deeply where the customer hypothesis or experience goal is unresolved. Cover who is struggling, their present workaround, the desired outcome, the end-to-end experience, what would demonstrate improvement, and what is excluded. Offer a recommended first outcome and alternatives with tradeoffs. Reuse settled answers; mark recommendations as proposals until accepted. Do not delay unrelated tooling or documentation work for a product answer.
+Explain the main customer journey and largest gaps in plain language. Then interview the owner. This step is required: code establishes what exists, not what the customer should want, and a brief the agent writes alone is an assumption. Ask each question in the setup record's interview table:
+
+- who is struggling;
+- what they do today, and what hurts;
+- the outcome they would notice, and how improvement would be measured;
+- what is out of scope;
+- the next bounded objective.
+
+Ask even when you can infer an answer, and offer your inference as the recommended option. Ask a few questions at a time. If the host has a structured question tool, ask one question per call, because some hosts drop answers from multi-question forms. Offer a recommended first outcome and alternatives with tradeoffs. Record each answer in the table with its date. Reuse answers from earlier setups and ask only what is still open.
+
+Product direction stays `blocked` while every question is unanswered, and cannot be `verified` while any is. The checker enforces both. Do not delay unrelated tooling or documentation work for a product answer.
 
 ## 3. Prepare the development and verification tools
 
@@ -47,7 +67,7 @@ An empty repo has no existing journey to prove. Establish the first proposed run
 
 ## 4. Establish the autonomous loop and delivery policy
 
-Put the next bounded objective in the existing task location using the [objective contract](verification.md#objective-contract). Connect the customer outcome to concrete observations, executable checks and required evidence scopes. Identify the riskiest unknown, permitted data/services, any cost or iteration limits, next owner checkpoint and conditions for stopping. Setup has its own objective; suggesting a product task does not authorize implementing it.
+Choose the task location where objectives live, for example the project's GitHub issues with a `jfactory-objective` label, or its existing tracker. Record it as `Task location:` in the setup record and in the agent instructions. Put the next bounded objective there using the [objective contract](verification.md#objective-contract) and [its template](../templates/objective.md), marked proposed until the owner agrees. Connect the customer outcome to concrete observations, executable checks and required evidence scopes. Identify the riskiest unknown, permitted data/services, any cost or iteration limits, next owner checkpoint and conditions for stopping. Setup has its own objective; suggesting a product task does not authorize implementing it.
 
 The agent chooses an unresolved criterion, implements or investigates, runs the check, reads the result and side effects, corrects failures, and repeats within scope. It must not weaken criteria to make the loop finish. Failed attempts should inform the next attempt. If no new evidence supports another retry, diagnose the blocker or ask the consequential question while advancing independent work. A completed objective ends that loop. Record the next action so another session can resume without asking the owner to reconstruct the conversation.
 
@@ -57,7 +77,7 @@ Record whether pushing or opening a PR creates a preview and whether merging dep
 
 ## 5. Deliver an honest setup result
 
-Review the adoption diff, document moves/deletions and repaired references. Run checks appropriate to the changed tools/docs and any approved live verification. Open one adoption PR following [delivery](delivery.md). Link to the existing records instead of pasting an entire audit into the handoff.
+Review the adoption diff, document moves/deletions and repaired references. Run checks appropriate to the changed tools/docs and any approved live verification. Then run `python3 <skill>/scripts/setup_check.py --remote`. It exits 0 when setup is complete and 3 when it is consistent but blocked on named owner steps. Exit 1 means an artifact is missing or the record claims something the evidence does not support. Fix every exit-1 item before opening the PR, and paste the checker's summary into it. Open one adoption PR following [delivery](delivery.md). Link to the existing records instead of pasting an entire audit into the handoff.
 
 Report each applicable area separately in the setup record:
 

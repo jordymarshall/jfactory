@@ -5,8 +5,11 @@ jfactory is a set of instructions and small tools that you install into a softwa
 You stay in charge of three things: what gets built, product decisions the agent can't settle alone, and releasing to production.
 
 - [What you get](#what-you-get)
+- [How it fits together](#how-it-fits-together)
+- [The four loops](#the-four-loops)
 - [Quick start](#quick-start)
 - [How one change flows through jfactory](#how-one-change-flows-through-jfactory)
+- [Where objectives live and what triggers them](#where-objectives-live-and-what-triggers-them)
 - [How verification works](#how-verification-works)
 - [How auto-merge stays safe](#how-auto-merge-stays-safe)
 - [How the agent gets better over time](#how-the-agent-gets-better-over-time)
@@ -25,14 +28,75 @@ You stay in charge of three things: what gets built, product decisions the agent
 - **Safe automatic merging.** Verified PRs merge themselves through GitHub's protected auto-merge. Missing proof keeps the PR open. Merging deploys to staging at most; production only when you ask.
 - **A record you can trust.** jfactory keeps five things apart: what you decided, what the agent assumed, what exists, what was verified, and what you accepted.
 
-It connects four feedback loops. Most changes only need the engineering loop; a substantial new feature uses all four.
+## How it fits together
 
-| Loop | The question it answers |
-| --- | --- |
-| Product | Who is this for, what problem are we solving, and what would success look like? |
-| UX | Can someone understand and complete the task in the running product? What can we learn from relevant apps? |
-| Engineering | Does the implementation behave correctly, including its saved data and side effects? |
-| Workflow improvement | Where did the agent's method fail, and what check or instruction stops that happening again? |
+jfactory has two kinds of parts, and anything important gets both:
+
+- **Instructions the agent reads.** They tell it how to work: agree what "done" means, prove it properly, open a PR. They are guidance. An agent can still miss or misread them.
+- **Checks that enforce the rules.** Scripts and GitHub settings that refuse to proceed unless the rules were actually followed. They work whether or not the agent cooperates.
+
+For example, the instructions say "get a model from another family to verify your work". The scripts refuse a verdict for an old commit or from the same family. When the repository's ruleset requires the `jfactory verified` check (setup asks you to turn this on), GitHub refuses to merge until a valid verdict exists.
+
+![How the components connect: instructions, records and enforcement](docs/diagrams/components.png)
+
+Blue boxes are instructions the agent follows, grey boxes are records in your project, and orange boxes are checks that enforce.
+
+| Component | What it does | Kind |
+| --- | --- | --- |
+| `SKILL.md` and `references/` | The procedures: setup, objectives, verification, delivery, auto-merge, coordination | Instructions |
+| pstack skills | Lauren Tan's engineering techniques, which jfactory calls for specific situations ([table below](#relationship-to-lauren-tans-pstack)) | Instructions |
+| `jfactory-ux` skill | Drives a real browser to review your product or research other apps | Instructions and a helper script |
+| `AGENTS.md` sections | The short entry point: product brief, system map, feature/status map, agent instructions | Record |
+| `.jfactory/setup.md` | Readiness per area, the owner interview answers, open decisions and where objectives live | Record |
+| Objectives | What "done" means for each piece of work, with the evidence each criterion needs | Record |
+| Project verifier | A CLI that drives your real app, plus a feature map of how users reach each feature | Tool |
+| `.jfactory/verification.json` | Maps code paths to features, their checks and CI suites | Record |
+| `setup_check.py` | Fails if setup skipped a step or the setup record claims more than the evidence shows | Enforcement |
+| `verify_plan.py` | Works out what a PR must verify and gates the verdict | Enforcement |
+| GitHub required checks | Once your ruleset requires them, block the merge until CI and `jfactory verified` pass on the latest commit; setup checks they are required | Enforcement |
+| `coord.py` | Runs parallel work and refuses unsafe launches and merges | Enforcement |
+
+## The four loops
+
+Work moves through four connected feedback loops. They are not ceremonies. The agent picks the loops each request needs, records that choice in the objective, and changes it when the work shows it's needed.
+
+![The four loops: product, UX, engineering and workflow improvement](docs/diagrams/loops.png)
+
+| Loop | The question it answers | What it produces | Where it lives |
+| --- | --- | --- | --- |
+| Product | Who is this for, what problem are we solving, what would success look like? | An agreed objective: your decisions, the agent's assumptions, acceptance criteria and non-goals | The setup interview; a product review in each substantial objective |
+| UX (design) | Can someone understand and complete the task in the running product? What can we learn from other apps? | Review findings and `judgment` scores for your app; research findings as proposals | The `jfactory-ux` skill |
+| Engineering | Does the implementation behave correctly, including saved data and side effects? | A PR whose criteria pass at the required evidence scopes | The objective, the implement-check-fix loop, verification |
+| Workflow improvement | Where did the agent's method fail, and what stops it happening again? | A new check, rule or skill, tested with evals | The correction ladder and evals |
+
+### How a request is routed
+
+![How a request is routed through the loops](docs/diagrams/routing.png)
+
+| Request | Product | UX | Engineering |
+| --- | --- | --- | --- |
+| Vague or new idea ("make saving better") | First: clarify customer, problem, outcome | After product | After UX |
+| New user-facing feature | Full review | Design, then review in the running app | Yes |
+| UI, copy or interaction change with settled intent | Skip | Review in the running app, often with a `judgment` rubric | Yes |
+| Bug where the intended behavior is agreed | Skip | Only if users see the fix | Reproduce, then fix |
+| API, CLI, data or backend change | Only if it changes what users can do | Skip; the real interface is tested instead | Yes |
+| Refactor, tech debt, tooling | Skip | Skip | Yes, proving behavior is unchanged |
+| "Study app X" | Receives findings as proposals | Reference research | Only after you agree a proposal |
+
+The same correction a second time also triggers the workflow loop, whatever the request.
+
+The route isn't fixed. These signals change it:
+
+- **Back to product:** an undecided customer choice, a UX review suggesting the outcome won't solve the problem, or scope growing past the objective. The agent asks you, with a recommendation, and keeps doing independent work meanwhile.
+- **Into UX:** a change to something users see, or a `judgment` criterion.
+- **Back to engineering:** a UX review finds friction, or the verifier fails the PR.
+- **Into workflow improvement:** you correct the same thing twice, or the verifier keeps catching the same mistake.
+
+**Inside the product loop,** the agent first reads what's already settled (the brief, the setup interview, earlier objectives, the code) so it doesn't re-ask. It then asks only the open questions, each with a recommended answer and its trade-off, and records the result in the objective. Work that depends on an answer waits; everything else continues.
+
+**Inside the UX loop,** an *experience review* drives the changed journey in your running app at the agreed screen sizes. It covers empty, loading, error and success states, keyboard and focus, and motion, and scores any rubric. Friction goes back to engineering until the journey passes. *Reference research* studies another app systematically and returns observations, inferences and recommendations kept apart. The recommendations are proposals for you, never automatic requirements.
+
+Full detail: [routing and the loops](skills/jfactory/references/methodology.md#route-each-request-through-the-right-loops).
 
 ## Quick start
 
@@ -44,31 +108,20 @@ That one prompt runs the whole adoption. You don't need to call individual skill
 
 1. **Installs the bundle** into your project (for example `.agents/skills/jfactory/`) and adds a short managed section to `AGENTS.md` (or `CLAUDE.md`) that points the agent at it. It never overwrites your own text.
 2. **Cleans up your docs.** It merges duplicate plans and status files, fixes stale commands and conflicting instructions, and keeps unique decisions and history. `AGENTS.md` ends up with four short sections: product brief, system map, feature/status map and agent instructions.
-3. **Asks about the product.** It reads the code first, then asks only what it can't work out: who the customer is, what they struggle with today, what success looks like. It proposes one bounded next outcome.
+3. **Interviews you about the product.** It reads the code first, then asks every interview question: who struggles, what they do today, what success looks like, what's out of scope, and the next objective. It asks even when it can guess, and offers its guess as the recommended answer, because code shows what exists, not what customers need. Your answers go into `.jfactory/setup.md`. Until you answer, product direction stays `blocked`.
 4. **Prepares verification.** It reuses your tests, repairs setup and diagnostic commands, and creates a project verifier that can launch and drive your real app. It then writes the verification map described below. If your app needs a login, it hands you a browser to sign in yourself. Never paste passwords into chat.
-5. **Sets up delivery.** It adds the `jfactory verified` GitHub check, confirms CI and branch protection, checks what merging deploys, and opens one adoption PR.
+5. **Sets up delivery.** It adds the `jfactory verified` GitHub check, confirms CI and branch protection, records what merging deploys, and names where objectives will live (the task location).
+6. **Checks its own setup.** It runs `setup_check.py --remote`, which fails if a step was skipped or the record claims more than the evidence shows. Then it opens one adoption PR with the result.
 
-You finish with a readiness report. Each area (documentation, product direction, tools, verification, environments, delivery) is marked `verified`, `configured but unverified`, `blocked`, `not run by request` or `not applicable`, with the evidence or the exact step still needed from you. Installing files alone never counts as "ready".
+You finish with a readiness report in `.jfactory/setup.md`. Each area (documentation, product direction, tools, verification, environments, delivery) is marked `verified`, `configured but unverified`, `blocked`, `not run by request` or `not applicable`, with the evidence or the exact step still needed from you. Installing files alone never counts as "ready".
 
-Already set up? Just say **"Setup jfactory"** to re-check and repair drift. It updates the same readiness record instead of creating a new one.
+Already set up? Just say **"Setup jfactory"** to re-check and repair drift. It updates the same record instead of creating a new one. Updating works the same way: after installing the newer version, the agent reruns the checker. Any new setup requirement shows up as a failure and is fixed in the same PR, so an updated project doesn't silently miss a new step.
 
 ## How one change flows through jfactory
 
 Say you ask: *"Let users save a reference and find it again later."*
 
-```mermaid
-flowchart TD
-    A[You describe an outcome] --> B[Agent agrees the objective and how each criterion will be proven]
-    B --> C[Implement the smallest next step]
-    C --> D[Run the check on the real app and read the result]
-    D -->|Fails| C
-    D -->|All criteria pass| E[Open a PR with the evidence]
-    E --> F[Verifier from another model family re-checks the PR at its latest commit]
-    F -->|Finds a problem| C
-    F -->|Verified| G[Required checks pass, so protected auto-merge lands it]
-    G --> H[Merge deploys to staging at most]
-    H --> I[You try it and give feedback, which may start the next objective]
-```
+![How one change flows through jfactory](docs/diagrams/change-flow.png)
 
 1. **Agree the objective.** Before building anything substantial, the agent writes down the outcome, your decisions versus its own assumptions, what's out of scope, and observable acceptance criteria. For example: *a signed-in user saves an item, still sees it after reloading and in a new session, and gets a recoverable error if saving fails.* Each criterion says what evidence proves it, such as a unit test or a run through the real app (the evidence types are listed under verification below). A missing test is work to do, not a reason to drop the criterion.
 2. **Loop until it passes.** The agent picks an unmet criterion, makes the smallest change, runs the real check, reads the result and side effects, and fixes what failed. It repeats without prompting. It never weakens a criterion to finish. If it's stuck without new evidence, it changes approach or names the concrete blocker, and keeps working on anything independent.
@@ -78,6 +131,21 @@ flowchart TD
 6. **Handoff.** The final message gives the outcome, what changed and how to try it, the actual checks and results, the PR link and commit, and remaining gaps. Passing tests is not the same as you accepting the result. "Saving works, but finding it takes too many steps" starts the next round.
 
 The agent stops at the agreed objective. It proposes the next one instead of quietly expanding scope.
+
+## Where objectives live and what triggers them
+
+**What triggers one.** Installing jfactory adds a short managed block to `AGENTS.md` telling the agent to use jfactory for engineering work. When you ask for a change, the agent loads `SKILL.md`, which says that every request that changes behavior starts from an objective. You don't have to ask for one.
+
+**Where it's written.** Each objective also records its route through the loops. During setup you choose the task location, for example GitHub issues labelled `jfactory-objective` or your existing tracker. It's recorded in `.jfactory/setup.md`. Each objective is written there using [the objective template](skills/jfactory/templates/objective.md) and updated as work progresses. A small fix can use a few lines in the PR description instead. A resumed session reads the objective rather than asking you to repeat yourself.
+
+**When it asks you.** Only when a consequential choice is still open, such as who the feature is for, what trade-off to make, or what's out of scope. Each question comes with a recommended answer. Routine fixes with settled behavior go straight ahead. Before a substantial feature, the agent reviews the customer outcome with you in depth.
+
+**What's enforced, and what isn't.**
+
+- Writing the objective and checking each criterion are instructions: the verifier is told to check every criterion and list the results in its verdict.
+- The tools enforce the mechanics around the verdict: that it's for the PR's latest commit, from a different model family, and covers every affected feature. They don't read the criteria themselves.
+- For parallel work, `coord.py` also refuses a worker brief without acceptance criteria, and a verdict that lacks the unit's required evidence scopes.
+- If you record criteria in a machine-readable acceptance file, `evidence.py` can also check that each one has fresh, passing evidence.
 
 ## How verification works
 
@@ -92,8 +160,11 @@ The agent stops at the agreed objective. It proposes the next one instead of qui
 | `provider` | The real external service (payments, email and so on) behaves as expected |
 | `deployed` | The behavior on a specific deployed version and environment |
 | `static` | Documentation, types, lint or build checks |
+| `judgment` | A reviewer from another model family scored the result against a rubric you agreed before building |
 
 These aren't a ladder: passing one doesn't imply another. A success message on screen doesn't prove the data was saved.
+
+**Fuzzy criteria are allowed.** Some things no test can decide, such as "a first-time user finds the save control quickly" or "the error explains how to recover". For these, the objective includes a rubric written before building: observable points, what the judge inspects (screenshots, a walkthrough video, the running preview) and a pass mark. The independent verifier scores it at the PR's latest commit and names what it looked at. A passing judgment counts toward `jfactory verified` and auto-merge like any other check. When criteria live in an acceptance file, `evidence.py judge` records the score, and it refuses a judge from the implementer's model family. The handoff labels it as an assessment, and it never replaces a real test where one is possible or your own acceptance.
 
 **The project verifier.** Setup gives your project its own verification skill with two parts. The first is a small CLI that launches and drives your real app and captures proof, so every session runs the same commands instead of writing new scripts. The second is a feature map: what each feature is, and how a user reaches it (navigation, keyboard shortcuts, selectors). Together they let the agent check its own work and reproduce vague bug reports.
 
@@ -152,7 +223,9 @@ If settings access is missing, the agent leaves the PR open and tells you the ex
 
 **Earn autonomy with evidence.** Trust in an agent comes from watching it work. For a new kind of task, watch what the agent actually does, correct it, and turn the correction into a check or skill. Once it does that task correctly without help, let it run unattended, then several at once. Protected auto-merge can be on from the start, because it only ever lands verified work to staging at most.
 
-**The correction ladder.** Whenever you correct the agent, fix the problem at the strongest level that fits. The strongest levels enforce themselves; the weakest rely on someone remembering.
+**The correction ladder.** Whenever you correct the agent, or it makes the same mistake twice, fix the problem at the strongest level that fits, not just in the current change. The strongest levels enforce themselves; the weakest rely on someone remembering.
+
+![The correction ladder: where each fix belongs](docs/diagrams/correction-ladder.png)
 
 | Level | Examples | Enforced by |
 | --- | --- | --- |
@@ -163,6 +236,8 @@ If settings access is missing, the agent leaves the PR open and tells you the ex
 | 5. Style guide | Written conventions | A human reviewer noticing |
 
 Agents copy the patterns they see, so a workaround left in the code, or a comment that turns one reviewer's remark into a "rule", spreads. Keep the codebase in a state you'd be happy to see copied. Feedback on one PR applies to that PR unless you say it's a standing rule.
+
+This is how the workflow-improvement loop runs in practice. It lives in `SKILL.md` ("Improve the workflow from failures") and in [the methodology](skills/jfactory/references/methodology.md#the-correction-ladder). It is itself an instruction: nothing checks that the agent climbed the ladder. When it does, though, the result is a real check that keeps working. jfactory's own setup checker came from this: setup once skipped the owner interview, so that step is now checked.
 
 Changes to jfactory's own instructions should be tested the same way Lauren Tan tests pstack: blinded trials on realistic tasks across several AI models, judged by a different model family. The cases are in [evals/scenarios.md](evals/scenarios.md). These trials haven't been run yet; see [Limits](#limits).
 
@@ -186,29 +261,49 @@ In [Conductor](https://www.conductor.build), ask one agent to coordinate:
 
 > Use jfactory to deliver [feature A], [feature B] and [feature C] in parallel. Clarify each outcome and its acceptance criteria with me first, then run at most three workspaces at a time.
 
-What happens:
+### Who does what
 
-1. **Agree up front.** The coordinator settles outcomes, acceptance criteria and product questions with you before any work starts, because a running worker can't stop to interview you.
-2. **One GitHub issue as the dashboard.** It opens a program issue listing every unit of work, its state, PR, verdict and open decisions.
-3. **One workspace per unit.** Each unit gets its own Conductor workspace, branch and PR, launched with a complete written brief. Separate workspaces matter: two agents in one checkout would overwrite each other's files.
-4. **Workers report; the coordinator checks.** Workers post their status and PRs to the issue. The coordinator treats each report as a claim and checks it against the actual PR. A verify unit from another model family checks each PR.
-5. **Merge one at a time.** Verified PRs merge through protected auto-merge. After each merge, overlapping branches are updated and re-checked.
-6. **Clean up.** Finished workspaces are archived automatically and the program's sidebar section is removed when the program closes.
+| Role | Who | Does | Never does |
+| --- | --- | --- | --- |
+| Owner | You | Agrees outcomes and answers decisions; can pause everything | Needs to babysit workers |
+| Coordinator | The agent you asked | Plans units, writes briefs, launches and monitors workers, launches verifiers, records verdicts, merges | Edits a worker's code or merges without a verified verdict |
+| Worker | One agent per unit, in its own Conductor workspace | Runs the normal jfactory loop for its unit and opens one PR | Touches other units' branches, merges or launches workers |
+| Verifier | One per PR, from a different model family | Re-runs the checks and reviews the PR at its latest commit, then recommends a verdict | Changes product code |
 
-A bundled tool, `coord.py`, enforces the rules mechanically. It refuses:
+### How a program runs
 
-- a launch beyond the concurrency limit, or with an incomplete brief, an unmerged dependency, an open decision or an unavailable model;
-- a fourth attempt at the same unit;
-- a merge without a verified verdict at the PR's latest commit;
-- a merge if merging would deploy to production.
+![How the coordinator, workers, verifiers and GitHub interact](docs/diagrams/coordination.png)
 
-**Your controls:**
+1. **Frame it with you.** The coordinator agrees each unit's outcome, acceptance criteria, required evidence, dependencies and the files it owns. Product questions are settled now, because a running worker can't stop to interview you; any left open are recorded as decisions that block that unit. If one session could do the work, it says so and doesn't start parallel workspaces.
+2. **Settle uncertainty before splitting.** An open design question gets a throwaway prototype first. A shared API or schema lands as its own first unit, and dependents wait for it or stack on it.
+3. **One dashboard.** `coord.py init` opens a GitHub program issue listing every unit's state, model, PR, verdict and open decisions. Only the coordinator edits it; workers post report comments.
+4. **A complete brief per unit.** The brief is the worker's whole context: objective, decisions, scope, context, acceptance, verification steps, shared resources, limits, forbidden actions, delivery and reporting. `coord.py` refuses a brief with a missing field.
+5. **Launch in isolation.** Each unit gets its own Conductor workspace, branch and PR. The model comes from the unit's role and your remaining usage (see the next section). A new kind of unit is piloted alone first. Free slots are refilled as units finish, up to the concurrency limit (default three).
+6. **Monitor by evidence.** The coordinator runs `coord.py sync` at natural points. It folds in worker reports, reads the real PR state, voids verdicts when a PR gets a new commit, archives finished workspaces and lists what's ready. It doesn't ping workers to ask how they're doing, because a message restarts their turn.
+7. **Verify independently.** Once a worker's PR is in review, a verify unit from the other model family checks out that PR and re-runs its checks. It recommends a verdict. The coordinator inspects the evidence and records it with `coord.py verdict`, which also posts the `jfactory verified` verdict.
+8. **Merge one at a time.** `coord.py merge` queues protected auto-merge pinned to the verified commit. Overlapping units merge one at a time, and dependent workers update from main and re-check after each merge.
+9. **Close.** Once every unit is merged, done or abandoned, `coord.py close` closes the issue, archives the program's workspaces and removes its sidebar section.
 
-- Answer decisions in chat or on the issue.
-- Open any worker's workspace to give it feedback directly.
-- Add the `jfactory-hold` label to the issue to stop new launches and tell workers to pause safely. Remove it to resume.
+### Guards `coord.py` enforces
 
-Nothing runs in the background. Coordination happens only while an agent is using it, and parallel workspaces multiply cost, so jfactory starts them only when you ask. See the [coordination procedure](skills/jfactory/references/coordination.md).
+| Refuses to | Unless |
+| --- | --- |
+| Launch | Under the concurrency limit, no hold label, dependencies merged (or stacked deliberately), no open decision for the unit, a complete brief, an available model, and fewer than 3 previous attempts |
+| Launch a verifier | It's from a different model family than the unit's implementer |
+| Record a verified verdict | It's for the PR's current commit, covers the unit's required evidence scopes, and comes from another family |
+| Merge | A verified verdict exists at the current commit, no decision is open, and merging deploys to staging or nothing |
+| Close | Every unit is merged, done or abandoned |
+
+### Your controls and recovery
+
+- **Decisions:** answer in the coordinator's chat or on the issue.
+- **Direct feedback:** open any worker's workspace and message it. It applies the feedback within its unit and reports it, so the coordinator can pass it on.
+- **Pause everything:** add the `jfactory-hold` label to the issue. New launches stop, and each worker is told at its next report to stop safely and push. Remove the label to resume.
+- **A stalled worker:** relaunched once with a narrower brief or another model. After three attempts the unit is abandoned and replanned.
+- **A worker that hit a usage limit** hasn't failed. It continues on the fallback model without using up an attempt.
+- **If the coordinator's session ends:** a new one runs `coord.py list` and `sync`, and resumes from the issue without relaunching finished units.
+
+Nothing runs in the background. Coordination happens only while an agent is using it, and parallel workspaces multiply cost, so jfactory starts them only when you ask. Full procedure: [coordination](skills/jfactory/references/coordination.md).
 
 ## Which AI model does what
 
@@ -229,6 +324,7 @@ A verifier always comes from a different family than the implementer, so Codex-w
 | --- | --- |
 | `.agents/skills/jfactory/` (or `.claude/…`, `.cursor/…`) | The installed bundle: instructions, procedures, tools and the pinned pstack skills. Don't edit it; the installer refuses to update over local edits. |
 | Managed block in `AGENTS.md` or `CLAUDE.md` | A short pointer telling the agent to use jfactory. Your surrounding text is preserved. |
+| `.jfactory/setup.md` | The setup record: readiness per area, owner interview answers, open decisions and the task location. |
 | `.jfactory/verification.json` | The verification map: paths to features, recipes and CI suites. |
 | `.jfactory/coordination.json` | What merging deploys (`staging`, `none` or `production`) and any model-policy overrides. |
 | `.github/workflows/jfactory-verified.yml` | The workflow behind the `jfactory verified` check. |
@@ -239,12 +335,14 @@ The tools inside the bundle:
 
 | Tool | Purpose |
 | --- | --- |
+| `setup_check.py` | Checks that setup is complete and that the setup record's claims match the evidence; `--remote` also checks the GitHub gates |
 | `verify_plan.py` | Works out what a PR must verify, posts verdicts and computes the `jfactory verified` status |
 | `coord.py` | Runs parallel programs: issue dashboard, launches, reports, verdicts, merges and clean-up |
 | `usage.py` | Reads remaining Claude and Codex usage and picks the model for each tier |
 | `evidence.py` | Optionally records real check runs and rejects failed, stale or wrong-scope evidence |
 | `check-upstream.py` | Confirms the vendored pstack files match their pinned upstream bytes |
 | `jfactory-ux/scripts/study.py` | Drives an isolated browser for UX research and sign-in handoff, and renders walkthroughs |
+| `templates/` | The setup record, objective, verification map example and `jfactory verified` workflow |
 
 ## Limits
 
@@ -257,20 +355,34 @@ The tools inside the bundle:
 
 ## Relationship to Lauren Tan's pstack
 
-jfactory is built around selected skills from Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/ecc249f1e306fc64ddf83c7bed16cacf7c2239db/pstack), vendored unchanged and pinned. These include creating and maintaining real-app verification skills, investigating code, adversarial review, TDD, and blinded evaluation of agent workflows.
+jfactory is built around selected skills from Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/ecc249f1e306fc64ddf83c7bed16cacf7c2239db/pstack). They're vendored unchanged in `skills/jfactory/vendor/pstack/` and pinned to one upstream commit; `check-upstream.py` confirms the bytes still match.
 
-jfactory's parallel coordination adapts her prototype, multi-PR planning and orchestration playbooks to Conductor workspaces and GitHub. From her September 2026 talks it takes earning autonomy step by step and the correction ladder.
+The agent doesn't load them on its own. jfactory's [routing table](skills/jfactory/references/pstack.md) tells it which one to read for each situation, and jfactory's rules (repository permissions, the objective, PR delivery) take precedence over anything in them:
 
-On top of those, jfactory adds:
+| Situation | pstack skill |
+| --- | --- |
+| Build or repair the project verifier and feature map | `create-verification-skill`, `maintain-verification-skill` |
+| Check completed work against the real thing | `principle-prove-it-works` |
+| Understand how code works, or why it was built that way | `how`, `why`, `teach` |
+| Fix a bug that has a cheap reproduction | `tdd` |
+| Review a change adversarially | `interrogate` |
+| Settle a design question before building | `prototype`, `architect` |
+| Split large work into ordered PRs | multi-PR plan, `principle-sequence-verifiable-units` |
+| Run several objectives in parallel | `orchestrate`, adapted into jfactory's `coord.py` |
+| Drive one objective to done without stopping | autonomous run |
+| Resume or pause another session's work | session pickup, pause safely |
+| Test a change to instructions or skills | the eval playbook, `arena` |
+
+In short, pstack supplies the engineering techniques. jfactory adds:
 
 - product alignment with the owner;
-- competitor UX research;
+- UX research;
 - documentation clean-up;
 - change-aware verification with an independent verdict;
 - staging-only auto-merge;
-- portable repository setup.
+- portable setup that's checked.
 
-See [the methodology and its evidence limits](skills/jfactory/references/methodology.md).
+From her September 2026 talks it also takes earning autonomy step by step, and the correction ladder. See [the methodology and its evidence limits](skills/jfactory/references/methodology.md).
 
 <details>
 <summary>Manual installation and updates</summary>
@@ -310,7 +422,10 @@ python3 skills/jfactory/scripts/check-upstream.py
 npx --yes @playwright/cli@0.1.21 install-browser ffmpeg
 python3 tests/browser_smoke.py
 python3 tests/dashboard_smoke.py
+python3 skills/jfactory/scripts/setup_check.py --remote   # this repository's own setup
 ```
+
+The README's diagrams are images rendered from `docs/diagrams/*.mmd`, because GitHub's mobile app doesn't render Mermaid. After editing a source, run `python3 scripts/render_diagrams.py` (needs Node and Chrome) and commit the source, the image and `manifest.json`. `tests/test_links.py` fails if they drift.
 
 This repository uses jfactory on itself. [AGENTS.md](AGENTS.md) holds its brief and agent instructions. [.jfactory/setup.md](.jfactory/setup.md) holds its current readiness and open decisions.
 
