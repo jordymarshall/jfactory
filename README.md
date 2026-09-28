@@ -188,8 +188,17 @@ Running `verify_plan.py plan` on a PR decides what it needs:
 | The PR changes | What's required |
 | --- | --- |
 | Only files marked static (such as `docs/**`) | Static checks only; no independent verifier |
-| Files belonging to known features | Those features' recipes and CI suites, plus a verifier |
+| Only low-risk features (`"verify": "ci"`) | Their CI suites; no independent verifier |
+| Any high-risk feature (`"verify": "independent"`, the default) | Its recipe and CI suites, plus a verdict from another model family |
 | Any file the map doesn't cover, or the gate itself (`.jfactory/`, `.github/workflows/`, `.github/rulesets/`) | Everything: full verification of every feature |
+
+**Verification by risk.** Each feature area in the map has a risk level, which you confirm at setup.
+
+- **High-risk areas get a second-model check:** anything users see (product and UX), stored data, sign-in and permissions, payments, migrations, security, agent instructions, and the scripts that enforce the rules.
+- **Low-risk areas need only passing CI:** internal refactors covered by tests, test helpers, and small internal tools.
+- **Mixed changes take the stricter level.**
+- **Nobody can quietly downgrade an area.** The level is read from the main branch, so a PR can't lower its own. Changing the map itself always needs full verification.
+- **When unsure, the level is high-risk.**
 
 Unknown files fall back to full verification, so a gap in the map is always safe. Agent instructions, skills and recipes are never static, even though they're Markdown, because they change how the agent behaves.
 
@@ -199,7 +208,7 @@ Unknown files fall back to full verification, so a gap in the map is always safe
 - one that skips a required feature;
 - one from the same model family as the implementer, unless you've recorded `"allow_same_family": true` as a deliberate decision.
 
-**The `jfactory verified` check.** A GitHub workflow (`.github/workflows/jfactory-verified.yml`) re-evaluates on every push and comment and sets a commit status. It passes only for a verdict at the current commit that covers the plan, posted by a repository owner, member or collaborator. It runs from your base branch and never executes code from the PR, so a PR can't edit its own gate. Any new push resets it.
+**The `jfactory verified` check.** A GitHub workflow (`.github/workflows/jfactory-verified.yml`) re-evaluates on every push and comment and sets a commit status. It passes on its own for static and low-risk changes. Otherwise it passes only for a verdict at the current commit that covers the plan's high-risk features, posted by a repository owner, member or collaborator. It runs from your base branch and never executes code from the PR, so a PR can't edit its own gate. Any new push resets it.
 
 The tools enforce coverage and freshness. They can't judge whether a test really proves the behavior, so the verifier and reviewers still read the evidence.
 

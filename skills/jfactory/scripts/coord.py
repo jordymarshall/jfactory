@@ -649,8 +649,15 @@ def cmd_merge(args):
     state = load(args.repo, args.program)
     refresh_prs(state, args.repo)
     unit = unit_of(state, args.unit)
+    basis = 'verified verdict'
     if verdict_at_head(state, unit) != 'verified':
-        raise Refused(f'{args.unit} has no verified verdict at its current head {(unit.get("head") or "")[:7]}')
+        # Low-risk changes (every affected feature is `verify: ci`) need passing CI, not an independent verdict.
+        # The plan reads the base branch's mapping, so a PR cannot lower its own risk level.
+        pr = verify_plan.pr_info(args.repo, unit['pr']) if unit.get('pr') else None
+        plan = verify_plan.plan(pr['files'], verify_plan.load_config(f"origin/{state['base']}")) if pr else None
+        if not plan or plan['needs_verifier'] or pr['headRefOid'] != unit.get('head'):
+            raise Refused(f'{args.unit} has no verified verdict at its current head {(unit.get("head") or "")[:7]}')
+        basis = f"low-risk plan ({plan['level']}); GitHub's required CI still applies"
     gates = [g['id'] for g in state['gates'] if g['status'] == 'open' and args.unit in g['units']]
     if gates:
         raise Refused(f'Open owner decisions block merge: {", ".join(gates)}')
@@ -660,7 +667,7 @@ def cmd_merge(args):
                       '"merge_deploys" in .jfactory/coordination.json and start a new program')
     gh(args.repo, 'pr', 'merge', str(unit['pr']), '--auto', '--squash', '--match-head-commit', unit['head'])
     comment(args.repo, args.program, f"Queued protected auto-merge for `{args.unit}` (#{unit['pr']}) at "
-                                     f"{unit['head'][:7]}.")
+                                     f"{unit['head'][:7]} on a {basis}.")
     save(args.repo, args.program, state)
     print(f'Queued auto-merge for #{unit["pr"]} at {unit["head"][:7]}')
 

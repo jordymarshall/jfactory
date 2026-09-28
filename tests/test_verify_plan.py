@@ -21,6 +21,8 @@ CONFIG = {
         'briefs': {'paths': ['app/briefs/**'], 'recipe': 'verify/briefs.md', 'suites': ['browser']},
         'auth': {'paths': ['app/auth.ts'], 'suites': ['browser']},
         'cli': {'paths': ['cli/**'], 'suites': ['cli']},
+        'tests': {'paths': ['tests/**'], 'suites': ['unit'], 'verify': 'ci'},
+        'tooling': {'paths': ['tools/**'], 'suites': ['unit'], 'verify': 'ci'},
     },
 }
 HEAD = 'a' * 40
@@ -36,8 +38,30 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(docs['suites'], ['static', 'unit'])
         unknown = verify_plan.plan(['cli/run.py', 'lib/new.py'], CONFIG)
         self.assertTrue(unknown['full'])
-        self.assertEqual(unknown['features'], ['auth', 'briefs', 'cli'])
+        self.assertEqual(unknown['features'], ['auth', 'briefs', 'cli', 'tests', 'tooling'])
         self.assertEqual(unknown['unmapped'], ['lib/new.py'])
+
+    def test_risk_levels_decide_whether_a_verifier_is_needed(self):
+        low = verify_plan.plan(['tests/test_a.py', 'tools/x.py', 'docs/a.md'], CONFIG)
+        self.assertEqual((low['level'], low['needs_verifier']), ('ci', False))
+        mixed = verify_plan.plan(['tests/test_a.py', 'app/auth.ts'], CONFIG)
+        self.assertEqual((mixed['level'], mixed['needs_verifier'], verify_plan.required_features(mixed)),
+                         ('independent', True, ['auth']))
+        unknown = verify_plan.plan(['tests/test_a.py', 'lib/new.py'], CONFIG)
+        self.assertTrue(unknown['needs_verifier'])
+        self.assertIn('tests', verify_plan.required_features(unknown))
+        gate = verify_plan.plan(['.jfactory/verification.json'], CONFIG)
+        self.assertEqual(gate['level'], 'independent')
+        self.assertEqual(verify_plan.plan(['docs/a.md'], CONFIG)['level'], 'static')
+
+    def test_unknown_risk_level_is_refused(self):
+        bad = {'features': {'x': {'paths': ['x/**'], 'verify': 'none'}}}
+        (Path(tempfile.mkdtemp()) / '.jfactory').mkdir()
+        root = Path(tempfile.mkdtemp())
+        (root / '.jfactory').mkdir()
+        (root / '.jfactory' / 'verification.json').write_text(json.dumps(bad))
+        with self.assertRaises(verify_plan.Refused):
+            verify_plan.load_config(root=root)
 
     def test_gate_files_always_need_full_verification(self):
         for path in ['.jfactory/verification.json', '.github/workflows/jfactory-verified.yml',
@@ -130,6 +154,14 @@ class GateTest(unittest.TestCase):
         self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
         self.write(files=['app/briefs/save.ts'], config=CONFIG)
         self.assertIn('same model family', self.run_script('check', '--pr', '5', code=1))
+
+    def test_low_risk_change_passes_without_verifier_but_mixed_does_not(self):
+        self.write(files=['tests/test_a.py'])
+        self.assertIn('success: Low-risk change', self.run_script('check', '--pr', '5'))
+        self.write(files=['tests/test_a.py', 'app/briefs/save.ts'])
+        self.assertIn('No verdict', self.run_script('check', '--pr', '5', code=1))
+        self.verdict('--features', 'briefs')
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
 
     def test_static_only_passes_without_verifier(self):
         self.write(files=['docs/guide.md'])

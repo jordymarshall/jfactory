@@ -21,6 +21,8 @@ VERDICT_RE = re.compile(r'<!-- jfactory-verdict (\{.*?\}) -->', re.S)
 # Changes to the gate's own inputs can never be scoped down.
 GATE_PATHS = ['.jfactory/**', '.github/workflows/**', '.github/rulesets/**']
 TRUSTED = {'OWNER', 'MEMBER', 'COLLABORATOR'}
+# Each feature declares how much proof its changes need. Unknown values fall back to the strictest level.
+LEVELS = ('independent', 'ci')
 
 
 class Refused(Exception):
@@ -71,6 +73,8 @@ def load_config(ref=None, root=None):
     for fid, feature in config.get('features', {}).items():
         if not feature.get('paths'):
             raise Refused(f'Feature {fid} in {CONFIG} needs paths')
+        if feature.get('verify', 'independent') not in LEVELS:
+            raise Refused(f'Feature {fid} in {CONFIG} has verify "{feature["verify"]}"; use independent or ci')
     return config
 
 
@@ -99,15 +103,34 @@ def plan(files, config):
     static_only = bool(files) and not features and not full
     if static_only:
         suites |= set(config.get('static_suites', []))
+    # A change needs an independent verdict unless every affected feature is low risk (`ci`).
+    # Unmapped files and gate changes are `full`, which always needs one.
+    independent = sorted(f for f in features if all_features[f].get('verify', 'independent') != 'ci')
+    if full or independent:
+        level = 'independent'
+    elif features:
+        level = 'ci'
+    else:
+        level = 'static'
+    needs = level == 'independent' or (level == 'static' and config.get('verify_static', False))
     return {'files': len(files), 'features': sorted(features), 'unmapped': unmapped, 'full': full,
-            'static_only': static_only, 'suites': sorted(suites),
-            'needs_verifier': not static_only or config.get('verify_static', False),
+            'static_only': static_only, 'suites': sorted(suites), 'level': level,
+            'independent_features': independent,
+            'needs_verifier': needs,
             'recipes': {fid: all_features[fid].get('recipe', '') for fid in sorted(features)}}
+
+
+def required_features(result):
+    """Features a verdict must cover: all of them for full verification, else the high-risk ones."""
+    return result['features'] if result['full'] else result['independent_features']
 
 
 def render_plan(result):
     if result['static_only']:
         head = 'Static-only change: CI static checks are required; no independent verifier is needed.'
+    elif result['level'] == 'ci':
+        head = (f"CI-only change: {len(result['features'])} low-risk feature(s); passing CI is required and no "
+                'independent verifier is needed.')
     elif result['full']:
         head = (f"Full verification required: {len(result['unmapped'])} changed file(s) are not mapped to a "
                 'feature or touch the gate itself.')
@@ -166,6 +189,8 @@ def evaluate(pr, config):
     """Return (state, description) for the jfactory verified status at the PR head."""
     result = plan(pr['files'], config)
     if not result['needs_verifier']:
+        if result['level'] == 'ci':
+            return 'success', 'Low-risk change (verify: ci); required CI checks apply'
         return 'success', 'Static-only change; CI static checks apply'
     head = pr['headRefOid']
     verdicts = []
@@ -187,7 +212,7 @@ def evaluate(pr, config):
         return 'failure', f"Latest verdict at {head[:7]} is {verdict.get('verdict')}"
     if result['full'] and not verdict.get('full'):
         return 'failure', 'Full verification required; verdict is not full'
-    missing = [f for f in result['features'] if f not in verdict.get('features', [])]
+    missing = [f for f in required_features(result) if f not in verdict.get('features', [])]
     if missing and not verdict.get('full'):
         return 'failure', 'Verdict misses features: ' + ', '.join(missing)[:100]
     if not verdict.get('evidence'):
@@ -237,8 +262,8 @@ def cmd_verdict(args):
     if refusal:
         raise Refused(refusal)
     result = plan(pr['files'], config)
-    features = args.features or result['features']
-    missing = [f for f in result['features'] if f not in features]
+    features = args.features or required_features(result)
+    missing = [f for f in required_features(result) if f not in features]
     if args.verdict == 'verified' and (missing or (result['full'] and not args.full)):
         raise Refused('A verified verdict must cover ' + (
             'the full feature map (--full)' if result['full'] else 'features: ' + ', '.join(missing)))

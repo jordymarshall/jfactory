@@ -133,6 +133,13 @@ class SetupCheckTest(unittest.TestCase):
         out = self.check('--remote', '--repo', 'o/r', code=1)
         self.assertIn('does not ask about: who it is for, what they do today', out)
 
+    def test_risk_levels_are_reported(self):
+        self.assertIn('WARN: 1 feature(s) have no risk level', self.check('--remote', '--repo', 'o/r'))
+        (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(
+            {'static': ['README.md'], 'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**', '.github/**'],
+                                                           'verify': 'independent'}}}))
+        self.assertIn('Risk levels set: 1 independent, 0 CI-only', self.check('--remote', '--repo', 'o/r'))
+
     def test_production_merges_cannot_be_verified_delivery(self):
         (self.root / '.jfactory' / 'coordination.json').write_text('{"merge_deploys": "production"}')
         self.assertIn('Merging releases production', self.check(code=1))

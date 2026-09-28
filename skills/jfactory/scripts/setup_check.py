@@ -139,6 +139,16 @@ def check_verification(root, report, states):
         except (subprocess.CalledProcessError, FileNotFoundError) as error:
             report.add('FAIL', f'Cannot list tracked files with git ({error}), so map coverage is unchecked')
             tracked = None
+    if config is not None:
+        features = config.get('features', {})
+        unset = sorted(f for f, v in features.items() if 'verify' not in v)
+        low = sorted(f for f, v in features.items() if v.get('verify') == 'ci')
+        if unset:
+            report.add('WARN', f'{len(unset)} feature(s) have no risk level and default to independent verification: '
+                               f'{", ".join(unset[:8])}. Agree "verify": "independent" or "ci" with the owner')
+        else:
+            report.add('PASS', f'Risk levels set: {len(features) - len(low)} independent, {len(low)} CI-only'
+                               + (f' ({", ".join(low)})' if low else ''))
     if config is not None and tracked is not None:
         result = verify_plan.plan(tracked, config)
         unmapped = [p for p in result['unmapped'] if not verify_plan.matches(p, verify_plan.GATE_PATHS)]

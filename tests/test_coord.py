@@ -416,6 +416,20 @@ class CoordTest(unittest.TestCase):
                                                  '--scopes', 'unit', '--evidence', 'x', '--verifier',
                                                  'codex/gpt-6-luna', ok=False))
 
+    def test_low_risk_unit_merges_on_ci_without_a_verdict(self):
+        self.start(['t', '--objective', 'Add tests'], ['a', '--objective', 'Feature'])
+        config = {'features': {'tests': {'paths': ['tests/**'], 'verify': 'ci'}, 'app': {'paths': ['src/**']}}}
+        for unit, number, files in (('t', '7', ['tests/test_x.py']), ('a', '8', ['src/x.py', 'tests/test_x.py'])):
+            self.coord('launch', '1', unit, '--brief', str(self.brief))
+            prs = self.db()['prs']
+            prs[number] = {'state': 'OPEN', 'headRefOid': f'{unit}' * 7, 'headRefName': f'feat/{unit}', 'files': files}
+            self.set_db(prs=prs, config=config)
+            self.coord('report', '1', unit, '--state', 'in-review', '--pr', number, '--head', f'{unit}' * 7)
+        self.coord('sync', '1')
+        self.coord('merge', '1', 't')
+        self.assertIn('no verified verdict', self.coord('merge', '1', 'a', ok=False))
+        self.assertEqual(self.db()['merged'], ['7'])
+
 
 if __name__ == '__main__':
     unittest.main()
