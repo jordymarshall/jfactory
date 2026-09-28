@@ -170,7 +170,9 @@ class GateTest(unittest.TestCase):
         db['prs']['5']['body'] = 'Fixes things.'
         self.state.write_text(json.dumps(db))
         self.assertIn('does not state its objective', self.run_script('check', '--pr', '5', code=1))
-        for empty in ('## Objective\n\n## Summary\nStuff', 'Objective:', 'Objective: tbd'):
+        for empty in ('## Objective\n\n## Summary\nStuff', 'Objective:', 'Objective: tbd',
+                      '```\n## Objective\nSave briefs for returning users\n```\n',
+                      '<!--\nObjective: save briefs for returning users\n-->'):
             db['prs']['5']['body'] = empty
             self.state.write_text(json.dumps(db))
             self.assertIn('does not state its objective', self.run_script('check', '--pr', '5', code=1), empty)

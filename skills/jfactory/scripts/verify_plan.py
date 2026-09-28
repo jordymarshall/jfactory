@@ -191,7 +191,10 @@ OBJECTIVE_RE = re.compile(r'^[ \t]*(?:#+[ \t]*objective\b[^\n]*\n(?P<section>(?:
 
 def states_objective(body):
     """A PR states its objective in a non-empty `Objective` section or an `Objective:` line with content."""
-    for match in OBJECTIVE_RE.finditer((body or '') + '\n'):
+    # Only visible text counts: an objective inside a code fence or an HTML comment is not stated.
+    visible = re.sub(r'<!--.*?-->', '', body or '', flags=re.S)
+    visible = re.sub(r'^[ \t]*(```|~~~).*?^[ \t]*\1[^\n]*$', '', visible, flags=re.S | re.M)
+    for match in OBJECTIVE_RE.finditer(visible + '\n'):
         text = (match.group('section') or match.group('line') or '').strip()
         if len(re.sub(r'\s+', ' ', text)) >= 10:
             return True
