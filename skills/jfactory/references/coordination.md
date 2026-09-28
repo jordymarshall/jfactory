@@ -27,7 +27,7 @@ Read the pinned originals this adapts: [orchestrate](../vendor/pstack/skills/pot
 | `merge <issue> <unit>` | Coordinator | Queues protected auto-merge pinned to the verified head, only with a `verified` verdict at that head, no open decisions, and a recorded `merge_deploys` of `staging` or `none` |
 | `gate add` / `gate resolve` | Coordinator | Records an owner decision and its answer; open decisions block launch and merge for their units |
 | `set <issue> <unit> --state` | Coordinator | Marks a unit blocked, failed or abandoned with a note |
-| `close <issue>` | Coordinator | Closes the program only when every unit is merged or abandoned |
+| `close <issue>` | Coordinator | Closes the program only when every unit is merged, done (verifiers without their own PR) or abandoned |
 
 The issue body has one writer, the coordinator. Workers never edit it; they add report comments, and the newest report after the coordinator's last change to that unit wins at the next `sync`. This avoids concurrent edits to one body. Anyone with comment access could post a report, so the coordinator still checks each claim against the actual PR.
 

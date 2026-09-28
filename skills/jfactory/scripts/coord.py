@@ -21,10 +21,11 @@ PROGRAM_LABEL = 'jfactory-program'
 HOLD_LABEL = 'jfactory-hold'
 STATE_RE = re.compile(r'<!-- jfactory-program\n(.*?)\n-->', re.S)
 REPORT_RE = re.compile(r'<!-- jfactory-report (\{.*?\}) -->', re.S)
-STATES = ['planned', 'running', 'blocked', 'in-review', 'verified', 'merged', 'failed', 'abandoned']
+STATES = ['planned', 'running', 'blocked', 'in-review', 'verified', 'merged', 'done', 'failed', 'abandoned']
 WORKER_STATES = {'running', 'blocked', 'in-review', 'failed'}
 ACTIVE = {'running'}
-TERMINAL = {'merged', 'abandoned'}
+# `done` is for units without their own PR, such as a verifier whose target merged.
+TERMINAL = {'merged', 'done', 'abandoned'}
 VERDICTS = {'verified', 'partially-verified', 'blocked', 'failed'}
 SCOPES = {'unit', 'component', 'integration', 'application', 'provider', 'deployed', 'static'}
 # Auto-merge is allowed only when merging the base cannot release production.
@@ -211,8 +212,9 @@ def refresh_prs(state, repo):
                 changes.append(f'{uid}: new head {pr["headRefOid"][:7]} voids its verdict')
         unit['branch'] = pr['headRefName']
         if pr['state'] == 'MERGED':
-            unit['state'] = 'merged'
-            changes.append(f'{uid}: merged')
+            # A verifier reports the PR it checked; that PR merging finishes the verifier, it did not merge its own.
+            unit['state'] = 'done' if unit['role'] == 'verify' else 'merged'
+            changes.append(f"{uid}: {unit['state']}")
         elif pr['state'] == 'CLOSED' and unit['state'] != 'abandoned':
             unit['state'] = 'blocked'
             unit['note'] = 'PR closed without merge'
@@ -554,7 +556,7 @@ def cmd_close(args):
     refresh_prs(state, args.repo)
     open_units = [u for u, v in state['units'].items() if v['state'] not in TERMINAL]
     if open_units:
-        raise Refused(f'Units not merged or abandoned: {", ".join(open_units)}')
+        raise Refused(f'Units not merged, done or abandoned: {", ".join(open_units)}')
     save(args.repo, args.program, state)
     gh(args.repo, 'issue', 'close', str(args.program), '--comment', summary(state))
     print('Closed. ' + summary(state))

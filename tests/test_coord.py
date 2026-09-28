@@ -160,10 +160,25 @@ class CoordTest(unittest.TestCase):
         self.coord('sync', '1')
         self.assertEqual(self.program_state()['units']['a']['state'], 'abandoned')
         self.coord('add', '1', 'b', '--objective', 'y', '--requires', 'static')
-        self.assertIn('not merged or abandoned: b', self.coord('close', '1', ok=False))
-        self.coord('set', '1', 'b', '--state', 'abandoned')
+        self.assertIn('not merged, done or abandoned: b', self.coord('close', '1', ok=False))
+        self.coord('set', '1', 'b', '--state', 'done', '--note', 'verifier finished')
         self.coord('close', '1')
         self.assertEqual(self.db()['issues']['1']['state'], 'CLOSED')
+
+    def test_verifier_is_done_not_merged_when_its_target_merges(self):
+        self.start(['a', '--objective', 'x'], ['r', '--objective', 'verify a', '--role', 'verify', '--depends', 'a'],
+                   limit=3)
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.coord('sync', '1')
+        self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on', 'a')
+        self.coord('report', '1', 'r', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.set_db(prs={'7': {'state': 'MERGED', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
+        self.coord('sync', '1')
+        units = self.program_state()['units']
+        self.assertEqual((units['a']['state'], units['r']['state']), ('merged', 'done'))
+        self.coord('close', '1')
 
     def test_effort_outside_policy_is_refused(self):
         self.start(['a', '--objective', 'x'])
