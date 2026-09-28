@@ -94,7 +94,7 @@ The coordinator agrees outcomes and open decisions with you, then opens one GitH
 
 A bundled tool, `coord.py`, enforces the mechanics. It refuses launches beyond the concurrency limit, with incomplete briefs, unmerged dependencies, open decisions or unavailable models. It refuses merges without a verified verdict at the current commit.
 
-Your role: agree outcomes up front, watch the issue, answer decisions in chat or on the issue, and add the `jfactory-hold` label to stop new launches and pause workers. The coordinator and its workers are grouped in one Conductor sidebar section. Open any worker to give it feedback directly; it reports that feedback so the coordinator can relay it to affected features. The default model policy uses Claude Opus 5.5 for every feature and change, and GPT-6 Sol in fast mode for all verification, review and PR follow-through. Effort ranges from low to high by difficulty. Override it in `.jfactory/coordination.json`. See the [coordination procedure](skills/jfactory/references/coordination.md).
+Your role: agree outcomes up front, watch the issue, answer decisions in chat or on the issue, and add the `jfactory-hold` label to stop new launches and pause workers. The coordinator and its workers are grouped in one Conductor sidebar section. Open any worker to give it feedback directly; it reports that feedback so the coordinator can relay it to affected features. Each unit has a role that matches a model tier below: `implement` for features and fixes, `fast` for routine work, `trivial` for very simple tasks and `verify` for checking another unit. Effort ranges from low to high by difficulty. Override the policy in `.jfactory/coordination.json`. See the [coordination procedure](skills/jfactory/references/coordination.md).
 
 This runs only while an agent uses it. jfactory has no background supervisor, and parallel workspaces multiply cost, so it starts them only when you ask.
 
@@ -135,7 +135,7 @@ python3 tests/browser_smoke.py
 python3 tests/dashboard_smoke.py
 ```
 
-For this repository, [the main ruleset](.github/rulesets/main.json) requires the GitHub Actions `checks` job against current `main`, PRs and squash merges. An administrator must activate the rule in GitHub; committing its JSON does not activate it. Agents enable auto-merge only after verifying both the task and the active server rules.
+For this repository, [the main ruleset](.github/rulesets/main.json) requires PRs, squash merges, and both the GitHub Actions `checks` job against current `main` and the `jfactory verified` status. An administrator must import or update the rule in GitHub; committing its JSON does not activate it. Agents enable auto-merge only after verifying both the task and the active server rules.
 
 Tests cover installation preservation, evidence freshness/scopes, private report serving, real browser actions and dashboard handoff. CI uses disposable local pages, not real competitor accounts. Conductor's external authentication gateway and a real user's login require separate validation. See [browser setup](skills/jfactory/skills/jfactory-ux/references/browser.md) and [cloud handoff](skills/jfactory/skills/jfactory-ux/references/cloud-conductor.md) for current limits.
 

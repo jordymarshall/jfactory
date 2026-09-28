@@ -204,6 +204,7 @@ class UsageTests(unittest.TestCase):
         out = self.run_usage('--tier', 'verify', '--implementer', 'codex')
         self.assertEqual(out['choice']['verify'], ('claude', 'opus-5-5-1m', 'low'))
         self.assertFalse(out['fast']['verify'])
+        self.assertIn('alternate: claude', out['choices'][0]['reason'])
 
     def test_verify_holds_rather_than_same_family_when_other_family_is_exhausted(self):
         self.claude(50, 95, 1)

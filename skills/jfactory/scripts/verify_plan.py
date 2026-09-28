@@ -19,7 +19,7 @@ CONFIG = '.jfactory/verification.json'
 CONTEXT = 'jfactory verified'
 VERDICT_RE = re.compile(r'<!-- jfactory-verdict (\{.*?\}) -->', re.S)
 # Changes to the gate's own inputs can never be scoped down.
-GATE_PATHS = ['.jfactory/**', '.github/workflows/**']
+GATE_PATHS = ['.jfactory/**', '.github/workflows/**', '.github/rulesets/**']
 TRUSTED = {'OWNER', 'MEMBER', 'COLLABORATOR'}
 
 
@@ -133,8 +133,30 @@ def pr_info(repo, number):
     return pr
 
 
+# Model families by agent and by model-name prefix. An identity is `agent/model` or a bare model.
+AGENT_FAMILIES = {'claude': 'anthropic', 'codex': 'openai'}
+MODEL_FAMILIES = {'claude': 'anthropic', 'opus': 'anthropic', 'sonnet': 'anthropic', 'haiku': 'anthropic',
+                  'fable': 'anthropic', 'gpt': 'openai', 'o3': 'openai', 'o4': 'openai', 'codex': 'openai',
+                  'grok': 'xai', 'composer': 'cursor', 'gemini': 'google'}
+
+
 def family(identity):
-    return (identity or '').split('/', 1)[0].strip().lower()
+    """Return the model family of `agent/model` or `model`, or None when it cannot be determined."""
+    agent, _, model = (identity or '').strip().lower().rpartition('/')
+    for name, fam in MODEL_FAMILIES.items():
+        if model.startswith(name):
+            return fam
+    return AGENT_FAMILIES.get(agent)
+
+
+def same_family_refusal(verifier, implementer, allowed):
+    """Explain why a verdict cannot count as independent, or return None."""
+    ours, theirs = family(verifier), family(implementer)
+    if not ours or not theirs:
+        return f'Cannot tell the model family of verifier {verifier!r} or implementer {implementer!r}; use agent/model'
+    if ours == theirs and not allowed:
+        return 'Verifier and implementer are the same model family, and the owner has not recorded allow_same_family'
+    return None
 
 
 def evaluate(pr, config):
@@ -167,9 +189,10 @@ def evaluate(pr, config):
         return 'failure', 'Verdict misses features: ' + ', '.join(missing)[:100]
     if not verdict.get('evidence'):
         return 'failure', 'Verdict has no evidence links'
-    if family(verdict.get('verifier')) == family(verdict.get('implementer')) and \
-            not config.get('allow_same_family', False):
-        return 'failure', 'Verifier and implementer are the same model family'
+    refusal = same_family_refusal(verdict.get('verifier'), verdict.get('implementer'),
+                                  config.get('allow_same_family', False))
+    if refusal:
+        return 'failure', refusal
     return 'success', f"Verified at {head[:7]} by {verdict.get('verifier')}"
 
 
@@ -205,9 +228,11 @@ def cmd_verdict(args):
     pr = pr_info(args.repo, args.pr)
     if pr['headRefOid'] != args.head:
         raise Refused(f"PR #{args.pr} head is {pr['headRefOid'][:7]}, not {args.head[:7]}; verify the current head")
-    if family(args.verifier) == family(args.implementer) and not args.allow_same_family:
-        raise Refused('Verifier and implementer are the same model family; use another verifier')
     config = load_config(args.config_ref or f"origin/{pr['baseRefName']}")
+    # Refuse here anything the status would reject, so a verdict that cannot count is never posted.
+    refusal = same_family_refusal(args.verifier, args.implementer, config.get('allow_same_family', False))
+    if refusal:
+        raise Refused(refusal)
     result = plan(pr['files'], config)
     features = args.features or result['features']
     missing = [f for f in result['features'] if f not in features]
@@ -252,7 +277,6 @@ def main(argv=None):
     p.add_argument('--full', action='store_true')
     p.add_argument('--evidence', action='append', default=[], required=True)
     p.add_argument('--note')
-    p.add_argument('--allow-same-family', action='store_true')
     p.set_defaults(func=cmd_verdict)
 
     args = parser.parse_args(argv)

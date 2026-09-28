@@ -110,12 +110,12 @@ def install(source, target, agent='codex', update=False):
     try:
         revision = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'],
                                            stderr=subprocess.DEVNULL, text=True).strip()
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, FileNotFoundError):  # not a checkout, or no git
         revision = None
     try:
         source_dirty = bool(subprocess.check_output(['git', '-C', str(source), 'status', '--porcelain'],
                                                     stderr=subprocess.DEVNULL))
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, FileNotFoundError):
         source_dirty = None
     receipt = {'schema': 1, 'repository': 'https://github.com/jordymarshall/jfactory',
         'source_commit': revision, 'source_dirty': source_dirty, 'agent': agent,

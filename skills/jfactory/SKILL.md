@@ -21,7 +21,7 @@ Use the [objective contract](references/verification.md#objective-contract) to r
 
 At the start of repository work, identify the loaded jfactory path and installed source revision when available. For concurrent workspaces or overlapping PRs, follow [worktree coordination](references/worktrees.md). Instructions and evidence in another checkout are not automatically current here.
 
-Use the [verification contract](references/verification.md) to map every criterion to required evidence scopes, and `scripts/verify_plan.py plan` to derive affected features and CI suites from the changed files. Before merge, a verifier from another model family posts a verdict at the current head; the `jfactory verified` required status enforces it. The supplied evidence runner can record real commands and check freshness/coverage. It does not judge whether a test meaningfully proves the customer outcome. Inspect the assertions and actual result yourself.
+Use the [verification contract](references/verification.md) to map every criterion to required evidence scopes, and `scripts/verify_plan.py plan` to derive affected features and CI suites from the changed files. Before a change that is not static-only merges, a verifier from another model family posts a verdict at the current head; the `jfactory verified` status enforces it where the repository requires that check. The supplied evidence runner can record real commands and check freshness/coverage. It does not judge whether a test meaningfully proves the customer outcome. Inspect the assertions and actual result yourself.
 
 ## Implement, observe, correct
 

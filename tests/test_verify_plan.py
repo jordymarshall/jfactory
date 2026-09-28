@@ -40,8 +40,24 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(unknown['unmapped'], ['lib/new.py'])
 
     def test_gate_files_always_need_full_verification(self):
-        for path in ['.jfactory/verification.json', '.github/workflows/jfactory-verified.yml']:
+        for path in ['.jfactory/verification.json', '.github/workflows/jfactory-verified.yml',
+                     '.github/rulesets/main.json']:
             self.assertTrue(verify_plan.plan([path], CONFIG)['full'], path)
+
+    def test_family_reads_agent_or_model(self):
+        self.assertEqual(verify_plan.family('codex/gpt-6-luna'), 'openai')
+        self.assertEqual(verify_plan.family('gpt-6-luna'), 'openai')
+        self.assertEqual(verify_plan.family('claude/opus-5-5-1m'), 'anthropic')
+        self.assertEqual(verify_plan.family('opus-5-5-1m'), 'anthropic')
+        self.assertIsNone(verify_plan.family('reviewer'))
+        self.assertIsNone(verify_plan.family('None/None'))
+
+    def test_example_mapping_never_treats_agent_instructions_as_static(self):
+        example = json.loads((ROOT / 'skills/jfactory/templates/verification.example.json').read_text())
+        for path in ['AGENTS.md', 'CLAUDE.md', '.agents/skills/jfactory/SKILL.md',
+                     '.agents/skills/verify-app/features/save-brief.md', 'app/src/lib/briefs/store.ts']:
+            self.assertFalse(verify_plan.plan([path], example)['static_only'], path)
+        self.assertTrue(verify_plan.plan(['docs/guide.md'], example)['static_only'])
 
     def test_glob_semantics(self):
         self.assertTrue(verify_plan.matches('a/b/c.md', ['**/*.md']))
@@ -64,11 +80,11 @@ class GateTest(unittest.TestCase):
             self.env[f'JFACTORY_{tool.upper()}'] = str(exe)
         self.write(files=['app/briefs/save.ts'])
 
-    def write(self, files, head=HEAD, association='OWNER'):
+    def write(self, files, head=HEAD, association='OWNER', config=CONFIG):
         db = json.loads(self.state.read_text()) if self.state.exists() else {}
         pr = db.get('prs', {}).get('5', {'comments': []})
         pr.update({'headRefOid': head, 'baseRefName': 'main', 'isCrossRepository': False, 'files': files})
-        db.update({'config': CONFIG, 'association': association, 'prs': {'5': pr}})
+        db.update({'config': config, 'association': association, 'prs': {'5': pr}})
         self.state.write_text(json.dumps(db))
 
     def run_script(self, *args, code=0):
@@ -97,10 +113,23 @@ class GateTest(unittest.TestCase):
         self.assertIn('same model family', self.run_script(
             'verdict', '--pr', '5', '--head', HEAD, '--verdict', 'verified', '--verifier', 'claude/sonnet-5-1m',
             '--implementer', 'claude/opus-5-5-1m', '--evidence', 'x', code=2))
+        self.assertIn('model family', self.run_script(
+            'verdict', '--pr', '5', '--head', HEAD, '--verdict', 'verified', '--verifier', 'reviewer',
+            '--implementer', 'claude/opus-5-5-1m', '--evidence', 'x', code=2))
         self.write(files=['app/briefs/save.ts', 'lib/unknown.py'])
         self.assertIn('--full', self.verdict(code=2))
         self.verdict('--full')
         self.assertIn('success', self.run_script('check', '--pr', '5'))
+
+    def test_recorded_owner_decision_allows_same_family(self):
+        same = ('verdict', '--pr', '5', '--head', HEAD, '--verdict', 'verified', '--verifier', 'claude/sonnet-5-1m',
+                '--implementer', 'claude/opus-5-5-1m', '--evidence', 'x')
+        self.assertIn('same model family', self.run_script(*same, code=2))
+        self.write(files=['app/briefs/save.ts'], config={**CONFIG, 'allow_same_family': True})
+        self.run_script(*same)
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+        self.write(files=['app/briefs/save.ts'], config=CONFIG)
+        self.assertIn('same model family', self.run_script('check', '--pr', '5', code=1))
 
     def test_static_only_passes_without_verifier(self):
         self.write(files=['docs/guide.md'])
@@ -111,7 +140,7 @@ class GateTest(unittest.TestCase):
         self.verdict()
         self.assertIn('No verdict', self.run_script('check', '--pr', '5', code=1))
         self.write(files=['app/briefs/save.ts', 'app/auth.ts'])
-        self.verdict('--features', 'briefs,auth', '--allow-same-family')
+        self.verdict('--features', 'briefs,auth')
         db = json.loads(self.state.read_text())
         body = db['prs']['5']['comments'][-1]['body']
         record = json.loads(body.split('<!-- jfactory-verdict ')[1].split(' -->')[0])

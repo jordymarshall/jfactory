@@ -30,6 +30,18 @@ class InstallTests(unittest.TestCase):
         receipt = json.loads((dest / '.jfactory-install.json').read_text())
         self.assertIn('vendor/pstack/LICENSE', receipt['files'])
 
+    def test_installs_without_git_and_records_unknown_revision(self):
+        real = installer.subprocess.check_output
+
+        def no_git(cmd, *args, **kwargs):
+            if cmd[0] == 'git':
+                raise FileNotFoundError('git')
+            return real(cmd, *args, **kwargs)
+        with patch.object(installer.subprocess, 'check_output', side_effect=no_git):
+            dest = installer.install(ROOT, self.target)
+        receipt = json.loads((dest / '.jfactory-install.json').read_text())
+        self.assertEqual((receipt['source_commit'], receipt['source_dirty']), (None, None))
+
     def test_modified_payload_refuses_update_without_mutation(self):
         dest = installer.install(ROOT, self.target)
         skill = dest / 'SKILL.md'

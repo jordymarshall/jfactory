@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "static": ["docs/**", "**/*.md", "plan/**"],
+  "static": ["docs/**", "plan/**", "LICENSE", "CHANGELOG.md"],
   "static_suites": ["static"],
   "always_suites": ["unit"],
   "full_suites": ["unit", "browser"],
