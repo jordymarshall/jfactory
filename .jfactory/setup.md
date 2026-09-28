@@ -4,13 +4,13 @@ This repository is jfactory's own source. It uses the bundle in place through [A
 
 ## Readiness
 
-Last reviewed 2026-09-28 against `main` at `2629807`, plus the setup PR that adds this record.
+Last reviewed 2026-09-28 against `main` at `7c83999`, plus the setup PR that adds this record.
 
 | Area | State | Evidence or reason |
 | --- | --- | --- |
 | Documentation | verified | `AGENTS.md` has the four entry sections. `tests/test_links.py` passes. The contradictions found by a script-against-docs audit are reconciled in the setup PR. |
 | Product direction | configured but unverified | The brief in `AGENTS.md` is the agent's summary of the README and history. The owner has not confirmed it. |
-| Workspace tools | verified | Python 3 only; the browser smokes also need Node, Chrome and Playwright's ffmpeg. In the Conductor cloud workspace (Python 3.9.25, Node 24.14.1), all 73 unit tests, `check-upstream.py`, `tests/browser_smoke.py` and `tests/dashboard_smoke.py` passed. CI runs Python 3.10. No cloud setup script is needed. |
+| Workspace tools | verified | Python 3 only; the browser smokes also need Node, Chrome and Playwright's ffmpeg. In the Conductor cloud workspace (Python 3.9.25, Node 24.14.1), all 80 unit tests, `check-upstream.py`, `tests/browser_smoke.py` and `tests/dashboard_smoke.py` passed. CI runs Python 3.10. No cloud setup script is needed. |
 | Verification | verified | `.jfactory/verification.json` maps every tracked file except the gate paths, which always need full verification. `verify_plan.py plan --files "$(git ls-files \| paste -sd, -)"` reports no other unmapped files. The browser smokes cover the UX helpers. |
 | Environments | not applicable | Nothing deploys. |
 | PR delivery | blocked on an owner decision | Repository auto-merge is on. The active remote ruleset "Verified squash merges to main" (id 24086594) requires PRs, squash merges and `checks` against the latest main, with no bypass actors. It does not require `jfactory verified`, which [the committed ruleset](../.github/rulesets/main.json) also lists. The `jfactory verified` workflow runs on every PR either way. `merge_deploys` is `none` in `coordination.json`. |
