@@ -19,7 +19,7 @@ It connects four loops:
 
 You can give the agent a bounded outcome and let it work through routine implementation and verification without repeatedly saying "keep going." You stay involved in consequential product choices and customer feedback.
 
-The result distinguishes **what you decided, what the agent inferred, what exists, what was verified, and what you accepted**. You agree what counts as verified before work starts. The agent works until that standard passes, then merges the PR automatically through protected squash auto-merge. Missing proof keeps the PR open. Merging deploys at most to staging; production releases happen only when you deliberately ask. Setup reconfigures or flags a repository whose merges release production.
+The result distinguishes **what you decided, what the agent inferred, what exists, what was verified, and what you accepted**. You agree what counts as verified before work starts. The checks each PR needs come from what it changes: a map links code paths to features and their verification recipes, docs-only changes need only static checks, and unrecognised files need everything. A verifier from a different model family confirms the result at the PR's latest commit, and a required `jfactory verified` check enforces it. The agent works until that standard passes, then merges the PR automatically through protected squash auto-merge. Missing proof keeps the PR open. Merging deploys at most to staging; production releases happen only when you deliberately ask. Setup reconfigures or flags a repository whose merges release production.
 
 ## 2. How to use
 

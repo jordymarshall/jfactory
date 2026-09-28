@@ -35,6 +35,18 @@ Record expected state before execution, the actual user action/command, observed
 
 Capture the code revision and dirty source identity, exact command, environment identity without secrets, assertions/results and durable evidence links. Keep failed attempts. Ensure cleanup preserves evidence and only removes owned instances/test data. Negative controls should demonstrate that a broken behavior or failed command cannot be reported as passed. Do not weaken assertions, skip a failing check or edit expected outputs just to obtain green results.
 
+## Change-aware verification and the merge gate
+
+Verification needs follow from what a PR changes, not from a fixed repository-wide check. The repository's `.jfactory/verification.json` links code paths to the project verifier's feature-map entries and to CI suites (see [the example](../templates/verification.example.json)). Setup creates it from the actual layout and verifier; `maintain-verification-skill` audits and any change to a feature's code keeps it current.
+
+1. **Plan.** `python3 <skill>/scripts/verify_plan.py plan --base origin/<base>` lists the affected features with their recipes and the CI suites to run. Changed files that match no feature or static pattern, and any change to `.jfactory/` or `.github/workflows/`, require **full** verification of every feature. Static patterns cover only files that cannot change runtime or agent behavior. Put the plan in the PR, alongside the objective's own acceptance criteria.
+2. **Loop.** The implementer runs those recipes and the objective's criteria until they pass on the current head.
+3. **Automated floor.** CI runs the suites the plan names; required CI uses one aggregate check that fails if a suite the plan needs was skipped, and treats unknown files as full.
+4. **Independent verdict.** A verifier from a different model family (the default is GPT-6 Sol in fast mode) re-runs the plan against the PR preview or staging at the current head and posts the verdict with `verify_plan.py verdict --pr <n> --head <sha> --verdict verified --verifier <agent/model> --implementer <agent/model> --evidence <link> [--full]`. It refuses a stale head, a same-family verifier and incomplete coverage. Static-only changes need no independent verdict.
+5. **Required status.** The [`jfactory verified` workflow](../templates/jfactory-verified.yml) re-evaluates on every push and comment, from the base branch's script and mapping, and sets the `jfactory verified` commit status. It passes only for a trusted verdict comment at the current head that covers the plan. A new push resets it. Make it a required check next to CI.
+
+These mechanics enforce coverage and freshness. They do not judge whether a recipe or assertion is adequate; reviewers still inspect the evidence. Verdict comments are trusted from repository owners, members and collaborators only.
+
 ## Optional deterministic receipts
 
 The bundled `scripts/evidence.py` runs an existing check and records its exit status, output, timeout/cleanup, task hash and source fingerprint. Its `check` command rejects missing required scopes, failed/latest checks, missing or changed logs, and stale code/task evidence. It does not inspect browser behavior or determine whether a command/assertion is adequate. A trivial successful command is not meaningful verification. The agent/reviewer must inspect what the check actually proves.

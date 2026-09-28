@@ -41,6 +41,20 @@ if tool == 'conductor':
         done()
     if args[:2] == ['session', 'status']:
         done({'status': db.get('sessions', {}).get(args[2], 'working')})
+if tool == 'git' and args[:1] == ['show']:
+    done(json.dumps(db.get('config', {'static': ['**/*.md'], 'features': {'all': {'paths': ['**']}}})))
+if tool == 'git' and args[:2] == ['diff', '--name-only']:
+    done('\n'.join(db.get('diff', [])))
+if tool == 'gh' and args[:1] == ['api'] and args[1].endswith('/files'):
+    number = args[1].split('/')[-2]
+    done('\n'.join(db['prs'][number].get('files', ['src/x.py'])))
+if tool == 'gh' and args[:3] == ['api', '-X', 'POST']:
+    db.setdefault('statuses', []).append({a.split('=', 1)[0]: a.split('=', 1)[1] for a in args if '=' in a})
+    done()
+if tool == 'gh' and args[:2] == ['pr', 'comment']:
+    db['prs'][args[2]].setdefault('comments', []).append(
+        {'body': Path(opt('--body-file')).read_text(), 'authorAssociation': db.get('association', 'OWNER')})
+    done()
 if tool == 'gh':
     issues = db.setdefault('issues', {})
     if args[:2] == ['label', 'create']:
@@ -66,7 +80,7 @@ if tool == 'gh':
     if args[:2] == ['issue', 'list']:
         done([{'number': int(k), 'title': 'x', 'url': v['url']} for k, v in issues.items() if v['state'] == 'OPEN'])
     if args[:2] == ['pr', 'view']:
-        done(db['prs'][args[2]])
+        done({'baseRefName': 'main', 'comments': [], 'isCrossRepository': False, **db['prs'][args[2]]})
     if args[:2] == ['pr', 'merge']:
         db.setdefault('merged', []).append(args[2])
         done()

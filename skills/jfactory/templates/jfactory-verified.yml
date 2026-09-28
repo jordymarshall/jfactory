@@ -1,0 +1,39 @@
+# Copy to .github/workflows/jfactory-verified.yml during setup and set JFACTORY_DIR to the
+# installed bundle path. Make the "jfactory verified" status a required check on the base branch.
+# The job runs the base branch's copy of the script and mapping, never code from the PR.
+name: jfactory verified
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created, edited, deleted]
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+concurrency:
+  group: jfactory-verified-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+env:
+  JFACTORY_DIR: .agents/skills/jfactory
+jobs:
+  status:
+    if: >-
+      (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Evaluate the independent verdict at the PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: >-
+          python3 "$JFACTORY_DIR/scripts/verify_plan.py" --repo "$GITHUB_REPOSITORY" check --pr "$PR"
+          --set-status --target-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

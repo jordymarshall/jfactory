@@ -23,7 +23,7 @@ Read the pinned originals this adapts: [orchestrate](../vendor/pstack/skills/pot
 | `launch <issue> <unit> --brief FILE [--dry-run]` | Coordinator | Creates the unit's Conductor workspace with the policy's agent and model, moves it into the program's sidebar section, after checking hold, concurrency limit, dependencies, open decisions, brief completeness, attempt limit, model availability and reviewer model family |
 | `report <issue> <unit> --state ...` | Worker | Posts a structured comment with its state, PR, head SHA, note or question |
 | `sync <issue>` | Coordinator | Folds worker reports, PR state and session status into the issue, voids verdicts on new heads and lists units ready to launch |
-| `verdict <issue> <unit> --head --verdict --scopes --evidence` | Coordinator | Records verification only at the PR's current head; `verified` must include every required scope |
+| `verdict <issue> <unit> --head --verdict --scopes --evidence --verifier [--full]` | Coordinator | Records verification only at the PR's current head, requires every declared scope, and posts the PR verdict that the `jfactory verified` status reads |
 | `merge <issue> <unit>` | Coordinator | Queues protected auto-merge pinned to the verified head, only with a `verified` verdict at that head, no open decisions, and a recorded `merge_deploys` of `staging` or `none` |
 | `gate add` / `gate resolve` | Coordinator | Records an owner decision and its answer; open decisions block launch and merge for their units |
 | `set <issue> <unit> --state` | Coordinator | Marks a unit blocked, failed or abandoned with a note |
@@ -136,7 +136,7 @@ A worker question becomes an open decision at `sync`. Answer it from recorded de
 
 A worker's report is a claim. At the PR's current head SHA, inspect the criteria, the checks that ran, the application evidence and whether the assertions prove the claim. Record the result with `verdict`. CI status is an input, not a verdict. A new head voids the previous verdict at the next `sync`.
 
-Every `implement` unit that produces a PR gets a `verify` unit that depends on it, launched with `--stack-on` so it checks out the PR branch once the worker reports `in-review`. Its contract asks it to re-run the acceptance checks and application journey, review the diff, and follow the PR through CI and review comments. It reports a recommended verdict with evidence and does not change product code; defects become a fix task for the original worker. Choose its effort by risk. The coordinator inspects that evidence and records the `verdict`.
+Every `implement` unit that produces a PR gets a `verify` unit that depends on it, launched with `--stack-on` so it checks out the PR branch once the worker reports `in-review`. Its contract asks it to re-run the acceptance checks and application journey, review the diff, and follow the PR through CI and review comments. It runs `verify_plan.py plan` for the PR, reports a recommended verdict with evidence and does not change product code; defects become a fix task for the original worker. Choose its effort by risk. The coordinator inspects that evidence and records the `verdict`.
 
 ## 8. Integrate continuously
 

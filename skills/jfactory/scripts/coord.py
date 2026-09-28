@@ -14,6 +14,9 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import verify_plan  # noqa: E402
+
 PROGRAM_LABEL = 'jfactory-program'
 HOLD_LABEL = 'jfactory-hold'
 STATE_RE = re.compile(r'<!-- jfactory-program\n(.*?)\n-->', re.S)
@@ -487,6 +490,16 @@ def cmd_verdict(args):
     lacking = [scope for scope in unit.get('requires', []) if scope not in args.scopes]
     if args.verdict == 'verified' and lacking:
         raise Refused(f'{args.unit} requires {", ".join(lacking)} evidence before it can be verified')
+    if not args.verifier:
+        raise Refused('--verifier agent/model is required; the verdict is posted to the PR for the required check')
+    # The PR comment feeds the `jfactory verified` required status; verify_plan enforces coverage.
+    code = verify_plan.main(['--repo', args.repo, 'verdict', '--pr', str(unit['pr']), '--head', head,
+                             '--verdict', args.verdict, '--verifier', args.verifier,
+                             '--implementer', f"{unit.get('agent')}/{unit.get('model')}",
+                             '--evidence', args.evidence, *(['--full'] if args.full else []),
+                             *(['--features', ','.join(args.features)] if args.features else [])])
+    if code:
+        raise Refused('PR verdict was not posted; see the message above')
     state['ledger'].append({'pr': unit['pr'], 'head': head, 'verdict': args.verdict, 'scopes': args.scopes,
                             'evidence': args.evidence, 'at': now()})
     unit['head'] = head
@@ -616,6 +629,9 @@ def main(argv=None):
     p.add_argument('--verdict', required=True, choices=sorted(VERDICTS))
     p.add_argument('--scopes', type=listing, required=True)
     p.add_argument('--evidence', required=True)
+    p.add_argument('--verifier', help='agent/model that verified, e.g. codex/gpt-6-sol')
+    p.add_argument('--features', type=listing, default=[])
+    p.add_argument('--full', action='store_true')
     p.set_defaults(func=cmd_verdict)
     p = sub.add_parser('merge', help='Queue protected auto-merge for a verified unit')
     p.add_argument('program', type=int)

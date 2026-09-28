@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "static": ["docs/**", "**/*.md", "plan/**"],
+  "static_suites": ["static"],
+  "always_suites": ["unit"],
+  "full_suites": ["unit", "browser"],
+  "features": {
+    "save-brief": {
+      "paths": ["app/src/app/briefs/**", "app/src/lib/briefs/**", "app/e2e/briefs.spec.ts"],
+      "recipe": ".agents/skills/verify-app/features/save-brief.md",
+      "suites": ["unit", "browser"]
+    },
+    "sign-in": {
+      "paths": ["app/src/lib/auth.ts", "app/src/app/(auth)/**"],
+      "recipe": ".agents/skills/verify-app/features/sign-in.md",
+      "suites": ["unit", "browser"]
+    }
+  }
+}

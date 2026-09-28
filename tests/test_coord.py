@@ -21,12 +21,12 @@ class CoordTest(unittest.TestCase):
         self.state.write_text(json.dumps({'prs': {}}))
         bins = self.tmp / 'bin'
         bins.mkdir()
-        for tool in ('gh', 'conductor'):
+        for tool in ('gh', 'conductor', 'git'):
             exe = bins / tool
             exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE}" {tool} "$@"\n')
             exe.chmod(0o755)
         self.env = {**os.environ, 'FAKE_STATE': str(self.state), 'JFACTORY_GH': str(bins / 'gh'),
-                    'JFACTORY_CONDUCTOR': str(bins / 'conductor')}
+                    'JFACTORY_CONDUCTOR': str(bins / 'conductor'), 'JFACTORY_GIT': str(bins / 'git')}
         self.brief = self.tmp / 'brief.md'
         self.brief.write_text(BRIEF)
 
@@ -96,16 +96,17 @@ class CoordTest(unittest.TestCase):
         self.assertIn('worker reported in-review', self.coord('sync', '1'))
         self.assertIn('no verified verdict', self.coord('merge', '1', 'a', ok=False))
         self.assertIn('not bbb2222', self.coord('verdict', '1', 'a', '--head', 'bbb2222', '--verdict', 'verified',
-                                                '--scopes', 'application', '--evidence', 'x', ok=False))
+                                                '--scopes', 'application', '--evidence', 'x', '--verifier', 'codex/gpt-6-sol', ok=False))
         self.coord('verdict', '1', 'a', '--head', 'aaa1111', '--verdict', 'verified', '--scopes', 'application',
-                   '--evidence', 'https://evidence')
+                   '--evidence', 'https://evidence', '--verifier', 'codex/gpt-6-sol')
         self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'ccc3333', 'headRefName': 'feat/a'}})
         self.assertIn('voids its verdict', self.coord('sync', '1'))
         self.assertIn('no verified verdict', self.coord('merge', '1', 'a', ok=False))
         self.coord('verdict', '1', 'a', '--head', 'ccc3333', '--verdict', 'verified', '--scopes', 'application',
-                   '--evidence', 'https://evidence')
+                   '--evidence', 'https://evidence', '--verifier', 'codex/gpt-6-sol')
         self.coord('merge', '1', 'a')
         self.assertEqual(self.db()['merged'], ['7'])
+        self.assertIn('jfactory-verdict', self.db()['prs']['7']['comments'][-1]['body'])
         merge_call = [c for c in self.db()['calls'] if c[1:3] == ['pr', 'merge']][0]
         self.assertIn('ccc3333', merge_call)
 
@@ -117,7 +118,7 @@ class CoordTest(unittest.TestCase):
                    '--question', 'Grid or list?')
         self.assertIn('parked as G1', self.coord('sync', '1'))
         self.coord('verdict', '1', 'a', '--head', 'aaa1111', '--verdict', 'verified', '--scopes', 'unit',
-                   '--evidence', 'x')
+                   '--evidence', 'x', '--verifier', 'codex/gpt-6-sol')
         self.assertIn('G1', self.coord('merge', '1', 'a', ok=False))
         self.coord('gate', 'resolve', '1', '--id', 'G1', '--answer', 'Grid')
         self.coord('merge', '1', 'a')
@@ -176,9 +177,9 @@ class CoordTest(unittest.TestCase):
         self.coord('sync', '1')
         self.assertIn('requires application evidence', self.coord('verdict', '1', 'a', '--head', 'aaa1111', '--verdict',
                                                                'verified', '--scopes', 'unit', '--evidence', 'x',
-                                                               ok=False))
+                                                               '--verifier', 'codex/gpt-6-sol', ok=False))
         self.coord('verdict', '1', 'a', '--head', 'aaa1111', '--verdict', 'verified', '--scopes', 'unit,application',
-                   '--evidence', 'x')
+                   '--evidence', 'x', '--verifier', 'codex/gpt-6-sol')
         self.assertIn('unrecorded target', self.coord('merge', '1', 'a', ok=False))
         self.assertNotIn('merged', self.db())
         self.assertIn('deploys to: **unknown**', self.db()['issues']['1']['body'])
