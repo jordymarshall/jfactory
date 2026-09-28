@@ -18,7 +18,7 @@ Read the pinned originals this adapts: [orchestrate](../vendor/pstack/skills/pot
 | --- | --- | --- |
 | `init --title --outcome [--standing FILE]` | Coordinator | Creates the program issue labelled `jfactory-program` with the model policy and standing orders, plus a Conductor sidebar section containing the coordinator workspace |
 | `list` | Anyone | Lists open program issues, for resuming |
-| `add <issue> <unit> --objective [--role] [--depends] [--paths]` | Coordinator | Adds a planned unit |
+| `add <issue> <unit> --objective [--role] [--effort] [--depends] [--paths]` | Coordinator | Adds a planned unit with its role and difficulty-based effort |
 | `brief <file>` | Coordinator | Checks a task contract has every required field |
 | `launch <issue> <unit> --brief FILE [--dry-run]` | Coordinator | Creates the unit's Conductor workspace with the policy's agent and model, moves it into the program's sidebar section, after checking hold, concurrency limit, dependencies, open decisions, brief completeness, attempt limit, model availability and reviewer model family |
 | `report <issue> <unit> --state ...` | Worker | Posts a structured comment with its state, PR, head SHA, note or question |
@@ -35,16 +35,16 @@ The tool is a guard, not a supervisor. It runs only when an agent calls it, and 
 
 ## Model policy
 
-Each unit has a role. The default policy is:
+Each unit has a role. The default policy is the owner's:
 
 | Role | Agent and model | Use |
 | --- | --- | --- |
-| `implement` | Claude `opus-5-5-1m`, high effort | Features and non-trivial fixes |
-| `small` | Claude `sonnet-5-1m`, medium effort | Mechanical or narrowly scoped changes |
-| `prototype` | Claude `sonnet-5-1m`, medium effort | Throwaway experiments that settle a decision |
-| `review` | Codex `gpt-5.6-sol`, high effort | Independent verification of another unit, from a different model family |
+| `implement` | Claude `opus-5-5-1m` | Features, fixes, prototypes and every other code change |
+| `verify` | Codex `gpt-6-sol`, fast mode | Verification, review and PR follow-through for another unit, from a different model family |
 
-A repository overrides it in `.jfactory/coordination.json`, for example `{"limit": 2, "roles": {"implement": {"agent": "codex", "model": "gpt-6-sol", "effort": "high"}}}`. Setup records the owner's policy there. `init` copies the effective policy into the program issue, so later edits to the file do not change a running program. `launch --agent/--model/--effort` overrides one unit and is recorded on it. The tool refuses models Conductor does not offer (`conductor model`) and a reviewer from the same agent family as the unit it reviews unless `--allow-same-family` is given and disclosed.
+Both roles choose effort per unit by difficulty, from `low` to `high` (default `medium`). Use `low` for mechanical edits and narrow checks, `medium` for ordinary features and reviews, and `high` for ambiguous, cross-cutting or high-risk work. Set it with `add --effort` or `launch --effort`; the tool refuses levels outside the role's range. Raise effort on a retry when the previous attempt failed from difficulty rather than a bad contract.
+
+A repository overrides the policy in `.jfactory/coordination.json`, for example `{"limit": 2, "roles": {"implement": {"agent": "codex", "model": "gpt-6-sol", "effort": "medium", "efforts": ["medium", "high"], "fast": true}}}`. Setup records the owner's policy there. `init` copies the effective policy into the program issue, so later edits to the file do not change a running program. `launch --agent/--model/--effort` overrides one unit and is recorded on it. The tool refuses models Conductor does not offer (`conductor model`), fast mode on a model without it, and a verifier from the same agent family as the unit it reviews unless `--allow-same-family` is given and disclosed.
 
 ## Where the owner is in the loop
 
@@ -78,7 +78,7 @@ Then run `init` with the standing orders: numbered constraints that apply to eve
 
 ## 2. Resolve uncertainty before writing tasks
 
-- An open visual, interaction or empirical question gets a throwaway [prototype](../vendor/pstack/skills/poteto-mode/playbooks/prototype.md) first, as a `prototype` unit or in the coordinator's workspace. Keep its scratch path, revision and screenshots or observed output. The prototype informs the decision and does not ship.
+- An open visual, interaction or empirical question gets a throwaway [prototype](../vendor/pstack/skills/poteto-mode/playbooks/prototype.md) first, as an `implement` unit at low effort or in the coordinator's workspace. Keep its scratch path, revision and screenshots or observed output. The prototype informs the decision and does not ship.
 - A contested module shape or a hard-to-reverse boundary gets [architect](../vendor/pstack/skills/architect/SKILL.md) before implementation units are cut.
 - A shared API, schema or data contract lands as its own first unit. Dependent units wait for it to merge, or stack on its branch with `launch --stack-on` and a recorded merge order.
 
@@ -135,7 +135,7 @@ A worker question becomes an open decision at `sync`. Answer it from recorded de
 
 A worker's report is a claim. At the PR's current head SHA, inspect the criteria, the checks that ran, the application evidence and whether the assertions prove the claim. Record the result with `verdict`. CI status is an input, not a verdict. A new head voids the previous verdict at the next `sync`.
 
-For expensive, judgment-heavy or high-risk units, add a `review` unit that depends on the implementation unit and launch it with `--stack-on` so it checks out the PR branch. Its contract asks for a verdict, not code changes. A failed verification becomes a fix task for the original worker, not a re-run of the same check.
+Every `implement` unit that produces a PR gets a `verify` unit that depends on it, launched with `--stack-on` so it checks out the PR branch once the worker reports `in-review`. Its contract asks it to re-run the acceptance checks and application journey, review the diff, and follow the PR through CI and review comments. It reports a recommended verdict with evidence and does not change product code; defects become a fix task for the original worker. Choose its effort by risk. The coordinator inspects that evidence and records the `verdict`.
 
 ## 8. Integrate continuously
 

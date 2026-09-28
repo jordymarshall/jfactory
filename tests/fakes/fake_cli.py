@@ -23,12 +23,15 @@ def done(out=''):
 
 if tool == 'conductor':
     if args[:1] == ['model']:
-        done({'agents': [{'agent': 'claude', 'models': ['opus-5-5-1m', 'sonnet-5-1m'], 'efforts': ['medium', 'high']},
-                         {'agent': 'codex', 'models': ['gpt-5.6-sol'], 'efforts': ['high']}]})
+        done({'agents': [{'agent': 'claude', 'models': ['opus-5-5-1m', 'sonnet-5-1m'],
+                          'efforts': ['low', 'medium', 'high', 'max'], 'fastModeModels': ['opus-5-5-1m']},
+                         {'agent': 'codex', 'models': ['gpt-6-sol', 'gpt-5.6-sol'],
+                          'efforts': ['low', 'medium', 'high'], 'fastModeModels': ['gpt-6-sol']}]})
     if args[:2] == ['workspace', 'create']:
         n = len(db.setdefault('workspaces', [])) + 1
         db['workspaces'].append({'name': opt('--name'), 'branch': opt('--branch'), 'agent': opt('--agent'),
-                                 'model': opt('--model'), 'message': Path(opt('--message-file')).read_text()})
+                                 'model': opt('--model'), 'effort': opt('--effort'),
+                                 'fast': '--fast-mode' in args, 'message': Path(opt('--message-file')).read_text()})
         done({'id': f'w{n}', 'deepLink': f'conductor://workspace?id=w{n}', 'session': {'id': f's{n}'}})
     if args[:2] == ['section', 'create']:
         db['section'] = args[2]

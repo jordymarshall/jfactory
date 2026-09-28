@@ -27,14 +27,15 @@ MAX_ATTEMPTS = 3
 BRIEF_FIELDS = ['OBJECTIVE', 'DECISIONS', 'SCOPE', 'CONTEXT', 'ACCEPTANCE', 'VERIFY', 'SHARED',
                 'LIMITS', 'FORBIDDEN', 'DELIVERY', 'REPORT']
 
-# Roles map to Conductor agents. Review deliberately uses another model family.
+# Owner policy: Opus builds; GPT-6 Sol in fast mode verifies, reviews and handles PRs, a different
+# model family from the builder. Effort is chosen per unit by difficulty within `efforts`.
 DEFAULT_POLICY = {
     'limit': 3,
     'roles': {
-        'implement': {'agent': 'claude', 'model': 'opus-5-5-1m', 'effort': 'high'},
-        'small': {'agent': 'claude', 'model': 'sonnet-5-1m', 'effort': 'medium'},
-        'prototype': {'agent': 'claude', 'model': 'sonnet-5-1m', 'effort': 'medium'},
-        'review': {'agent': 'codex', 'model': 'gpt-5.6-sol', 'effort': 'high'},
+        'implement': {'agent': 'claude', 'model': 'opus-5-5-1m', 'effort': 'medium',
+                      'efforts': ['low', 'medium', 'high'], 'fast': False},
+        'verify': {'agent': 'codex', 'model': 'gpt-6-sol', 'effort': 'medium',
+                   'efforts': ['low', 'medium', 'high'], 'fast': True},
     },
 }
 POLICY_FILE = Path('.jfactory/coordination.json')
@@ -289,7 +290,11 @@ def cmd_add(args):
     missing = [d for d in args.depends if d not in state['units']]
     if missing:
         raise Refused(f'Add dependencies first: {", ".join(missing)}')
+    allowed = state['policy'][args.role].get('efforts')
+    if args.effort and allowed and args.effort not in allowed:
+        raise Refused(f'Effort {args.effort} is outside the {args.role} policy: {", ".join(allowed)}')
     state['units'][args.unit] = {'objective': args.objective, 'role': args.role, 'depends': args.depends,
+                                 'effort': args.effort,
                                  'paths': args.paths, 'state': 'planned', 'attempts': 0, 'updated': now(),
                                  'note': ''}
     save(args.repo, args.program, state)
@@ -357,16 +362,21 @@ def cmd_launch(args):
     if missing:
         raise Refused('Brief is missing: ' + ', '.join(missing))
     role = dict(state['policy'][unit['role']])
+    role['effort'] = unit.get('effort') or role.get('effort')
     for key in ('agent', 'model', 'effort'):
         if getattr(args, key):
             role[key] = getattr(args, key)
+    if role.get('efforts') and role['effort'] not in role['efforts'] and not (args.agent or args.model):
+        raise Refused(f"Effort {role['effort']} is outside the {unit['role']} policy: {', '.join(role['efforts'])}")
     catalog = {a['agent']: a for a in run_json('conductor', 'model', '--json')['agents']}
     agent = catalog.get(role['agent'])
     if not agent or role['model'] not in agent['models']:
         raise Refused(f"{role['agent']}/{role['model']} is not offered by Conductor; run `conductor model`")
     if role.get('effort') and role['effort'] not in agent['efforts']:
         raise Refused(f"Effort {role['effort']} is not offered for {role['agent']}")
-    if unit['role'] == 'review':
+    if role.get('fast') and role['model'] not in agent.get('fastModeModels', []):
+        raise Refused(f"{role['model']} does not support fast mode in Conductor")
+    if unit['role'] == 'verify':
         same = [d for d in unit['depends'] if state['units'][d].get('agent') == role['agent']]
         if same and not args.allow_same_family:
             raise Refused(f'Reviewer would use the same agent family as {", ".join(same)}; '
@@ -378,13 +388,15 @@ def cmd_launch(args):
         if not base:
             raise Refused(f'{args.stack_on[0]} has no pushed branch to stack on yet')
     if args.dry_run:
-        print(f"Would launch {args.unit} on {role['agent']}/{role['model']} ({role.get('effort')}) from {base}")
+        fast = ', fast' if role.get('fast') else ''
+        print(f"Would launch {args.unit} on {role['agent']}/{role['model']} ({role.get('effort')}{fast}) from {base}")
         print(message)
         return
     created = run_json('conductor', 'workspace', 'create', '--repo-url', state['repo_url'], '--branch', base,
                        '--name', f"P{args.program} {args.unit}", '--session-name', args.unit,
                        '--agent', role['agent'], '--model', role['model'], *(['--effort', role['effort']]
                                                                              if role.get('effort') else []),
+                       *(['--fast-mode'] if role.get('fast') else []),
                        '--message-file', body_file(message), '--json')
     workspace = created.get('workspace', created)
     session = created.get('session') or created.get('firstSession') or {}
@@ -537,6 +549,7 @@ def main(argv=None):
     p.add_argument('unit')
     p.add_argument('--objective', required=True)
     p.add_argument('--role', default='implement')
+    p.add_argument('--effort', help='Chosen by difficulty within the role policy, e.g. low, medium or high')
     p.add_argument('--depends', type=listing, default=[])
     p.add_argument('--paths', type=listing, default=[])
     p.set_defaults(func=cmd_add)

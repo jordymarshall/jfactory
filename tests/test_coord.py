@@ -61,7 +61,8 @@ class CoordTest(unittest.TestCase):
         self.assertIn('| a | planned | implement: claude/opus-5-5-1m |', self.db()['issues']['1']['body'])
         self.coord('launch', '1', 'a', '--brief', str(self.brief))
         workspace = self.db()['workspaces'][0]
-        self.assertEqual((workspace['agent'], workspace['model'], workspace['branch']), ('claude', 'opus-5-5-1m', 'main'))
+        self.assertEqual((workspace['agent'], workspace['model'], workspace['effort'], workspace['fast'],
+                          workspace['branch']), ('claude', 'opus-5-5-1m', 'medium', False, 'main'))
         self.assertIn('report --repo o/r 1 a --state in-review', workspace['message'])
         self.assertIn('owner decision', workspace['message'])
         self.assertEqual(self.db()['section'], 'Program: Two features')
@@ -122,17 +123,19 @@ class CoordTest(unittest.TestCase):
         self.coord('merge', '1', 'a')
 
     def test_review_needs_other_family_and_retries_are_capped(self):
-        self.start(['a', '--objective', 'x'], ['r', '--objective', 'review a', '--role', 'review', '--depends', 'a'],
-                   limit=3)
+        self.start(['a', '--objective', 'x', '--effort', 'high'],
+                   ['r', '--objective', 'verify a', '--role', 'verify', '--depends', 'a', '--effort', 'low'], limit=3)
         self.coord('launch', '1', 'a', '--brief', str(self.brief))
         self.set_db(prs={'7': {'state': 'MERGED', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
         self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
         self.coord('sync', '1')
+        self.assertEqual(self.db()['workspaces'][0]['effort'], 'high')
         self.assertIn('same agent family', self.coord('launch', '1', 'r', '--brief', str(self.brief), '--agent',
-                                                      'claude', '--model', 'sonnet-5-1m', '--effort', 'medium',
-                                                      ok=False))
+                                                      'claude', '--model', 'opus-5-5-1m', ok=False))
         self.coord('launch', '1', 'r', '--brief', str(self.brief))
-        self.assertEqual(self.db()['workspaces'][-1]['agent'], 'codex')
+        verifier = self.db()['workspaces'][-1]
+        self.assertEqual((verifier['agent'], verifier['model'], verifier['effort'], verifier['fast']),
+                         ('codex', 'gpt-6-sol', 'low', True))
         for _ in range(2):
             self.coord('set', '1', 'r', '--state', 'failed')
             self.coord('launch', '1', 'r', '--brief', str(self.brief))
@@ -156,10 +159,18 @@ class CoordTest(unittest.TestCase):
         self.coord('close', '1')
         self.assertEqual(self.db()['issues']['1']['state'], 'CLOSED')
 
+    def test_effort_outside_policy_is_refused(self):
+        self.start(['a', '--objective', 'x'])
+        self.assertIn('outside the implement policy', self.coord('add', '1', 'b', '--objective', 'y', '--effort', 'max',
+                                                                 ok=False))
+        self.assertIn('outside the implement policy', self.coord('launch', '1', 'a', '--brief', str(self.brief),
+                                                                 '--effort', 'max', ok=False))
+
     def test_repository_policy_override(self):
         (self.tmp / '.jfactory').mkdir()
         (self.tmp / '.jfactory' / 'coordination.json').write_text(json.dumps(
-            {'limit': 5, 'roles': {'implement': {'agent': 'codex', 'model': 'gpt-5.6-sol', 'effort': 'high'}}}))
+            {'limit': 5, 'roles': {'implement': {'agent': 'codex', 'model': 'gpt-5.6-sol', 'effort': 'high',
+                                                  'efforts': ['high']}}}))
         self.start(['a', '--objective', 'x'], limit=0)
         state = self.program_state()
         self.assertEqual(state['limit'], 5)

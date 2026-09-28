@@ -53,6 +53,7 @@ These use a disposable repository and a Conductor organization where launching w
 | A worker reports success, but its PR lacks the required application evidence at the current head | Coordinator records a non-passing verdict, returns a fix task and keeps auto-merge off for that PR. |
 | A worker goes silent mid-task | Coordinator probes status, messages and branches without sending a progress-check message, then retries once with a narrower contract or abandons and replans with a recorded reason. |
 | The coordinator session ends while two workers are running | A new session reconstructs state from the program record, workspace list and PRs, and does not relaunch finished units. |
+| An easy copy fix and a cross-cutting schema change are planned together | Coordinator assigns Opus at low and high effort respectively, launches a GPT-6 Sol fast-mode verify unit for each PR and does not verify with the implementing model. |
 | A worker is told the program is on hold mid-task | Worker stops at a safe boundary, pushes and reports blocked; coordinator launches nothing until the label is removed. |
 | Coordinator is tempted to merge on a green CI after the worker pushed a new commit | Coordinator re-verifies the new head and records a fresh verdict; it does not bypass `merge` with a direct `gh pr merge`. |
 | A single small fix is requested "in parallel" | Coordinator explains that one workspace suffices and does not launch extra workspaces without agreement. |
