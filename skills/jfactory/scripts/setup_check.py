@@ -25,6 +25,11 @@ ENTRY_SECTIONS = {'product brief': 'Product brief', 'system map': 'System map',
                   'feature/status map': 'Feature/status map', 'agent instructions': 'Agent instructions'}
 MERGE_TARGETS = {'staging', 'none', 'production'}
 UNANSWERED = {'', 'unanswered', 'tbd', 'todo', '?'}
+# The interview must cover each topic in templates/setup-record.md, not just any one question.
+INTERVIEW_TOPICS = {'who it is for': r'\bwho\b', 'what they do today': r'\btoday\b|instead|workaround',
+                    'the outcome and how to measure it': r'outcome|improv|success|measure',
+                    'what is out of scope': r'out of scope|non-goal|exclud',
+                    'the next objective': r'next .*objective|first .*objective'}
 
 
 class Report:
@@ -95,6 +100,11 @@ def check_record(root, record, report):
     if not interview:
         report.add('FAIL', 'Setup record has no "Owner interview" table; setup must ask the owner, not infer the product')
     else:
+        missing = [topic for topic, pattern in INTERVIEW_TOPICS.items()
+                   if not any(re.search(pattern, row[0], re.I) for row in interview)]
+        if missing:
+            report.add('FAIL', 'Owner interview does not ask about: ' + ', '.join(missing) +
+                               ' (use the questions in templates/setup-record.md)')
         open_rows = [row[0] for row in interview if len(row) < 2 or row[1].lower() in UNANSWERED]
         product = states.get('Product direction')
         if open_rows and product == 'verified':
@@ -126,8 +136,10 @@ def check_verification(root, report, states):
         try:
             tracked = subprocess.run(['git', '-C', str(root), 'ls-files'], capture_output=True, text=True,
                                      check=True).stdout.split()
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            tracked = []
+        except (subprocess.CalledProcessError, FileNotFoundError) as error:
+            report.add('FAIL', f'Cannot list tracked files with git ({error}), so map coverage is unchecked')
+            tracked = None
+    if config is not None and tracked is not None:
         result = verify_plan.plan(tracked, config)
         unmapped = [p for p in result['unmapped'] if not verify_plan.matches(p, verify_plan.GATE_PATHS)]
         if unmapped:
@@ -165,8 +177,9 @@ def check_remote(repo, branch, report, states):
         branch = branch or info.get('default_branch', 'main')
         rules = json.loads(verify_plan.run('gh', 'api', f'repos/{repo}/rules/branches/{branch}'))
     except (verify_plan.Refused, ValueError) as error:
-        report.add('WARN', f'Could not read GitHub settings ({error}); PR delivery stays unconfirmed')
-        return
+        level = 'FAIL' if states.get('PR delivery') == 'verified' else 'WARN'
+        report.add(level, f'Could not read GitHub settings ({error}); PR delivery cannot be confirmed')
+        return False
     contexts = {c.get('context') for r in rules if r.get('type') == 'required_status_checks'
                 for c in r.get('parameters', {}).get('required_status_checks', [])}
     needs_pr = any(r.get('type') == 'pull_request' for r in rules)
@@ -188,8 +201,9 @@ def check_remote(repo, branch, report, states):
     if gaps:
         level = 'FAIL' if states.get('PR delivery') == 'verified' else 'WARN'
         report.add(level, 'Protected auto-merge is not fully enforced: ' + '; '.join(gaps))
-    else:
-        report.add('PASS', f'GitHub requires PRs and {", ".join(sorted(contexts))} on {branch}; auto-merge is allowed')
+        return False
+    report.add('PASS', f'GitHub requires PRs and {", ".join(sorted(contexts))} on {branch}; auto-merge is allowed')
+    return True
 
 
 def main(argv=None):
@@ -209,21 +223,25 @@ def main(argv=None):
     states = check_record(root, args.record, report)
     check_verification(root, report, states)
     check_delivery(root, report, states)
+    remote_ok = False
     if args.remote:
         repo = args.repo
         if not repo:
             try:
                 repo = verify_plan.run('gh', 'repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner').strip()
             except verify_plan.Refused as error:
-                report.add('WARN', f'Could not identify the GitHub repository: {error}')
+                level = 'FAIL' if states.get('PR delivery') == 'verified' else 'WARN'
+                report.add(level, f'Could not identify the GitHub repository: {error}')
         if repo:
-            check_remote(repo, args.branch, report, states)
+            remote_ok = check_remote(repo, args.branch, report, states)
     else:
         report.add('INFO', 'GitHub settings not checked; rerun with --remote before calling PR delivery verified')
 
     for level, text in report.items:
         print(f'{level}: {text}')
     pending = [f'{area} ({state})' for area, state in states.items() if state not in DONE]
+    if states.get('PR delivery') == 'verified' and not remote_ok:
+        pending.append('PR delivery (GitHub gates not confirmed in this run; rerun with --remote)')
     if report.count('FAIL'):
         print(f'\nSetup is not consistent: fix {report.count("FAIL")} item(s) above before reporting readiness.')
         return 1

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "static": ["README.md", "LICENSE", "evals/**", ".gitignore"],
+  "static": ["README.md", "LICENSE", "evals/**", ".gitignore", "docs/**"],
   "static_suites": ["checks"],
   "always_suites": ["checks"],
   "full_suites": ["checks"],
@@ -46,7 +46,7 @@
       "suites": ["checks"]
     },
     "repository-tests": {
-      "paths": ["tests/test_links.py"],
+      "paths": ["tests/test_links.py", "scripts/render_diagrams.py"],
       "recipe": "Run the full unittest suite and a negative control for the changed test",
       "suites": ["checks"]
     }

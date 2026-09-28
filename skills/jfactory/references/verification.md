@@ -67,6 +67,14 @@ python3 .agents/skills/jfactory/scripts/evidence.py run --task docs/tasks/save.j
 python3 .agents/skills/jfactory/scripts/evidence.py check --task docs/tasks/save.json
 ```
 
+A `judgment` criterion carries its `rubric` in the acceptance file, so the rubric is fixed before building (changing it makes earlier receipts stale). `run` refuses the `judgment` scope, because a passing command cannot prove one. The independent reviewer records its score instead:
+
+```sh
+python3 .agents/skills/jfactory/scripts/evidence.py judge --task docs/tasks/save.json --criterion clear --judge codex/gpt-6-luna --implementer claude/opus-5-5-1m --result pass --scores "1 yes; 2 yes; 3 yes" --inspected .context/ux/save/artifacts/save.png
+```
+
+`judge` refuses a judge from the implementer's model family, and inspected files that don't exist. It records a hash of each inspected file.
+
 The runner uses `.context/jfactory/` for local evidence and excludes only that directory from its source fingerprint. Never put application source there. No credentials in command arguments or environment labels; review logs before sharing. Only evidence IDs, hashes and existing task records need be durable; publish selected sanitized artifacts when a PR reviewer needs them, not all local logs. The code fingerprint covers tracked and nonignored untracked files; ignored configuration/dependency contents are not captured. External state still requires observation.
 
 If required proof is blocked, keep the criterion open. Open a PR for review with the precise gap once independent work is complete, following [delivery](delivery.md). Review status does not close verification criteria or authorize merge. Passing a component check is useful progress but cannot close an application criterion. If the generated verifier drifts, repair it and rerun; report actual product regressions separately from verification-documentation corrections.

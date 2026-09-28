@@ -1,0 +1,12 @@
+flowchart TD
+    Q["A request arrives"] --> A{"Is it research on another app?"}
+    A -->|Yes| RR["UX reference research"] --> PP["Findings go to product as proposals"]
+    A -->|No| B{"Is the outcome clear and already agreed?"}
+    B -->|No| P["Product loop: clarify with the owner"] --> C
+    B -->|Yes| C{"Will users see or feel the change?"}
+    C -->|Yes| UX["UX loop: design and review in the running app"] --> E["Engineering loop"]
+    C -->|"No: API, backend, refactor or tooling"| E
+    E --> D{"Same mistake or correction seen before?"}
+    D -->|Yes| W["Workflow loop: move the fix up the correction ladder"]
+    D -->|No| DONE["Deliver the PR"]
+    W --> DONE

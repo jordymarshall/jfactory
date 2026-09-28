@@ -32,6 +32,54 @@ Workflow evals are separate experiments on the agent's methods. Passing an app t
 
 Keep owner decisions, agent assumptions, implementation, verification and acceptance distinct in existing canonical records. A screenshot cannot prove persistence; a component fixture cannot prove an authenticated app path; an agent's UX critique cannot establish customer usability. The [verification contract](verification.md) defines evidence scopes.
 
+## Route each request through the right loops
+
+Choose the loops when you write the objective, and record the choice and the reason in its **Route** field. The request type sets the starting route:
+
+| Request | Product | UX | Engineering | Workflow |
+| --- | --- | --- | --- | --- |
+| Vague or new idea ("make saving better") | First: clarify customer, problem and outcome | After product | After UX | If the same misunderstanding recurs |
+| New user-facing feature | Full review of customer, outcome, success measure and non-goals | Design, then review in the running app; reference research only for an open design question | Yes | On recurring failures |
+| UI, copy or interaction change with settled intent | Skip | Review in the running app, often with a `judgment` rubric | Yes | |
+| Bug where the intended behavior is agreed | Skip | Only if users see the fix | Yes: reproduce first, then fix | If the bug came from a repeatable agent mistake |
+| API, CLI, data or backend change | Only if it changes what users can do | Skip; exercise the real interface instead | Yes | |
+| Refactor, tech debt, tooling | Skip; behavior must not change | Skip | Yes, with checks that behavior is unchanged | Often: it is layer 1 or 2 of the correction ladder |
+| "Study app X" | Receives the findings as proposals | Reference research | None until a proposal is agreed | |
+| The same correction a second time | | | Fix this instance | Yes: move the rule up the ladder |
+
+The route can change during the work. These signals send it back:
+
+- **Back to product:** a consequential customer choice nobody has decided; research or a UX review suggests the agreed outcome will not solve the problem; the work is growing beyond the objective. Ask the owner with a recommendation and keep working on anything that doesn't depend on the answer.
+- **Into UX:** engineering changes a flow, screen or message users see, or the objective has a `judgment` criterion.
+- **Back to engineering:** a UX review finds friction or a defect, or the independent verifier fails the PR.
+- **Into workflow improvement:** the owner corrects the same thing twice, the verifier keeps catching the same class of mistake, or an eval fails.
+
+### What the product loop produces
+
+The product loop turns an intent into an agreed objective.
+
+1. **Investigate first.** Read the brief, the setup interview, earlier objectives and the code, so you don't ask what is already settled.
+2. **Ask about what's left.** Ask focused questions about what is still open: who this is for, what they do today, the outcome they would notice, how success is measured, and what is excluded. Offer a recommended answer and its trade-off with each question.
+3. **Record the result** in the objective: owner decisions kept separate from agent assumptions, observable acceptance criteria, and non-goals.
+
+Work that depends on an open answer waits for it; independent work continues. The loop ends when the owner agrees the objective, or confirms a recorded proposal. It restarts when the owner tries the result and gives feedback about value rather than defects.
+
+### What the UX loop produces
+
+The UX loop has two modes, both in the [UX skill](../skills/jfactory-ux/SKILL.md).
+
+- **Experience review of your own product.**
+  - Drive the changed journey in the running app at the agreed viewports, through the real interface.
+  - Check empty, loading, error and success states, keyboard and focus, and motion.
+  - Compare the result with the objective and fix friction in the engineering loop.
+  - Score any `judgment` criterion against its rubric.
+  - It ends when the journey passes with application evidence and the rubric passes. The owner then tries the preview.
+- **Reference research on other apps.**
+  - Map the app's journeys and cover them systematically, keeping observations, inferences and recommendations separate.
+  - Findings go to the product loop as proposals. They are never requirements until the owner agrees.
+
+A UX judgment is an assessment, not customer validation. Owner and customer feedback stays a separate check.
+
 ## Earn autonomy with evidence
 
 Autonomy grows with trust, and trust comes from watching the agent do the work. Start a new kind of task where you can watch it: read the agent's actual tool calls and outputs, correct it, and turn the correction into a check or skill. Once the same task runs correctly without correction, let it run unattended, then several at once. The same order applies to a repository: first a verifier that can run the real app, then trusted single sessions, then [parallel workspaces](coordination.md). Protected auto-merge does not skip this ladder. It lands only work that passed the agreed verification, and only to staging at most, so it can be on from the start. As trust grows, the owner reads what landed instead of every PR before it merges. Starting many agents before one is trustworthy mostly produces rework.

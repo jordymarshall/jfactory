@@ -1,0 +1,20 @@
+sequenceDiagram
+    participant O as Owner
+    participant C as Coordinator
+    participant I as Program issue
+    participant W as Worker (one per unit)
+    participant V as Verifier (other model family)
+    participant G as GitHub
+    O->>C: "Deliver A, B and C in parallel"
+    C->>O: Agree outcomes, criteria and open decisions
+    C->>I: coord.py init and add units
+    C->>W: coord.py launch: own workspace, brief, model by tier
+    W->>I: report running, then in-review with its PR
+    C->>I: coord.py sync reads reports and real PR state
+    C->>V: launch a verify unit on the PR branch
+    V->>C: re-run checks at the latest commit, recommend a verdict
+    C->>G: coord.py verdict posts the jfactory verified verdict
+    C->>G: coord.py merge queues auto-merge on the verified commit
+    G-->>C: merged
+    C->>W: dependent units update from main and re-check
+    C->>I: coord.py close archives workspaces and closes the program

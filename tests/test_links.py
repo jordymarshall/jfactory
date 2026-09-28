@@ -1,3 +1,5 @@
+import hashlib
+import json
 import re
 import unittest
 from pathlib import Path
@@ -36,6 +38,16 @@ class LinkTest(unittest.TestCase):
                 if not (doc.parent / target).exists():
                     failures.append(f'{doc.relative_to(ROOT)}: missing {target}')
         self.assertEqual(failures, [])
+
+    def test_readme_diagrams_are_rendered_from_current_sources(self):
+        diagrams = ROOT / 'docs' / 'diagrams'
+        manifest = json.loads((diagrams / 'manifest.json').read_text())
+        sources = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in diagrams.glob('*.mmd')}
+        self.assertEqual(manifest, sources, 'Diagram source changed; run scripts/render_diagrams.py')
+        for name in sources:
+            self.assertTrue((diagrams / name).with_suffix('.png').is_file(), name)
+        self.assertNotIn('```mermaid', (ROOT / 'README.md').read_text(),
+                         "GitHub's mobile app shows Mermaid as code; link a rendered image instead")
 
 
 if __name__ == '__main__':

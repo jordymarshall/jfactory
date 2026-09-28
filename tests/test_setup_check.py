@@ -113,6 +113,26 @@ class SetupCheckTest(unittest.TestCase):
         (self.root / '.jfactory' / 'setup.md').write_text(record(states=states))
         self.assertIn('WARN: Protected auto-merge is not fully enforced', self.check('--remote', '--repo', 'o/r', code=3))
 
+    def test_verified_delivery_needs_a_successful_remote_check(self):
+        self.assertIn('rerun with --remote', self.check(code=3))
+        self.state.write_text(json.dumps({'repo': {'default_branch': 'main', 'allow_auto_merge': True}}))
+        bad = self.env['JFACTORY_GH']
+        self.env['JFACTORY_GH'] = '/nonexistent/gh'
+        self.assertIn('FAIL: Could not read GitHub settings', self.check('--remote', '--repo', 'o/r', code=1))
+        self.env['JFACTORY_GH'] = bad
+
+    def test_git_unavailable_is_not_full_coverage(self):
+        self.env['PATH'] = str(Path(self.env['JFACTORY_GH']).parent)
+        self.assertIn('Cannot list tracked files with git', self.check('--remote', '--repo', 'o/r', code=1))
+
+    def test_interview_must_cover_every_topic(self):
+        text = record().split('## Owner interview')[0] + (
+            '## Owner interview\n\n| Question | Owner answer | Date |\n| --- | --- | --- |\n'
+            '| Is setup okay? | yes | 2026-09-28 |\n\n## Next objective\n\nTask location: issues\n')
+        (self.root / '.jfactory' / 'setup.md').write_text(text)
+        out = self.check('--remote', '--repo', 'o/r', code=1)
+        self.assertIn('does not ask about: who it is for, what they do today', out)
+
     def test_production_merges_cannot_be_verified_delivery(self):
         (self.root / '.jfactory' / 'coordination.json').write_text('{"merge_deploys": "production"}')
         self.assertIn('Merging releases production', self.check(code=1))

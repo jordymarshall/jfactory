@@ -1,0 +1,21 @@
+flowchart TD
+    A["AGENTS.md managed block: tells the agent to use jfactory"] --> S["SKILL.md and references/: the procedures"]
+    S --> P["pstack skills: engineering techniques"]
+    S --> U["jfactory-ux: browser review and research"]
+    S --> O["Objective in the task location: what done means"]
+    S --> V["Project verifier: CLI and feature map for the real app"]
+    O --> W["Work loop: implement, check, fix"]
+    V --> W
+    P --> W
+    W --> PR["Pull request with evidence"]
+    M[".jfactory/verification.json: code to features to checks"] --> VP["verify_plan.py: what this PR must verify"]
+    PR --> VP
+    VP --> X["Independent verdict from another model family"]
+    X --> G["GitHub: required checks, then protected auto-merge"]
+    SC["setup_check.py: fails if setup skipped a step"] -.->|audits| R[".jfactory/setup.md and AGENTS.md"]
+    classDef instr fill:#e8f0fe,stroke:#4a6fb5,color:#111
+    classDef rec fill:#f3f3f3,stroke:#888,color:#111
+    classDef enf fill:#fde8d8,stroke:#c0602a,color:#111
+    class A,S,P,U,W instr
+    class O,V,M,R,PR rec
+    class VP,X,G,SC enf

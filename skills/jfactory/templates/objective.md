@@ -8,6 +8,13 @@ Customer and experience outcome.
 - **Agent assumptions:** <what the agent inferred and has not confirmed>
 - **Open questions:** <consequential choices still unsettled>
 
+## Route
+Loops this objective uses, and why. See the routing table in `references/methodology.md`.
+- **Product:** <yes or skip, and why>
+- **UX:** <review, research or skip, and why>
+- **Engineering:** yes
+- **Workflow:** <only if a repeated correction is involved>
+
 ## Scope
 - **In scope:** <paths or behavior>
 - **Out of scope:** <non-goals>

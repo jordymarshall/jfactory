@@ -1,0 +1,18 @@
+flowchart TD
+    A["You describe an outcome"] --> R{"Route: which loops does it need?"}
+    R -->|Open customer or value question| P["Product loop: agree outcome, criteria and non-goals with you"]
+    R -->|Intent already settled| O["Objective written in the task location"]
+    P --> O
+    O --> I["Implement the smallest next step"]
+    I --> C["Run the real check and read the result"]
+    C -->|Fails| I
+    C -->|User-visible change| U["UX loop: review the running app, score any rubric"]
+    U -->|Friction| I
+    U --> PR
+    C -->|All criteria pass| PR["Open a PR with the evidence"]
+    PR --> V["Verifier from another model family checks the latest commit"]
+    V -->|Finds a problem| I
+    V -->|Verified| G["GitHub: required checks pass, protected auto-merge"]
+    G --> S["Merge deploys to staging at most"]
+    S --> F["You try it: feedback on value goes to product, defects to engineering"]
+    F -.-> R

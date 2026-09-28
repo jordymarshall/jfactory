@@ -1,0 +1,9 @@
+flowchart TD
+    C["You correct the agent, or a mistake repeats"] --> Q1{"Can the code make it impossible?"}
+    Q1 -->|Yes| L1["1. Codebase: one paved path, a type, a module boundary"]
+    Q1 -->|No| Q2{"Can a tool detect it?"}
+    Q2 -->|Yes| L2["2. Static analysis: lint rule, compiler error, CI check"]
+    Q2 -->|No| Q3{"Does it apply to every task in this repo?"}
+    Q3 -->|Yes| L3["3. Agent instructions or a review bot"]
+    Q3 -->|No, only some kinds of work| L4["4. A skill for that kind of work"]
+    L4 -.->|Only if nothing above fits| L5["5. Written style rule for human review"]

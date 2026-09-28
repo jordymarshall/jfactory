@@ -8,7 +8,7 @@ Last reviewed 2026-09-28 against `main` at `3d0127a`, plus the setup-checker PR.
 
 | Area | State | Evidence or reason |
 | --- | --- | --- |
-| Documentation | verified | `AGENTS.md` has the four entry sections, and `tests/test_links.py` passes. The README explains the components, loops, objectives, verification, auto-merge and correction ladder; its four Mermaid diagrams render with mermaid-cli 11. |
+| Documentation | verified | `AGENTS.md` has the four entry sections, and `tests/test_links.py` passes. The README explains the components, loop routing, objectives, verification, auto-merge, coordination and the correction ladder. Its six diagrams are PNG images rendered from `docs/diagrams/*.mmd`, so they show in GitHub's mobile app; a test keeps them in sync with their sources. |
 | Product direction | verified | The owner answered every interview question below on 2026-09-28. The brief in `AGENTS.md` follows those answers. |
 | Workspace tools | verified | Python 3 only; the browser smokes also need Node, Chrome and Playwright's ffmpeg. In the Conductor cloud workspace (Python 3.9.25, Node 24.14.1), the unit tests, `check-upstream.py`, `tests/browser_smoke.py` and `tests/dashboard_smoke.py` passed. CI runs Python 3.10. No cloud setup script is needed. |
 | Verification | verified | `.jfactory/verification.json` maps every tracked file except the gate paths, which always need full verification. `setup_check.py` confirms it and the `jfactory verified` workflow. |
@@ -27,7 +27,11 @@ Last reviewed 2026-09-28 against `main` at `3d0127a`, plus the setup-checker PR.
 
 ## Open owner decisions
 
-1. **Import the committed ruleset** so main requires `jfactory verified`. Approved; the owner needs to do the import. Steps: Settings → Rules → Rulesets → "Verified squash merges to main", then add the required status check `jfactory verified` (GitHub Actions), or import `.github/rulesets/main.json`. Then rerun `setup_check.py --remote` and mark PR delivery verified.
+1. **Require `jfactory verified` on main.** Approved. The Conductor GitHub App token lacks the Administration permission rulesets need (HTTP 403), so someone with admin rights on GitHub has to apply it. Either:
+   - On GitHub, open Settings → Rules → Rulesets → "Verified squash merges to main" → Require status checks to pass → Add checks → `jfactory verified` (source: GitHub Actions) → Save changes.
+   - Or run, signed in as the owner: `gh api -X PUT repos/jordymarshall/jfactory/rulesets/24086594 --input .github/rulesets/main.json`
+
+   Then rerun `setup_check.py --remote` and mark PR delivery verified.
 
 ## Next objective
 

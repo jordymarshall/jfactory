@@ -1,0 +1,11 @@
+flowchart TD
+    P["Product: agree the customer outcome and acceptance"] --> U["UX: design or research the experience"]
+    U --> E["Engineering: implement and verify behavior"]
+    E --> V["UX: review the running app, score rubrics"]
+    V -->|Friction or defect| E
+    V --> R["Review the preview, evidence and PR"]
+    R -->|Experience or value needs changing| P
+    R -->|Verified, decisions settled| A["Protected auto-merge"]
+    E -. Recurring agent mistake .-> W["Workflow improvement: correction ladder and evals"]
+    V -. Recurring research mistake .-> W
+    W -. Better checks and instructions .-> E
