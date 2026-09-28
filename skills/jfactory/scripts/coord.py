@@ -344,9 +344,9 @@ COORDINATION
 You are worker `{uid}` in jfactory program {state['_issue']['url']}. Follow the worker protocol in jfactory's coordination procedure.
 Only this unit is yours. Do not edit the program issue body, launch workspaces or change other units' branches.
 Report state changes from the repository root; each report is a comment the coordinator reads:
-  python3 {script} report --repo {repo} {number} {uid} --state running --note "started"
-  python3 {script} report --repo {repo} {number} {uid} --state in-review --pr <number> --head <sha> --note "criteria results and evidence links"
-  python3 {script} report --repo {repo} {number} {uid} --state blocked --question "decision you need"
+  python3 {script} --repo {repo} report {number} {uid} --state running --note "started"
+  python3 {script} --repo {repo} report {number} {uid} --state in-review --pr <number> --head <sha> --note "criteria results and evidence links"
+  python3 {script} --repo {repo} report {number} {uid} --state blocked --question "decision you need"
 The owner may message you directly. Follow their feedback within this unit, and include it as an owner decision in the next report's --note so the coordinator can record it and relay it to other units. If it changes this unit's scope or affects other units, report --state blocked with a --question instead of expanding scope yourself.
 If a report says the program is on hold, stop at a safe boundary, push your work and report.
 """

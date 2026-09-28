@@ -1,6 +1,7 @@
 # Copy to .github/workflows/jfactory-verified.yml during setup and set JFACTORY_DIR to the
 # installed bundle path. Make the "jfactory verified" status a required check on the base branch.
-# The job runs the base branch's copy of the script and mapping, never code from the PR.
+# The job runs the PR base branch's copy of the script and mapping, never code from the PR.
+# Comment events run this workflow from the default branch, so it takes effect there once merged.
 name: jfactory verified
 on:
   pull_request:
@@ -23,9 +24,15 @@ jobs:
       (github.event_name == 'issue_comment' && github.event.issue.pull_request)
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve the PR's base branch
+        id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: echo "ref=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json baseRefName --jq .baseRefName)" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ steps.base.outputs.ref }}
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
