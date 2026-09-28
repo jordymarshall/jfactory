@@ -2,7 +2,25 @@
 
 ## Product brief
 
-jfactory is a portable engineering methodology and toolset for coding agents, not an application. Its customers are repository owners who want an agent to take a bounded outcome from agreement to a verified, merged PR without being told to "keep going", while the owner keeps product decisions and production releases. Hypothesis: explicit objectives, change-aware verification by a different model family and protected auto-merge let owners delegate more work with less review. Non-goals: bundling any customer's product brief, business context, credentials or release permissions; a background supervisor or scheduler. Preserve upstream pstack attribution and original bytes.
+jfactory is a portable engineering methodology and toolset for coding agents, not an application. It is for the owner first, then any developer who points their coding agent at this repository. It removes four pains:
+
+- babysitting agents with "keep going" (the primary one);
+- agents claiming done without evidence;
+- reviewing every PR by hand;
+- coordinating many agents in parallel.
+
+Success is measured in this order:
+
+1. Setup plus a first feature reach a verified, merged PR with the owner only answering product questions.
+2. Agent PRs merge without owner fixes.
+3. Blinded cross-model evals show it helps.
+
+Non-goals:
+
+- Anything that works for only one repository or product. jfactory must set up and improve any repository, so product facts belong in each project's own files, never in the bundle.
+- Releasing production on its own.
+
+Routines and scheduled automation are acceptable where they help. Preserve upstream pstack attribution and original bytes. The owner's answers are in the [setup record](.jfactory/setup.md#owner-interview).
 
 ## System map
 
@@ -14,6 +32,6 @@ The entry point is [skills/jfactory/SKILL.md](skills/jfactory/SKILL.md), with pr
 
 ## Agent instructions
 
-Use [jfactory](skills/jfactory/SKILL.md) for changes here. Default delivery is a ready-for-review PR against main, with passing applicable checks and explicit evidence limits. The owner authorizes protected squash auto-merge for this repository after applicable verification passes. Merging deploys nothing (`merge_deploys: none`). The desired [main ruleset](.github/rulesets/main.json) requires PRs, squash merges, and both the `checks` job against the latest main and the `jfactory verified` status. Before queuing auto-merge, confirm which of these are active remotely; the setup record lists the current state. Enabling the repository auto-merge setting alone does not establish protection. Keep shared branches current by merging main into them, rerun affected checks, and refresh overlapping PRs after each merge. Do not push the base branch directly or bypass gates.
+Use [jfactory](skills/jfactory/SKILL.md) for changes here. Objectives live in GitHub issues labelled `jfactory-objective`, using [the objective template](skills/jfactory/templates/objective.md); small fixes can state theirs in the PR. Default delivery is a ready-for-review PR against main, with passing applicable checks and explicit evidence limits. The owner authorizes protected squash auto-merge for this repository after applicable verification passes. Merging deploys nothing (`merge_deploys: none`). The desired [main ruleset](.github/rulesets/main.json) requires PRs, squash merges, and both the `checks` job against the latest main and the `jfactory verified` status. Before queuing auto-merge, confirm which of these are active remotely; the setup record lists the current state. Enabling the repository auto-merge setting alone does not establish protection. Keep shared branches current by merging main into them, rerun affected checks, and refresh overlapping PRs after each merge. Do not push the base branch directly or bypass gates.
 
-Run `python3 -m unittest discover -s tests -v` and `python3 skills/jfactory/scripts/check-upstream.py`; CI also runs `tests/browser_smoke.py` and `tests/dashboard_smoke.py`. Test installer changes in disposable repositories, preserving user files and rejecting conflicting updates. Test verification changes with failure/staleness/scope negative controls. Skill behavior needs separate model trials; never describe unit checks as a full workflow eval. Keep links inside `skills/jfactory` resolvable within the installed bundle; `tests/test_links.py` enforces it.
+Run `python3 -m unittest discover -s tests -v` and `python3 skills/jfactory/scripts/check-upstream.py`, and after setup or instruction changes `python3 skills/jfactory/scripts/setup_check.py --remote`; CI also runs `tests/browser_smoke.py` and `tests/dashboard_smoke.py`. Test installer changes in disposable repositories, preserving user files and rejecting conflicting updates. Test verification changes with failure/staleness/scope negative controls. Skill behavior needs separate model trials; never describe unit checks as a full workflow eval. Keep links inside `skills/jfactory` resolvable within the installed bundle; `tests/test_links.py` enforces it.
