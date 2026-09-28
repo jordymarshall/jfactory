@@ -6,4 +6,4 @@ Use [jfactory](skills/jfactory/SKILL.md) for changes here. Default delivery is a
 
 Run `python3 -m unittest discover -s tests -v` and `python3 skills/jfactory/scripts/check-upstream.py`. Test installer changes in disposable repositories, preserving user files and rejecting conflicting updates. Test verification changes with failure/staleness/scope negative controls. Skill behavior needs separate model trials; never describe unit checks as a full workflow eval.
 
-The entry point lives in `skills/jfactory/SKILL.md`, detailed procedures in its `references/`, executable checks in its `scripts/`, installation in `scripts/install.py`, and behavioral evaluation cases in `evals/scenarios.md`.
+The entry point lives in `skills/jfactory/SKILL.md`, detailed procedures in its `references/`, executable checks in its `scripts/`, installation in `scripts/install.py`, behavioral evaluation cases in `evals/scenarios.md`, and the coordination tool in `skills/jfactory/scripts/coord.py`, tested by `tests/test_coord.py` with fakes in `tests/fakes/`.
