@@ -1,6 +1,6 @@
 # jfactory
 
-jfactory is a set of instructions and small tools that you install into a software project so your coding agent (Claude Code, Codex, Cursor and others) works the same careful way every time. You describe an outcome. The agent agrees what "done" means with you, builds it, proves it works on the real product, gets a second AI model to check that proof, and opens a pull request that merges itself only when everything required has passed.
+jfactory is a set of instructions and small tools that you install into a software project so your coding agent (Claude Code, Codex, Cursor and others) works the same careful way every time. You describe an outcome. The agent agrees what "done" means with you, builds it, proves it works on the real product, gets a second AI model to check that proof when the change is risky, and opens a pull request that merges itself only when everything required has passed.
 
 You stay in charge of three things: what gets built, product decisions the agent can't settle alone, and releasing to production.
 
@@ -24,7 +24,7 @@ You stay in charge of three things: what gets built, product decisions the agent
 
 - **No more "keep going".** Give the agent a bounded outcome and it works through implementation, testing and fixing on its own, stopping only for decisions that genuinely need you.
 - **Proof, not claims.** Every result says what was checked, how, on which commit, and what is still unproven. "It works" without evidence doesn't count as done.
-- **A second opinion from a different AI.** A verifier from a different model family (for example GPT checking Claude's work) re-checks each change before it can merge.
+- **A second opinion from a different AI.** A verifier from a different model family (for example GPT checking Claude's work) re-checks each high-risk change before it can merge. Low-risk changes need only passing CI.
 - **Safe automatic merging.** Verified PRs merge themselves through GitHub's protected auto-merge. Missing proof keeps the PR open. Merging deploys to staging at most; production only when you ask.
 - **A record you can trust.** jfactory keeps five things apart: what you decided, what the agent assumed, what exists, what was verified, and what you accepted.
 
@@ -35,7 +35,7 @@ jfactory has two kinds of parts, and anything important gets both:
 - **Instructions the agent reads.** They tell it how to work: agree what "done" means, prove it properly, open a PR. They are guidance. An agent can still miss or misread them.
 - **Checks that enforce the rules.** Scripts and GitHub settings that refuse to proceed unless the rules were actually followed. They work whether or not the agent cooperates.
 
-For example, the instructions say "get a model from another family to verify your work". The scripts refuse a verdict for an old commit or from the same family. When the repository's ruleset requires the `jfactory verified` check (setup asks you to turn this on), GitHub refuses to merge until a valid verdict exists.
+For example, the instructions say "get a model from another family to verify your work". The scripts refuse a verdict for an old commit or from the same family. When the repository's ruleset requires the `jfactory verified` check (setup asks you to turn this on), GitHub refuses to merge a high-risk change until a valid verdict exists.
 
 ![How the components connect: instructions, records and enforcement](docs/diagrams/components.png)
 
@@ -126,7 +126,7 @@ Say you ask: *"Let users save a reference and find it again later."*
 1. **Agree the objective.** Before building anything substantial, the agent writes down the outcome, your decisions versus its own assumptions, what's out of scope, and observable acceptance criteria. For example: *a signed-in user saves an item, still sees it after reloading and in a new session, and gets a recoverable error if saving fails.* Each criterion says what evidence proves it, such as a unit test or a run through the real app (the evidence types are listed under verification below). A missing test is work to do, not a reason to drop the criterion.
 2. **Loop until it passes.** The agent picks an unmet criterion, makes the smallest change, runs the real check, reads the result and side effects, and fixes what failed. It repeats without prompting. It never weakens a criterion to finish. If it's stuck without new evidence, it changes approach or names the concrete blocker, and keeps working on anything independent.
 3. **Deliver a PR.** Work happens on its own branch. The PR is ready for review (not a draft) and lists what changed, what was checked, and anything unproven, with gaps at the top.
-4. **Independent verification.** Another model family re-runs the required checks on that exact commit and posts a verdict. See [How verification works](#how-verification-works).
+4. **Independent verification.** If the change touches a high-risk area, another model family re-runs the required checks on that exact commit and posts a verdict. Low-risk and docs-only changes skip this step. See [How verification works](#how-verification-works).
 5. **Auto-merge.** Once every required check is green on the latest commit, GitHub merges the PR. A new commit resets the verdict. See [How auto-merge stays safe](#how-auto-merge-stays-safe).
 6. **Handoff.** The final message gives the outcome, what changed and how to try it, the actual checks and results, the PR link and commit, and remaining gaps. Passing tests is not the same as you accepting the result. "Saving works, but finding it takes too many steps" starts the next round.
 
@@ -143,7 +143,7 @@ The agent stops at the agreed objective. It proposes the next one instead of qui
 **What's enforced, and what isn't.**
 
 - Writing the objective and checking each criterion are instructions: the verifier is told to check every criterion and list the results in its verdict.
-- The tools enforce the mechanics around the verdict: that it's for the PR's latest commit, from a different model family, and covers every affected feature. They don't read the criteria themselves.
+- The tools enforce the mechanics around the verdict: that it's for the PR's latest commit, from a different model family, and covers every high-risk feature the PR touches. They don't read the criteria themselves.
 - For parallel work, `coord.py` also refuses a worker brief without acceptance criteria, and a verdict that lacks the unit's required evidence scopes.
 - If you record criteria in a machine-readable acceptance file, `evidence.py` can also check that each one has fresh, passing evidence.
 
@@ -289,8 +289,8 @@ In [Conductor](https://www.conductor.build), ask one agent to coordinate:
 4. **A complete brief per unit.** The brief is the worker's whole context: objective, decisions, scope, context, acceptance, verification steps, shared resources, limits, forbidden actions, delivery and reporting. `coord.py` refuses a brief with a missing field.
 5. **Launch in isolation.** Each unit gets its own Conductor workspace, branch and PR. The model comes from the unit's role and your remaining usage (see the next section). A new kind of unit is piloted alone first. Free slots are refilled as units finish, up to the concurrency limit (default three).
 6. **Monitor by evidence.** The coordinator runs `coord.py sync` at natural points. It folds in worker reports, reads the real PR state, voids verdicts when a PR gets a new commit, archives finished workspaces and lists what's ready. It doesn't ping workers to ask how they're doing, because a message restarts their turn.
-7. **Verify independently.** Once a worker's PR is in review, a verify unit from the other model family checks out that PR and re-runs its checks. It recommends a verdict. The coordinator inspects the evidence and records it with `coord.py verdict`, which also posts the `jfactory verified` verdict.
-8. **Merge one at a time.** `coord.py merge` queues protected auto-merge pinned to the verified commit. Overlapping units merge one at a time, and dependent workers update from main and re-check after each merge.
+7. **Verify independently.** Once a worker's PR is in review and touches a high-risk area, a verify unit from the other model family checks out that PR and re-runs its checks. It recommends a verdict. The coordinator inspects the evidence and records it with `coord.py verdict`, which also posts the `jfactory verified` verdict.
+8. **Merge one at a time.** `coord.py merge` queues protected auto-merge pinned to the PR's current commit: after a verified verdict at that commit, or on GitHub's required CI alone when every change is low-risk. Overlapping units merge one at a time, and dependent workers update from main and re-check after each merge.
 9. **Close.** Once every unit is merged, done or abandoned, `coord.py close` closes the issue, archives the program's workspaces and removes its sidebar section.
 
 ### Guards `coord.py` enforces
