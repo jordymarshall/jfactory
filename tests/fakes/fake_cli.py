@@ -41,6 +41,17 @@ if tool == 'conductor':
     if args[:2] == ['workspace', 'move']:
         db.setdefault('moves', []).append([a for a in args[2:] if a != '--section'])
         done()
+    if args[:2] == ['workspace', 'archive']:
+        db.setdefault('archived', []).append(args[2])
+        done()
+    if args[:2] == ['section', 'list']:
+        done({'data': [s for s in db.get('sections', []) if s['id'] not in db.get('deleted_sections', [])],
+              'offset': 0, 'hasMore': False})
+    if args[:2] == ['workspace', 'get']:
+        done({'id': args[2], 'state': 'archived' if args[2] in db.get('archived', []) else 'ready'})
+    if args[:2] == ['section', 'delete']:
+        db.setdefault('deleted_sections', []).append(args[2])
+        done({'section': {'id': args[2], 'workspaceIds': []}})
     if args[:2] == ['session', 'status']:
         done({'status': db.get('sessions', {}).get(args[2], 'working')})
 if tool == 'git' and args[:1] == ['show']:
@@ -63,7 +74,7 @@ if tool == 'gh':
         done()
     if args[:2] == ['issue', 'create']:
         n = str(len(issues) + 1)
-        issues[n] = {'body': Path(opt('--body-file')).read_text(), 'comments': [], 'state': 'OPEN',
+        issues[n] = {'title': opt('--title'), 'body': Path(opt('--body-file')).read_text(), 'comments': [], 'state': 'OPEN',
                      'labels': [{'name': opt('--label')}], 'url': f'https://github.test/issues/{n}'}
         done(issues[n]['url'] + '\n')
     if args[:2] == ['issue', 'view']:
@@ -80,7 +91,8 @@ if tool == 'gh':
         issues[args[2]]['state'] = 'CLOSED'
         done()
     if args[:2] == ['issue', 'list']:
-        done([{'number': int(k), 'title': 'x', 'url': v['url']} for k, v in issues.items() if v['state'] == 'OPEN'])
+        done([{'number': int(k), 'title': v.get('title', 'x'), 'url': v['url']} for k, v in issues.items()
+              if v['state'] == opt('--state', 'open').upper()])
     if args[:2] == ['pr', 'view']:
         done({'baseRefName': 'main', 'comments': [], 'isCrossRepository': False, **db['prs'][args[2]]})
     if args[:2] == ['pr', 'merge']:
