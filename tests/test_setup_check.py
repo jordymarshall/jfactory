@@ -140,6 +140,11 @@ class SetupCheckTest(unittest.TestCase):
                                                            'verify': 'independent'}}}))
         self.assertIn('Risk levels set: 1 independent, 0 CI-only', self.check('--remote', '--repo', 'o/r'))
 
+    def test_pr_delivery_cannot_be_not_applicable(self):
+        states = {**READY, 'PR delivery': ('not applicable', 'no PRs here')}
+        (self.root / '.jfactory' / 'setup.md').write_text(record(states=states))
+        self.assertIn('PR delivery cannot be "not applicable"', self.check('--remote', '--repo', 'o/r', code=1))
+
     def test_production_merges_cannot_be_verified_delivery(self):
         (self.root / '.jfactory' / 'coordination.json').write_text('{"merge_deploys": "production"}')
         self.assertIn('Merging releases production', self.check(code=1))
