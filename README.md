@@ -98,6 +98,8 @@ Your role: agree outcomes up front, watch the issue, answer decisions in chat or
 
 This runs only while an agent uses it. jfactory has no background supervisor, and parallel workspaces multiply cost, so it starts them only when you ask.
 
+Each launched agent's model is chosen by task tier and current usage. Core coding uses Opus 5.5, or GPT Astra 6 when Claude usage is exhausted. Faster work uses GPT Sol 6, or Opus 5.5 at low effort. Very simple tasks use GPT Luna 6. Agents check the session and weekly limits for each account before launching and record any fallback. See [model selection](skills/jfactory/references/models.md).
+
 In Conductor cloud, setup prepares the repository bootstrap command and registers it when authorized tools allow, or gives you the exact settings step. Committing a local setup file alone does not configure cloud workspaces. See [environment setup](skills/jfactory/references/environments.md) and [worktree coordination](skills/jfactory/references/worktrees.md).
 
 A workspace preview exposes a running dev server. A PR preview is a hosted build. Staging is a deliberately configured non-production environment, including its backing services and data. A preview can use staging services, but its URL alone does not prove isolation. Setup records where checks can safely run and which revision they exercised.

@@ -39,8 +39,10 @@ Each unit has a role. The default policy is the owner's:
 
 | Role | Agent and model | Use |
 | --- | --- | --- |
-| `implement` | Claude `opus-5-5-1m` | Features, fixes, prototypes and every other code change |
-| `verify` | Codex `gpt-6-sol`, fast mode | Verification, review and PR follow-through for another unit, from a different model family |
+| `implement` | Claude `opus-5-5-1m`; fallback Codex `gpt-6-astra` | Features, fixes, prototypes and every other code change |
+| `verify` | Codex `gpt-6-sol`, fast mode; fallback Codex `gpt-6-astra`; Claude `opus-5-5-1m` when the implementer ran on Codex | Verification, review and PR follow-through for another unit, always from a different model family than its implementer |
+
+These follow [model selection](models.md). Use `launch --fallback --reason "<usage reading>"` only when the primary has no usage remaining; the reason is recorded on the unit. The verifier's family switch happens automatically.
 
 Both roles choose effort per unit by difficulty, from `low` to `high` (default `medium`). Use `low` for mechanical edits and narrow checks, `medium` for ordinary features and reviews, and `high` for ambiguous, cross-cutting or high-risk work. Set it with `add --effort` or `launch --effort`; the tool refuses levels outside the role's range. Raise effort on a retry when the previous attempt failed from difficulty rather than a bad contract.
 
@@ -69,7 +71,7 @@ State, once, before any worker starts:
 - The program objective and a countable done condition, for example "these three outcomes are merged, each with its required application evidence at the merged revision."
 - The units. One unit is one coherent objective delivered as one PR with its own evidence. Name dependencies and each unit's owned paths.
 - Each unit's verification standard: its acceptance criteria and the evidence scopes that define verified (`add --requires`, such as `application,unit`). Application evidence comes from the PR preview or staging. Workers loop until the standard passes; the coordinator merges without asking again once it does.
-- The concurrency limit (default three), the model policy, wall-clock or spend limits, and what merging deploys (`init --merge-deploys` or `.jfactory/coordination.json`). `merge` refuses unless merges reach staging or nothing; production releases stay a deliberate owner action.
+- The concurrency limit (default three), the model policy (see [model selection](models.md), including the usage check before each launch batch), wall-clock or spend limits, and what merging deploys (`init --merge-deploys` or `.jfactory/coordination.json`). `merge` refuses unless merges reach staging or nothing; production releases stay a deliberate owner action.
 
 Run the product interview for each substantial feature before its worker starts, reusing settled answers. A worker cannot interview the owner mid-flight without stalling, so unresolved product choices are settled here or recorded with `gate add`. Reversible preparation can proceed while the owner reviews the framing.
 
@@ -111,7 +113,7 @@ Before the first launch, confirm the base branch contains the jfactory adoption 
 
 Pilot one unit from contract to verified PR before launching the rest when the unit shape is new. Correct the contract and verification recipe from what the pilot reveals. For near-identical cheap units, the first unit is the pilot.
 
-Use `launch --dry-run` to review the exact message, then `launch`. It records the workspace link and session on the unit and posts a launch comment. Use `conductor session create` only for an agent that should share an existing workspace, such as a same-checkout reviewer; two writers in one checkout are not isolated. Refill free slots as units finish instead of waiting for a whole batch.
+Before each launch batch, check remaining usage under [model selection](models.md). Use `launch --dry-run` to review the exact message, then `launch`. It records the workspace link and session on the unit and posts a launch comment. Use `conductor session create` only for an agent that should share an existing workspace, such as a same-checkout reviewer; two writers in one checkout are not isolated. Refill free slots as units finish instead of waiting for a whole batch.
 
 ## 5. Worker protocol
 
@@ -146,7 +148,7 @@ The coordinator does not force-push, retarget or close another worker's PR. Thos
 
 ## 9. Recover from failures and interruptions
 
-- **Stalled or failed worker.** Read its last messages, branch and PR. Mark it `failed` with the reason and relaunch once with a narrower contract or another model when the failure warrants it. `launch` refuses a fourth attempt; abandon the unit with `set --state abandoned --note` and replan around it.
+- **Stalled or failed worker.** Read its last messages, branch and PR. A worker stopped by a usage limit has not failed: continue it on the role's fallback per [model selection](models.md#3-decide-record-and-revisit), which does not count toward the attempt limit. Otherwise, mark it `failed` with the reason and relaunch once with a narrower contract or another model when the failure warrants it. `launch` refuses a fourth attempt; abandon the unit with `set --state abandoned --note` and replan around it.
 - **Late or duplicated output.** Reconcile it against the current base, program issue and ledger before accepting anything.
 - **Program-wide failure.** When further launches would repeat the same failure, add the hold label, let running workers stop safely, fix the cause and remove the label.
 - **Coordinator interruption.** A new coordinator session follows [session pickup](../vendor/pstack/skills/poteto-mode/playbooks/session-pickup.md): `list`, read the program issue, then `sync`. Resume from that state without relaunching finished units.

@@ -190,6 +190,22 @@ class CoordTest(unittest.TestCase):
                                                                '--model', 'gpt-5.6-sol', ok=False))
         self.assertNotIn('workspaces', self.db())
 
+    def test_fallback_needs_a_reason_and_verifier_switches_family_after_codex_implementation(self):
+        self.start(['a', '--objective', 'x'], ['r', '--objective', 'verify a', '--role', 'verify', '--depends', 'a'],
+                   limit=3)
+        self.assertIn('needs --reason', self.coord('launch', '1', 'a', '--brief', str(self.brief), '--fallback',
+                                                   ok=False))
+        self.coord('launch', '1', 'a', '--brief', str(self.brief), '--fallback', '--reason', 'Claude weekly 95%')
+        worker = self.db()['workspaces'][-1]
+        self.assertEqual((worker['agent'], worker['model'], worker['fast']), ('codex', 'gpt-6-astra', False))
+        self.assertIn('fallback: Claude weekly 95%', self.program_state()['units']['a']['note'])
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.coord('sync', '1')
+        self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on', 'a')
+        verifier = self.db()['workspaces'][-1]
+        self.assertEqual((verifier['agent'], verifier['model']), ('claude', 'opus-5-5-1m'))
+
     def test_effort_outside_policy_is_refused(self):
         self.start(['a', '--objective', 'x'])
         self.assertIn('outside the implement policy', self.coord('add', '1', 'b', '--objective', 'y', '--effort', 'max',

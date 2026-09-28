@@ -3,7 +3,7 @@
 jfactory is an instruction bundle with Python 3.10+ utilities. The installer supports repository layouts for Codex (`.agents/skills`), Claude Code (`.claude/skills`) and Cursor (`.cursor/skills`). Native discovery/tool behavior must still be checked in the chosen host. Other agents can read this SKILL.md directly. No claim of equal behavior across models or platforms.
 
 - Read source methods from `../vendor/pstack/skills/<name>/SKILL.md` relative to this directory. Preserve originals, including Lauren Tan's MIT license and pinned receipt. Imported Cursor-specific paths/commands are translated below, not executed blindly.
-- Cursor Task becomes the host's actual subagent facility. Omit unsupported parameters and inherit the current model unless the user selects another supported model. A role label is not proof of model diversity. If delegation is unavailable, perform a scoped review and disclose the missing independent review.
+- Cursor Task becomes the host's actual subagent facility. Omit unsupported parameters. Choose the model by [model selection](models.md) where the host can set it; otherwise inherit the current model. A role label is not proof of model diversity. If delegation is unavailable, perform a scoped review and disclose the missing independent review.
 - Use actual shell/browser/CLI tools and existing project harnesses instead of absent control-ui, control-cli, or deslop commands. For writing cleanup use the bundled unslop method. Do not install unrelated tooling automatically just because an upstream example names it.
 - Keep investigations read-only. Use only relevant sources and current-workspace evidence. Missing connectors/transcripts remain gaps; never scan unrelated private sessions. No outbound chat/email authorization comes from upstream examples.
 - Discover the remote default/review branch; do not assume main, rename the user's branch, or mix another task's changes into the PR. Use an isolated branch/checkout where needed.
@@ -26,7 +26,7 @@ The [coordination procedure](coordination.md) adapts pstack's orchestration play
 | Babysitter and merge rules | Protected auto-merge under [auto-merge setup](auto-merge.md), plus coordinator verification at each head SHA |
 | Ten-lane swarm, perf lanes and review video in the multi-PR plan | The unit's own [verification contract](verification.md); larger lane counts only on the owner's request |
 | `check-plan.mjs`, `/goal`, `/loop` and cloud-sleeper ticks | Not imported. Use the host's scheduled wakeups or loop facility when present |
-| Named Cursor models and `pstack-models.mdc` | The role-based model policy in the [coordination procedure](coordination.md#model-policy), overridable in `.jfactory/coordination.json` and checked against `conductor model` |
+| Named Cursor models and `pstack-models.mdc` | [Model selection](models.md) by task tier and remaining usage, applied by the coordination tool's role policy (overridable in `.jfactory/coordination.json`) and checked against `conductor model` |
 
 Upstream autonomous shipping and its preference to act without asking stay subordinate to jfactory's objective contract, product interview and the repository's authorization.
 

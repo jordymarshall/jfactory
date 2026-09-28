@@ -34,15 +34,19 @@ MAX_ATTEMPTS = 3
 BRIEF_FIELDS = ['OBJECTIVE', 'DECISIONS', 'SCOPE', 'CONTEXT', 'ACCEPTANCE', 'VERIFY', 'SHARED',
                 'LIMITS', 'FORBIDDEN', 'DELIVERY', 'REPORT']
 
-# Owner policy: Opus builds; GPT-6 Sol in fast mode verifies, reviews and handles PRs, a different
-# model family from the builder. Effort is chosen per unit by difficulty within `efforts`.
+# Owner policy (see references/models.md): Opus builds; GPT-6 Sol in fast mode verifies, reviews and
+# handles PRs. `fallback` is used only when the primary has no usage left. A verifier always comes from
+# another family than the unit's actual implementer, so `alternate` covers Codex-implemented units.
 DEFAULT_POLICY = {
     'limit': 3,
     'roles': {
         'implement': {'agent': 'claude', 'model': 'opus-5-5-1m', 'effort': 'medium',
-                      'efforts': ['low', 'medium', 'high'], 'fast': False},
+                      'efforts': ['low', 'medium', 'high'], 'fast': False,
+                      'fallback': {'agent': 'codex', 'model': 'gpt-6-astra', 'fast': False}},
         'verify': {'agent': 'codex', 'model': 'gpt-6-sol', 'effort': 'medium',
-                   'efforts': ['low', 'medium', 'high'], 'fast': True},
+                   'efforts': ['low', 'medium', 'high'], 'fast': True,
+                   'fallback': {'agent': 'codex', 'model': 'gpt-6-astra', 'fast': False},
+                   'alternate': {'agent': 'claude', 'model': 'opus-5-5-1m', 'fast': False}},
     },
 }
 POLICY_FILE = Path('.jfactory/coordination.json')
@@ -379,6 +383,19 @@ def cmd_launch(args):
     if missing:
         raise Refused('Brief is missing: ' + ', '.join(missing))
     role = dict(state['policy'][unit['role']])
+    choice = 'primary'
+    if unit['role'] == 'verify':
+        implementers = {state['units'][d].get('agent') for d in unit['depends'] if state['units'][d].get('agent')}
+        if role['agent'] in implementers and role.get('alternate'):
+            role.update(role['alternate'])
+            choice = 'alternate: implementer used the primary family'
+    if args.fallback:
+        if not args.reason:
+            raise Refused('--fallback needs --reason with the usage reading, e.g. "Claude weekly 93% at 14:05 UTC"')
+        if not role.get('fallback'):
+            raise Refused(f"The {unit['role']} policy has no fallback")
+        role.update(role['fallback'])
+        choice = f'fallback: {args.reason}'
     role['effort'] = unit.get('effort') or role.get('effort')
     for key in ('agent', 'model', 'effort'):
         if getattr(args, key):
@@ -406,7 +423,8 @@ def cmd_launch(args):
             raise Refused(f'{args.stack_on[0]} has no pushed branch to stack on yet')
     if args.dry_run:
         fast = ', fast' if role.get('fast') else ''
-        print(f"Would launch {args.unit} on {role['agent']}/{role['model']} ({role.get('effort')}{fast}) from {base}")
+        print(f"Would launch {args.unit} on {role['agent']}/{role['model']} ({role.get('effort')}{fast}; {choice}) "
+              f"from {base}")
         print(message)
         return
     created = run_json('conductor', 'workspace', 'create', '--repo-url', state['repo_url'], '--branch', base,
@@ -422,7 +440,7 @@ def cmd_launch(args):
                  'workspace': workspace.get('id') or created.get('workspaceId'),
                  'session': session.get('id') or created.get('sessionId'),
                  'link': session.get('deepLink') or workspace.get('deepLink') or created.get('deepLink'),
-                 'note': f'attempt {unit["attempts"] + 1}'})
+                 'note': f'attempt {unit["attempts"] + 1}; {choice}'})
     if state.get('section') and unit['workspace']:
         try:
             run('conductor', 'workspace', 'move', unit['workspace'], '--section', state['section'])
@@ -603,6 +621,8 @@ def main(argv=None):
     p.add_argument('--effort')
     p.add_argument('--stack-on', type=listing, default=[], help='Unmerged dependency whose branch to start from')
     p.add_argument('--allow-same-family', action='store_true')
+    p.add_argument('--fallback', action='store_true', help='Use the role fallback because the primary has no usage')
+    p.add_argument('--reason', help='Usage reading that justifies --fallback')
     p.add_argument('--dry-run', action='store_true')
     p.set_defaults(func=cmd_launch)
     p = sub.add_parser('report', help='Worker: report this unit\'s state')
