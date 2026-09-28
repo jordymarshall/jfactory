@@ -264,8 +264,19 @@ def archive_finished(state):
     return changes, notes
 
 
-def tidy_sections(repo):
-    """Delete finished `Program:` sidebar sections: the program issue is closed or no workspace in it is active."""
+def busy(workspace):
+    """True when any session in the workspace is still working, or its state cannot be read."""
+    try:
+        sessions = run_json('conductor', 'workspace', 'session', workspace, '--limit', '100', '--json').get('data') or []
+        return any(run_json('conductor', 'session', 'status', s['id'], '--json').get('status') in ('working', 'running')
+                   for s in sessions)
+    except (Refused, ValueError, KeyError):
+        return True
+
+
+def tidy_sections(repo, keep=()):
+    """Delete finished `Program:` sidebar sections: every workspace in it is archived, or its program issue is
+    closed and none of its remaining workspaces is still working."""
     changes, notes = [], []
     try:
         sections, offset = [], 0
@@ -281,7 +292,7 @@ def tidy_sections(repo):
         return [], [f'sidebar sections not tidied: {error}']
     for section in sections:
         name = section.get('name') or ''
-        if not name.startswith('Program: '):
+        if not name.startswith('Program: ') or section['id'] in keep:
             continue  # The owner's own sections are never touched.
         live = []
         for workspace in section.get('workspaceIds') or []:
@@ -290,7 +301,7 @@ def tidy_sections(repo):
                     live.append(workspace)
             except (Refused, ValueError):
                 live.append(workspace)
-        if live and name not in closed:
+        if live and (name not in closed or any(busy(w) for w in live)):
             continue
         try:
             run('conductor', 'section', 'delete', section['id'])
@@ -667,7 +678,7 @@ def cmd_close(args):
     gh(args.repo, 'issue', 'close', str(args.program), '--comment', summary(state))
     print('Closed. ' + summary(state))
     if not args.keep_workspaces:
-        tidied, tidy_notes = tidy_sections(args.repo)
+        tidied, tidy_notes = tidy_sections(args.repo, keep=[state['section']] if state.get('section') else [])
         notes += tidy_notes
         for change in tidied:
             print('Tidied: ' + change)

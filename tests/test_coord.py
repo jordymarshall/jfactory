@@ -119,6 +119,16 @@ class CoordTest(unittest.TestCase):
         self.assertIn('coordinator workspace stays open', out)
         self.assertEqual(self.db()['issues']['1']['state'], 'CLOSED')
 
+    def test_close_keeps_its_section_when_an_idle_workspace_fails_to_archive(self):
+        self.start(['a', '--objective', 'x'])
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.coord('set', '1', 'a', '--state', 'abandoned')
+        self.set_db(sessions={'s1': 'idle'}, archive_fail=['w1'],
+                    sections=[{'id': 'sec1', 'name': 'Program: Two features', 'workspaceIds': ['w1']}])
+        out = self.coord('close', '1')
+        self.assertIn('workspace not archived', out)
+        self.assertNotIn('deleted_sections', self.db())
+
     def test_tidy_deletes_only_finished_program_sections(self):
         self.start(['a', '--objective', 'x'])
         self.set_db(archived=['w9'], issues={**self.db()['issues'], '2': {
@@ -127,6 +137,8 @@ class CoordTest(unittest.TestCase):
                       {'id': 'empty', 'name': 'Program: Abandoned idea', 'workspaceIds': ['w9']},
                       {'id': 'live', 'name': 'Program: Two features', 'workspaceIds': ['w1']},
                       {'id': 'mine', 'name': 'Personal', 'workspaceIds': []}])
+        self.set_db(sections=self.db()['sections'] + [
+            {'id': 'busy', 'name': 'Program: Old pilot', 'workspaceIds': ['w7']}], sessions={'s7': 'working'})
         out = self.coord('tidy')
         self.assertEqual(self.db()['deleted_sections'], ['old', 'empty'])
         self.assertIn("'Program: Old pilot' (program closed)", out)
@@ -138,7 +150,10 @@ class CoordTest(unittest.TestCase):
         self.start(['a', '--objective', 'x'])
         self.coord('launch', '1', 'a', '--brief', str(self.brief))
         self.coord('set', '1', 'a', '--state', 'abandoned')
+        self.set_db(sections=[{'id': 'sec1', 'name': 'Program: Two features', 'workspaceIds': ['w1']}])
         out = self.coord('close', '1')
+        self.assertEqual(self.db()['issues']['1']['state'], 'CLOSED')
+        self.coord('tidy')
         self.assertNotIn('archived', self.db())
         self.assertNotIn('deleted_sections', self.db())
         self.assertIn('still working', out)

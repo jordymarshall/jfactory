@@ -42,11 +42,17 @@ if tool == 'conductor':
         db.setdefault('moves', []).append([a for a in args[2:] if a != '--section'])
         done()
     if args[:2] == ['workspace', 'archive']:
+        if args[2] in db.get('archive_fail', []):
+            path.write_text(json.dumps(db))
+            sys.stderr.write('archive failed')
+            sys.exit(1)
         db.setdefault('archived', []).append(args[2])
         done()
     if args[:2] == ['section', 'list']:
         done({'data': [s for s in db.get('sections', []) if s['id'] not in db.get('deleted_sections', [])],
               'offset': 0, 'hasMore': False})
+    if args[:2] == ['workspace', 'session']:
+        done({'data': [{'id': args[2].replace('w', 's', 1)}] if args[2].startswith('w') else [], 'hasMore': False})
     if args[:2] == ['workspace', 'get']:
         done({'id': args[2], 'state': 'archived' if args[2] in db.get('archived', []) else 'ready'})
     if args[:2] == ['section', 'delete']:
