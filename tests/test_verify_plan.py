@@ -85,8 +85,7 @@ class PlanTest(unittest.TestCase):
 
     def test_objective_is_found_in_visible_prose(self):
         for body in ('## Objective\nSave briefs for returning users', 'Objective: https://github.com/o/r/issues/22',
-                     '```\ncode\n```\n## Objective\nSave briefs for returning users',
-                     '<!-- note --> Objective: save briefs for returning users',
+                     '\n\n## Objective\n\nSave briefs for returning users\n\n## Summary\nx',
                      '**Objective:** save briefs for returning users'):
             self.assertTrue(verify_plan.states_objective(body), body)
 
@@ -176,7 +175,7 @@ class GateTest(unittest.TestCase):
         db = json.loads(self.state.read_text())
         db['prs']['5']['body'] = 'Fixes things.'
         self.state.write_text(json.dumps(db))
-        self.assertIn('does not state its objective', self.run_script('check', '--pr', '5', code=1))
+        self.assertIn('must start with its objective', self.run_script('check', '--pr', '5', code=1))
         for empty in ('## Objective\n\n## Summary\nStuff', 'Objective:', 'Objective: tbd',
                       '```\n## Objective\nSave briefs for returning users\n```\n',
                       '<!--\nObjective: save briefs for returning users\n-->',
@@ -184,10 +183,13 @@ class GateTest(unittest.TestCase):
                       '<!--\n## Objective\nSave briefs for returning users\n',
                       '````\n```\n## Objective\nSave briefs for returning users\n```\n````\n',
                       '    ## Objective\n    Save briefs for returning users\n',
-                      'Intro <!-- Objective: save briefs for returning users -->'):
+                      'Intro <!-- Objective: save briefs for returning users -->',
+                      '- item\n  ```md\n  ## Objective\n  Save briefs for returning users\n  ```\n',
+                      '<details><summary>More</summary>\n\n## Objective\nSave briefs for returning users\n</details>',
+                      '## Summary\nStuff\n\n## Objective\nSave briefs for returning users'):
             db['prs']['5']['body'] = empty
             self.state.write_text(json.dumps(db))
-            self.assertIn('does not state its objective', self.run_script('check', '--pr', '5', code=1), empty)
+            self.assertIn('must start with its objective', self.run_script('check', '--pr', '5', code=1), empty)
         db['prs']['5']['body'] = 'Objective: https://github.com/o/r/issues/22'
         self.state.write_text(json.dumps(db))
         self.assertIn('success: Low-risk change', self.run_script('check', '--pr', '5'))

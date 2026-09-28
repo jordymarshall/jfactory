@@ -228,31 +228,34 @@ def visible_lines(body):
 
 
 def states_objective(body):
-    """A PR states its objective in visible prose: a non-empty `Objective` section or `Objective:` line."""
+    """The description must open with the objective: its first non-empty line is an `Objective` heading or an
+    `Objective:` line, and that line or its section has real content (at least 10 characters, outside code
+    and comments). Requiring it first leaves nothing to hide it inside."""
+    raw = [line for line in (body or '').splitlines() if line.strip()]
+    if not raw or not (OBJECTIVE_HEADING.match(raw[0]) or OBJECTIVE_LINE.match(raw[0])):
+        return False
     lines = visible_lines(body)
-    for i, line in enumerate(lines):
-        match = OBJECTIVE_LINE.match(line)
-        if match:
-            text = match.group(1)
-        elif OBJECTIVE_HEADING.match(line):
-            section = []
-            for following in lines[i + 1:]:
-                if HEADING.match(following):
-                    break
-                section.append(following)
-            text = ' '.join(section)
-        else:
-            continue
-        if len(re.sub(r'\s+', ' ', text).strip()) >= 10:
-            return True
-    return False
+    first = next((i for i, line in enumerate(lines) if line.strip()), None)
+    if first is None or lines[first] != raw[0]:
+        return False
+    match = OBJECTIVE_LINE.match(lines[first])
+    if match:
+        text = match.group(1)
+    else:
+        section = []
+        for following in lines[first + 1:]:
+            if HEADING.match(following):
+                break
+            section.append(following)
+        text = ' '.join(section)
+    return len(re.sub(r'\s+', ' ', text).strip()) >= 10
 
 
 def evaluate(pr, config):
     """Return (state, description) for the jfactory verified status at the PR head."""
     result = plan(pr['files'], config)
     if result['level'] != 'static' and config.get('require_objective', True) and not states_objective(pr.get('body')):
-        return 'failure', 'PR does not state its objective: add an "Objective" section or an "Objective:" line'
+        return 'failure', 'PR description must start with its objective: an "## Objective" section or "Objective:" line'
     if not result['needs_verifier']:
         if result['level'] == 'ci':
             return 'success', 'Low-risk change (verify: ci); required CI checks apply'
