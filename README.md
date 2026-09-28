@@ -275,7 +275,7 @@ In [Conductor](https://www.conductor.build), ask one agent to coordinate:
 | Role | Who | Does | Never does |
 | --- | --- | --- | --- |
 | Owner | You | Agrees outcomes and answers decisions; can pause everything | Needs to babysit workers |
-| Coordinator | The agent you asked | Plans units, writes briefs, launches and monitors workers, launches verifiers, records verdicts, merges | Edits a worker's code or merges without a verified verdict |
+| Coordinator | The agent you asked | Plans units, writes briefs, launches and monitors workers, launches verifiers, records verdicts, merges | Edits a worker's code, or merges a high-risk change without a verified verdict |
 | Worker | One agent per unit, in its own Conductor workspace | Runs the normal jfactory loop for its unit and opens one PR | Touches other units' branches, merges or launches workers |
 | Verifier | One per PR, from a different model family | Re-runs the checks and reviews the PR at its latest commit, then recommends a verdict | Changes product code |
 
@@ -300,7 +300,7 @@ In [Conductor](https://www.conductor.build), ask one agent to coordinate:
 | Launch | Under the concurrency limit, no hold label, dependencies merged (or stacked deliberately), no open decision for the unit, a complete brief, an available model, and fewer than 3 previous attempts |
 | Launch a verifier | It's from a different model family than the unit's implementer |
 | Record a verified verdict | It's for the PR's current commit, covers the unit's required evidence scopes, and comes from another family |
-| Merge | A verified verdict exists at the current commit, no decision is open, and merging deploys to staging or nothing |
+| Merge | A verified verdict exists at the current commit (or every change is low-risk `verify: ci`, leaving GitHub's CI as the gate), no decision is open, and merging deploys to staging or nothing |
 | Close | Every unit is merged, done or abandoned |
 
 ### Your controls and recovery
