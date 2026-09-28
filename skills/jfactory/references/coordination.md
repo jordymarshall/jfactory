@@ -64,7 +64,7 @@ Before the first launch, confirm the starting branch contains the jfactory adopt
 
 Pilot one unit through the whole path, from contract to verified PR, before launching the rest when the unit shape is new. Correct the contract template and verification recipe from what the pilot reveals. For near-identical, cheap units, the first unit serves as the pilot.
 
-Before each launch batch, choose every unit's tier and check remaining usage under [model selection](models.md). Launch each independent unit in its own workspace:
+Before each launch batch, choose every unit's tier and run the usage reader under [model selection](models.md) for the model to launch. Launch each independent unit in its own workspace:
 
 ```sh
 conductor workspace create --repo-url <repository URL> --branch <base branch> \
