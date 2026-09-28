@@ -14,7 +14,19 @@ This is jfactory's default unless the owner records otherwise:
 
 Inspect the repository's actual settings, branch protection/rulesets, required reviews, merge strategy and release triggers. The owner must know whether merging also deploys. Record that policy, and what merging deploys (`staging`, `none` or `production`), with the existing repository instructions and in `.jfactory/coordination.json` as `merge_deploys`. An existing auto-deploy pipeline is not separate evidence of release authorization. When authorization covers auto-merge but excludes its deployment side effect, resolve that conflict before enabling it.
 
-On GitHub, enable **Allow auto-merge** under Settings → General → Pull Requests. On the target branch, require a PR, the change-aware CI aggregate check and the `jfactory verified` status from the [verification contract](verification.md#change-aware-verification-and-the-merge-gate). Do not require a fixed expensive suite for every change; the plan decides which suites a PR needs, and unknown files still require all of them. Prefer checks against the latest base or a supported merge queue for concurrent PRs. Preserve existing required reviews and protections; do not remove them to make automation faster. Configure these settings when the owner authorizes auto-merge setup and credentials permit it. If settings are inaccessible, describe the exact missing permission or plan feature. Do not change repository visibility or purchase a plan as a workaround.
+On GitHub, enable **Allow auto-merge** under Settings → General → Pull Requests. Protect the default branch with the [ruleset template](../templates/ruleset-main.json). It requires PRs, squash merges, no bypass, branches up to date, your CI check and `jfactory verified`.
+
+1. Replace `REPLACE_WITH_YOUR_CI_CHECK_NAME` with the name of the job your CI reports. Merge that job and the ruleset into an existing ruleset instead if the repository already has one.
+2. Apply it with `gh api -X POST repos/<owner>/<repo>/rulesets --input <file>`. To update an existing ruleset, use `-X PUT .../rulesets/<id>`.
+3. Commit the filled-in copy as `.github/rulesets/main.json`, so the intended settings are reviewable.
+4. Confirm with `setup_check.py --remote`.
+
+Rulesets need the repository Administration permission. Some agent tokens lack it; Conductor's GitHub App gets HTTP 403, for example. Then give the owner both options:
+
+- **In the browser:** Settings → Rules → Rulesets → New branch ruleset, or edit the existing one. Add the same rules, then under "Require status checks to pass" add the CI check and `jfactory verified`.
+- **From the owner's own signed-in `gh`:** run the same `gh api` command.
+
+Rerun the checker once the owner confirms. On the target branch, require a PR, the change-aware CI aggregate check and the `jfactory verified` status from the [verification contract](verification.md#change-aware-verification-and-the-merge-gate). Do not require a fixed expensive suite for every change; the plan decides which suites a PR needs, and unknown files still require all of them. Prefer checks against the latest base or a supported merge queue for concurrent PRs. Preserve existing required reviews and protections; do not remove them to make automation faster. Configure these settings when the owner authorizes auto-merge setup and credentials permit it. If settings are inaccessible, describe the exact missing permission or plan feature. Do not change repository visibility or purchase a plan as a workaround.
 
 Prefer squash merging when the repository has no established alternative. Keep shared task branches current by merging the base into them; use rebasing only when branch ownership and policy permit rewriting history. After any update, refresh affected proof before re-enabling auto-merge. Native auto-merge waits for gates; it does not itself maintain stale branches or start another agent session.
 
