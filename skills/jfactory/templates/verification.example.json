@@ -8,12 +8,20 @@
     "save-brief": {
       "paths": ["app/src/app/briefs/**", "app/src/lib/briefs/**", "app/e2e/briefs.spec.ts"],
       "recipe": ".agents/skills/verify-app/features/save-brief.md",
-      "suites": ["unit", "browser"]
+      "suites": ["unit", "browser"],
+      "verify": "independent"
     },
     "sign-in": {
       "paths": ["app/src/lib/auth.ts", "app/src/app/(auth)/**"],
       "recipe": ".agents/skills/verify-app/features/sign-in.md",
-      "suites": ["unit", "browser"]
+      "suites": ["unit", "browser"],
+      "verify": "independent"
+    },
+    "internal-tooling": {
+      "paths": ["scripts/**", "app/src/lib/logging/**"],
+      "recipe": "Run the unit suite; these files do not change what users see or store",
+      "suites": ["unit"],
+      "verify": "ci"
     }
   }
 }
