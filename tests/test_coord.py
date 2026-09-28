@@ -180,6 +180,16 @@ class CoordTest(unittest.TestCase):
         self.assertEqual((units['a']['state'], units['r']['state']), ('merged', 'done'))
         self.coord('close', '1')
 
+    def test_open_decision_and_unsupported_fast_mode_block_launch(self):
+        self.start(['a', '--objective', 'x'], ['v', '--objective', 'verify', '--role', 'verify'], limit=3)
+        self.coord('gate', 'add', '1', '--question', 'Grid or list?', '--options', 'grid,list', '--default', 'grid',
+                   '--units', 'a')
+        self.assertIn('Open owner decisions block a: G1', self.coord('launch', '1', 'a', '--brief', str(self.brief),
+                                                                     ok=False))
+        self.assertIn('does not support fast mode', self.coord('launch', '1', 'v', '--brief', str(self.brief),
+                                                               '--model', 'gpt-5.6-sol', ok=False))
+        self.assertNotIn('workspaces', self.db())
+
     def test_effort_outside_policy_is_refused(self):
         self.start(['a', '--objective', 'x'])
         self.assertIn('outside the implement policy', self.coord('add', '1', 'b', '--objective', 'y', '--effort', 'max',

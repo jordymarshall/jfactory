@@ -32,7 +32,9 @@ if tool == 'conductor':
         db['workspaces'].append({'name': opt('--name'), 'branch': opt('--branch'), 'agent': opt('--agent'),
                                  'model': opt('--model'), 'effort': opt('--effort'),
                                  'fast': '--fast-mode' in args, 'message': Path(opt('--message-file')).read_text()})
-        done({'id': f'w{n}', 'deepLink': f'conductor://workspace?id=w{n}', 'session': {'id': f's{n}'}})
+        # Mirrors the observed Conductor response shape.
+        done({'workspaceId': f'w{n}', 'sessionId': f's{n}', 'deepLink': f'conductor://workspace?id=w{n}',
+              'initialMessage': None})
     if args[:2] == ['section', 'create']:
         db['section'] = args[2]
         done({'section': {'id': 'sec1', 'name': args[2], 'workspaceIds': []}})
