@@ -39,7 +39,7 @@ You stay in charge of three things: what gets built, product decisions the agent
 
 **Every request after that,** for example *"Let users save items and find them later"*:
 
-4. **Objective.** The agent writes what "done" means as observable criteria, each with the evidence that proves it. It also chooses which loops the work needs (product, UX, engineering) and asks you only about undecided choices. 📋 Instructed. 🔒 For any change that isn't static, the PR can't pass `jfactory verified` without an Objective section or `Objective:` line that states the objective or links its issue. The check confirms one is present and not trivially short; whether it's a good objective is up to the agent and the verifier. The check re-runs when you edit the PR description.
+4. **Objective.** The agent writes what "done" means as observable criteria, each with the evidence that proves it. It also chooses which loops the work needs (product, UX, engineering) and asks you only about undecided choices. 📋 Instructed. 🔒 For any change that isn't static, the PR can't pass `jfactory verified` without an Objective section or `Objective:` line that states the objective or links its issue. The check reads the description outside code blocks and HTML comments. It confirms an objective is present and not trivially short, which guards against a forgotten objective, not a deliberately hidden one. Whether it's a good objective is up to the agent and the verifier. The check re-runs when you edit the PR description.
 5. **Loop.** It implements, runs the real check, reads the result and fixes, until every criterion passes. It never weakens a criterion to finish. 📋 Instructed
 6. **PR and plan.** It opens a PR. `verify_plan.py` reads the changed files and decides:
    - **docs only:** static checks;
@@ -182,7 +182,7 @@ The agent stops at the agreed objective. It proposes the next one instead of qui
 
 **What's enforced, and what isn't.**
 
-- The PR must state its objective: for any change that isn't static, the `jfactory verified` check fails without an `Objective` section or `Objective:` line that states the objective or links its issue (the check confirms presence, not quality). Checking each criterion is an instruction: the verifier is told to check every criterion and list the results in its verdict.
+- The PR must state its objective: for any change that isn't static, the `jfactory verified` check fails without an `Objective` section or `Objective:` line that states the objective or links its issue (outside code blocks and HTML comments; the check confirms presence, not quality or intent). Checking each criterion is an instruction: the verifier is told to check every criterion and list the results in its verdict.
 - The tools enforce the mechanics around the verdict: that it's for the PR's latest commit, from a different model family, and covers every high-risk feature the PR touches. They don't read the criteria themselves.
 - For parallel work, `coord.py` also refuses a worker brief without acceptance criteria, and a verdict that lacks the unit's required evidence scopes.
 - If you record criteria in a machine-readable acceptance file, `evidence.py` can also check that each one has fresh, passing evidence.
