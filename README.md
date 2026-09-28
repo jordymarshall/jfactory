@@ -84,13 +84,23 @@ For a verification audit:
 
 Use one worktree or cloud workspace per coherent task. Agents check overlapping PRs and dependencies, update shared branches from current main, and recheck affected behavior before merging. Extra sessions in the same workspace share its files. jfactory does not start the next workspace or agent session after a merge.
 
+### Several features at once
+
+Ask one coordinating agent in Conductor:
+
+> Use jfactory to deliver [feature A], [feature B] and [feature C] in parallel. Clarify each outcome and its acceptance criteria with me first, then run at most three workspaces at a time.
+
+The coordinator agrees outcomes and open decisions with you, prototypes unresolved design questions, and writes a complete task contract per feature. It launches each feature in its own Conductor workspace, then tracks units, verdicts and your pending decisions in one durable program record. It checks each worker's actual PR and evidence rather than trusting its summary, and merges overlapping PRs one at a time under protected auto-merge. If the coordinator is interrupted, a new session resumes from that record. See the [coordination procedure](skills/jfactory/references/coordination.md).
+
+This runs only while an agent follows the procedure. jfactory has no background supervisor, and parallel workspaces multiply cost, so it starts them only when you ask.
+
 In Conductor cloud, setup prepares the repository bootstrap command and registers it when authorized tools allow, or gives you the exact settings step. Committing a local setup file alone does not configure cloud workspaces. See [environment setup](skills/jfactory/references/environments.md) and [worktree coordination](skills/jfactory/references/worktrees.md).
 
 A workspace preview exposes a running dev server. A PR preview is a hosted build. Staging is a deliberately configured non-production environment, including its backing services and data. A preview can use staging services, but its URL alone does not prove isolation. Setup records where checks can safely run and which revision they exercised.
 
 ### Relationship to Lauren Tan's methodology
 
-jfactory uses pinned pstack skills for creating and maintaining real-app verification, investigating code, reviewing changes and evaluating agent workflows. It adds explicit product alignment, UX research, documentation reconciliation and portable repository setup. See [the methodology and its current evidence limits](skills/jfactory/references/methodology.md).
+jfactory uses pinned pstack skills for creating and maintaining real-app verification, investigating code, reviewing changes and evaluating agent workflows. Its coordination procedure adapts her prototype, multi-PR planning and orchestration playbooks to Conductor workspaces and GitHub. It adds explicit product alignment, UX research, documentation reconciliation and portable repository setup. See [the methodology and its current evidence limits](skills/jfactory/references/methodology.md).
 
 <details>
 <summary>Manual installation and updates</summary>
