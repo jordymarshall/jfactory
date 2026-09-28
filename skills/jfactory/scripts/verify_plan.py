@@ -229,8 +229,9 @@ def visible_lines(body):
 
 def states_objective(body):
     """The description must open with the objective: its first non-empty line is an `Objective` heading or an
-    `Objective:` line, and that line or its section has real content (at least 10 characters, outside code
-    and comments). Requiring it first leaves nothing to hide it inside."""
+    `Objective:` line, and that line or its section has at least 10 characters of content. Top-level code fences
+    and HTML comments don't count toward the content. This is a presence check against a forgotten objective;
+    whether the content is a good objective is for the agent and the verifier to judge."""
     raw = [line for line in (body or '').splitlines() if line.strip()]
     if not raw or not (OBJECTIVE_HEADING.match(raw[0]) or OBJECTIVE_LINE.match(raw[0])):
         return False
