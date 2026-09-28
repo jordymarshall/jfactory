@@ -83,6 +83,12 @@ class PlanTest(unittest.TestCase):
             self.assertFalse(verify_plan.plan([path], example)['static_only'], path)
         self.assertTrue(verify_plan.plan(['docs/guide.md'], example)['static_only'])
 
+    def test_objective_is_found_in_visible_prose(self):
+        for body in ('## Objective\nSave briefs for returning users', 'Objective: https://github.com/o/r/issues/22',
+                     '\n\n## Objective\n\nSave briefs for returning users\n\n## Summary\nx',
+                     '**Objective:** save briefs for returning users'):
+            self.assertTrue(verify_plan.states_objective(body), body)
+
     def test_glob_semantics(self):
         self.assertTrue(verify_plan.matches('a/b/c.md', ['**/*.md']))
         self.assertTrue(verify_plan.matches('c.md', ['**/*.md']))
@@ -108,6 +114,7 @@ class GateTest(unittest.TestCase):
         db = json.loads(self.state.read_text()) if self.state.exists() else {}
         pr = db.get('prs', {}).get('5', {'comments': []})
         pr.update({'headRefOid': head, 'baseRefName': 'main', 'isCrossRepository': False, 'files': files})
+        pr.setdefault('body', '## Objective\nSave briefs.\n')
         db.update({'config': config, 'association': association, 'prs': {'5': pr}})
         self.state.write_text(json.dumps(db))
 
@@ -162,6 +169,35 @@ class GateTest(unittest.TestCase):
         self.assertIn('No verdict', self.run_script('check', '--pr', '5', code=1))
         self.verdict('--features', 'briefs')
         self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+
+    def test_non_static_pr_must_state_its_objective(self):
+        self.write(files=['tests/test_a.py'])
+        db = json.loads(self.state.read_text())
+        db['prs']['5']['body'] = 'Fixes things.'
+        self.state.write_text(json.dumps(db))
+        self.assertIn('must start with its objective', self.run_script('check', '--pr', '5', code=1))
+        for empty in ('## Objective\n\n## Summary\nStuff', 'Objective:', 'Objective: tbd',
+                      '```\n## Objective\nSave briefs for returning users\n```\n',
+                      '<!--\nObjective: save briefs for returning users\n-->',
+                      '```\n## Objective\nSave briefs for returning users\n',
+                      '<!--\n## Objective\nSave briefs for returning users\n',
+                      '````\n```\n## Objective\nSave briefs for returning users\n```\n````\n',
+                      '    ## Objective\n    Save briefs for returning users\n',
+                      'Intro <!-- Objective: save briefs for returning users -->',
+                      '- item\n  ```md\n  ## Objective\n  Save briefs for returning users\n  ```\n',
+                      '<details><summary>More</summary>\n\n## Objective\nSave briefs for returning users\n</details>',
+                      '## Summary\nStuff\n\n## Objective\nSave briefs for returning users'):
+            db['prs']['5']['body'] = empty
+            self.state.write_text(json.dumps(db))
+            self.assertIn('must start with its objective', self.run_script('check', '--pr', '5', code=1), empty)
+        db['prs']['5']['body'] = 'Objective: https://github.com/o/r/issues/22'
+        self.state.write_text(json.dumps(db))
+        self.assertIn('success: Low-risk change', self.run_script('check', '--pr', '5'))
+        self.write(files=['docs/guide.md'])
+        db = json.loads(self.state.read_text())
+        db['prs']['5']['body'] = ''
+        self.state.write_text(json.dumps(db))
+        self.assertIn('success: Static-only', self.run_script('check', '--pr', '5'))
 
     def test_static_only_passes_without_verifier(self):
         self.write(files=['docs/guide.md'])

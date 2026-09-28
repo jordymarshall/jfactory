@@ -95,6 +95,9 @@ def check_record(root, record, report):
             report.add('FAIL', f'Readiness table has no "{area}" row')
         elif states[area] not in STATES:
             report.add('FAIL', f'Readiness "{area}" has state "{states[area]}"; use one of: {", ".join(sorted(STATES))}')
+    if states.get('PR delivery') == 'not applicable':
+        report.add('FAIL', 'PR delivery cannot be "not applicable": jfactory delivers through protected PRs. '
+                           'Use "blocked" with the missing step when the repository has no PR host yet')
 
     interview = table_rows(parts.get('owner interview', ''))
     if not interview:

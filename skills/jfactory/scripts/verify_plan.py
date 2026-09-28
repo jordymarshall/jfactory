@@ -153,7 +153,7 @@ def git_files(base):
 
 def pr_info(repo, number):
     pr = json.loads(run('gh', 'pr', 'view', str(number), '--repo', repo, '--json',
-                        'headRefOid,baseRefName,comments,isCrossRepository'))
+                        'headRefOid,baseRefName,comments,isCrossRepository,body'))
     files = run('gh', 'api', f'repos/{repo}/pulls/{number}/files', '--paginate', '--jq', '.[].filename')
     pr['files'] = [line for line in files.splitlines() if line]
     return pr
@@ -185,9 +185,78 @@ def same_family_refusal(verifier, implementer, allowed):
     return None
 
 
+OBJECTIVE_HEADING = re.compile(r'^ {0,3}#{1,6}[ \t]+objective\b', re.I)
+OBJECTIVE_LINE = re.compile(r'^ {0,3}\**objective\**[ \t]*:[ \t]*(.*)$', re.I)
+FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
+HEADING = re.compile(r'^ {0,3}#{1,6}(?:[ \t]|$)')
+
+
+def visible_lines(body):
+    """Lines GitHub shows as prose: code fences, indented code and HTML comments are dropped.
+
+    Follows CommonMark: a fence closes only with the same character at least as long as the opener,
+    and an unclosed fence or comment hides the rest of the document.
+    """
+    lines, fence, comment = [], None, False
+    for line in (body or '').splitlines():
+        if comment:
+            if '-->' in line:
+                comment = False
+                line = line.split('-->', 1)[1]
+            else:
+                continue
+        if fence:
+            closing = FENCE.match(line)
+            if closing and closing.group(1)[0] == fence[0] and len(closing.group(1)) >= len(fence) \
+                    and not line.strip().lstrip(fence[0]):
+                fence = None
+            continue
+        opening = FENCE.match(line)
+        if opening:
+            fence = opening.group(1)
+            continue
+        if line.startswith('    ') or line.startswith('\t'):
+            continue  # indented code block
+        while '<!--' in line:
+            before, rest = line.split('<!--', 1)
+            if '-->' in rest:
+                line = before + rest.split('-->', 1)[1]
+            else:
+                line, comment = before, True
+        lines.append(line)
+    return lines
+
+
+def states_objective(body):
+    """The description must open with the objective: its first non-empty line is an `Objective` heading or an
+    `Objective:` line, and that line or its section has at least 10 characters of content. Top-level code fences
+    and HTML comments don't count toward the content. This is a presence check against a forgotten objective;
+    whether the content is a good objective is for the agent and the verifier to judge."""
+    raw = [line for line in (body or '').splitlines() if line.strip()]
+    if not raw or not (OBJECTIVE_HEADING.match(raw[0]) or OBJECTIVE_LINE.match(raw[0])):
+        return False
+    lines = visible_lines(body)
+    first = next((i for i, line in enumerate(lines) if line.strip()), None)
+    if first is None or lines[first] != raw[0]:
+        return False
+    match = OBJECTIVE_LINE.match(lines[first])
+    if match:
+        text = match.group(1)
+    else:
+        section = []
+        for following in lines[first + 1:]:
+            if HEADING.match(following):
+                break
+            section.append(following)
+        text = ' '.join(section)
+    return len(re.sub(r'\s+', ' ', text).strip()) >= 10
+
+
 def evaluate(pr, config):
     """Return (state, description) for the jfactory verified status at the PR head."""
     result = plan(pr['files'], config)
+    if result['level'] != 'static' and config.get('require_objective', True) and not states_objective(pr.get('body')):
+        return 'failure', 'PR description must start with its objective: an Objective heading (such as "## Objective") or "Objective:" line'
     if not result['needs_verifier']:
         if result['level'] == 'ci':
             return 'success', 'Low-risk change (verify: ci); required CI checks apply'

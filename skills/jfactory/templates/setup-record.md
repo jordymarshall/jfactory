@@ -15,7 +15,7 @@ Last reviewed <date> against `<base>` at `<commit>`.
 | Environments | <state> | <evidence, or the gap and who acts next> |
 | PR delivery | <state> | <evidence, or the gap and who acts next> |
 
-States: `verified`, `configured but unverified`, `blocked`, `not run by request`, `not applicable`.
+States: `verified`, `configured but unverified`, `blocked`, `not run by request`, `not applicable` (never for PR delivery; use `blocked` until PRs and required checks work).
 
 ## Owner interview
 
