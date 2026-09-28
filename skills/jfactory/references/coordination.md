@@ -2,117 +2,167 @@
 
 Use this procedure when the owner asks one agent to deliver several objectives through separate Conductor workspaces, or when a program would outlive one session. One objective that fits a single session stays in one workspace under the normal jfactory loop. Parallel workspaces multiply cost and integration work; start them only on the owner's request or explicit agreement.
 
-The coordinator owns the program: outcomes, task contracts, dependencies, evidence review, integration order and owner questions. Workers own code in their own workspace and branch. The coordinator does not edit a worker's files. Code changes, conflict resolution and fixes are tasks for a worker.
+There are three roles:
+
+- **Owner.** Decides outcomes and product questions, supervises through the program issue and the coordinator's chat, and can stop everything with one label.
+- **Coordinator.** The agent the owner asked. It frames the program, writes task contracts, launches and monitors workers, verifies results, merges and reports. It does not edit a worker's files; code changes and conflict resolution are worker tasks.
+- **Worker.** One agent per unit in its own workspace and branch. It follows the normal jfactory loop for its unit and reports to the program issue.
 
 Read the pinned originals this adapts: [orchestrate](../vendor/pstack/skills/poteto-mode/playbooks/orchestrate.md), [multi-PR plan](../vendor/pstack/skills/poteto-mode/playbooks/multi-phase-plan.md), [prototype](../vendor/pstack/skills/poteto-mode/playbooks/prototype.md), [session pickup](../vendor/pstack/skills/poteto-mode/playbooks/session-pickup.md), [pause safely](../vendor/pstack/skills/poteto-mode/playbooks/pause-safely.md) and [sequence verifiable units](../vendor/pstack/skills/principle-sequence-verifiable-units/SKILL.md). Their Cursor-specific tools are translated in [host compatibility](compatibility.md#coordination-translations). Repository policy, owner decisions and this procedure take precedence.
+
+## The coordination tool
+
+`scripts/coord.py` in this skill enforces the mechanical rules. Run it from the repository root with `python3 <skill path>/scripts/coord.py <command>`; `--help` lists every command. It needs an authenticated `gh` and, for launching, the `conductor` CLI.
+
+| Command | Who | What it does |
+| --- | --- | --- |
+| `init --title --outcome [--standing FILE]` | Coordinator | Creates the program issue labelled `jfactory-program` with the model policy and standing orders, plus a Conductor sidebar section containing the coordinator workspace |
+| `list` | Anyone | Lists open program issues, for resuming |
+| `add <issue> <unit> --objective --requires SCOPES [--role] [--effort] [--depends] [--paths]` | Coordinator | Adds a planned unit with the evidence scopes that define verified, its role and difficulty-based effort |
+| `brief <file>` | Coordinator | Checks a task contract has every required field |
+| `launch <issue> <unit> --brief FILE [--dry-run]` | Coordinator | Creates the unit's Conductor workspace with the policy's agent and model, moves it into the program's sidebar section, after checking hold, concurrency limit, dependencies, open decisions, brief completeness, attempt limit, model availability and reviewer model family |
+| `report <issue> <unit> --state ...` | Worker | Posts a structured comment with its state, PR, head SHA, note or question |
+| `sync <issue>` | Coordinator | Folds worker reports, PR state and session status into the issue, voids verdicts on new heads and lists units ready to launch |
+| `verdict <issue> <unit> --head --verdict --scopes --evidence --verifier [--full]` | Coordinator | Records verification only at the PR's current head, requires every declared scope, and posts the PR verdict that the `jfactory verified` status reads |
+| `merge <issue> <unit>` | Coordinator | Queues protected auto-merge pinned to the verified head, only with a `verified` verdict at that head, no open decisions, and a recorded `merge_deploys` of `staging` or `none` |
+| `gate add` / `gate resolve` | Coordinator | Records an owner decision and its answer; open decisions block launch and merge for their units |
+| `set <issue> <unit> --state` | Coordinator | Marks a unit blocked, failed or abandoned with a note |
+| `close <issue>` | Coordinator | Closes the program only when every unit is merged, done (verifiers without their own PR) or abandoned |
+
+The issue body has one writer, the coordinator. Workers never edit it; they add report comments, and the newest report after the coordinator's last change to that unit wins at the next `sync`. This avoids concurrent edits to one body. Anyone with comment access could post a report, so the coordinator still checks each claim against the actual PR.
+
+The tool is a guard, not a supervisor. It runs only when an agent calls it, and it does not judge whether evidence is meaningful.
+
+## Model policy
+
+Each unit has a role. The default policy is the owner's:
+
+| Role | Agent and model | Use |
+| --- | --- | --- |
+| `implement` | Claude `opus-5-5-1m`; fallback Codex `gpt-6-astra` | Features, fixes, prototypes and every other code change |
+| `verify` | Codex `gpt-6-luna`, fast mode; Claude `opus-5-5-1m` at low effort when the implementer ran on Codex or as the fallback when Codex has no usage | Verification, review and PR follow-through for another unit, always from a different model family than its implementer |
+
+These follow [model selection](models.md). Use `launch --fallback --reason "<usage reading>"` only when the primary has no usage remaining; the reason is recorded on the unit. The verifier's family switch happens automatically.
+
+Both roles choose effort per unit by difficulty, from `low` to `high` (default `medium`). Use `low` for mechanical edits and narrow checks, `medium` for ordinary features and reviews, and `high` for ambiguous, cross-cutting or high-risk work. Set it with `add --effort` or `launch --effort`; the tool refuses levels outside the role's range. Raise effort on a retry when the previous attempt failed from difficulty rather than a bad contract. The exception is an Opus 5.5 verifier, which always runs at `low` effort: the tool applies it whatever the unit's effort, and refuses `launch --effort` with another level.
+
+A repository overrides the policy in `.jfactory/coordination.json`, for example `{"limit": 2, "roles": {"implement": {"agent": "codex", "model": "gpt-6-sol", "effort": "medium", "efforts": ["medium", "high"], "fast": true}}}`. Setup records the owner's policy there. `init` copies the effective policy into the program issue, so later edits to the file do not change a running program. `launch --agent/--model/--effort` overrides one unit and is recorded on it. The tool refuses models Conductor does not offer (`conductor model`), fast mode on a model without it, and a verifier from the same agent family as the unit it reviews. `--allow-same-family` only permits the launch; the resulting verdict is still refused by `verify_plan.py` and the `jfactory verified` status unless the repository's `.jfactory/verification.json` sets `"allow_same_family": true`, which is an owner decision to disclose in the PR.
+
+## Where the owner is in the loop
+
+| Moment | What the owner does |
+| --- | --- |
+| Framing | Agrees the outcomes, acceptance criteria, units, limit and policy. Answers product questions before workers start. |
+| While running | Opens the program issue to see units, PRs, verdicts and open decisions. Answers decisions in the coordinator's chat or as issue comments. |
+| Direct feedback | Opens any worker from the program's sidebar section and messages it, tries its preview, or comments on its PR. The worker applies feedback within its unit and reports it as an owner decision; the coordinator records it and relays it to affected units. Feedback that changes scope comes back as a decision instead of silent expansion. |
+| Stop | Adds the `jfactory-hold` label. `launch` refuses, and each worker is told at its next report to stop at a safe boundary and push. Removing the label resumes. |
+| Results | Receives each PR with its walkthrough and evidence, and the coordinator's checkpoint reports. Tries the result and gives product feedback. |
+
+GitHub usually does not notify you about actions taken with your own token, and agents typically use it. Do not rely on issue notifications; the coordinator's chat reports are the active channel, and the issue is the dashboard.
+
+### Why separate workspaces instead of sessions
+
+Sessions in one workspace share its checkout, branch, running processes and ports. Two implementing sessions would overwrite each other's files, produce one mixed branch and PR, and contend for the same dev server. A workspace per unit gives each worker its own checkout, branch, PR and cloud machine, so it can run and verify the app independently. Use an extra session only for an agent that should read the same checkout, such as a reviewer or explainer that does not write.
 
 ## 1. Frame the program with the owner
 
 State, once, before any worker starts:
 
 - The program objective and a countable done condition, for example "these three outcomes are merged, each with its required application evidence at the merged revision."
-- The units. One unit is one coherent objective delivered as one PR with its own evidence. Name dependencies between units.
-- Limits: at most three concurrently running workers unless the owner sets another number, the agents and models to use, wall-clock or spend limits, and the merge/release policy already authorized for the repository. Unless the owner names models, apply [model selection](models.md), which checks current session and weekly usage for each account.
+- The units. One unit is one coherent objective delivered as one PR with its own evidence. Name dependencies and each unit's owned paths.
+- Each unit's verification standard: its acceptance criteria and the evidence scopes that define verified (`add --requires`, such as `application,unit`). Application evidence comes from the PR preview or staging. Workers loop until the standard passes; the coordinator merges without asking again once it does.
+- The concurrency limit (default three), the model policy (see [model selection](models.md), including the usage check before each launch batch), wall-clock or spend limits, and what merging deploys (`init --merge-deploys` or `.jfactory/coordination.json`). `merge` refuses unless merges reach staging or nothing; production releases stay a deliberate owner action.
 
-Run the product interview for each substantial feature before its worker starts, reusing settled answers. A worker cannot interview the owner mid-flight without stalling, so unresolved product choices are settled here or parked as gates. Reversible preparation can proceed while the owner reviews the framing.
+Run the product interview for each substantial feature before its worker starts, reusing settled answers. A worker cannot interview the owner mid-flight without stalling, so unresolved product choices are settled here or recorded with `gate add`. Reversible preparation can proceed while the owner reviews the framing.
 
 If one session could finish the work inside the budget, say so and do it in one workspace.
 
+Then run `init` with the standing orders: numbered constraints that apply to every worker, such as delivery policy, forbidden paths, shared-resource rules and escalation rules. `add` each unit. When you catch yourself restating an instruction to a worker, add it to the standing orders instead.
+
 ## 2. Resolve uncertainty before writing tasks
 
-- An open visual, interaction or empirical question gets a throwaway [prototype](../vendor/pstack/skills/poteto-mode/playbooks/prototype.md) first. Keep its scratch path, revision and screenshots or observed output. The prototype informs the decision and does not ship.
-- A contested module shape or a hard-to-reverse boundary gets [architect](../vendor/pstack/skills/architect/SKILL.md) in the coordinator's workspace before implementation units are cut.
-- A shared API, schema or data contract lands as its own first unit. Dependent units start after it merges, or stack on its branch with the order recorded.
+- An open visual, interaction or empirical question gets a throwaway [prototype](../vendor/pstack/skills/poteto-mode/playbooks/prototype.md) first, as an `implement` unit at low effort or in the coordinator's workspace. Keep its scratch path, revision and screenshots or observed output. The prototype informs the decision and does not ship.
+- A contested module shape or a hard-to-reverse boundary gets [architect](../vendor/pstack/skills/architect/SKILL.md) before implementation units are cut.
+- A shared API, schema or data contract lands as its own first unit. Dependent units wait for it to merge, or stack on its branch with `launch --stack-on` and a recorded merge order.
 
 Product or preference choices that no prototype settles go to the owner with options and a recommendation.
 
-## 3. Keep one durable program record
+## 3. Write a complete task contract per unit
 
-Cloud workspaces can disappear, so program state cannot live only in the coordinator's chat or scratch files. Use the repository's existing tracker. If it has none, open one GitHub issue per program, titled `Program: <outcome>`, and link it from every unit PR. Record:
-
-- **Standing orders.** Numbered constraints that apply to every worker, such as delivery policy, forbidden paths, shared-resource rules and escalation rules. When you restate an instruction to a worker, add it here first.
-- **Units.** One row per unit: objective, dependencies, owned paths, workspace link, session id, agent, model and effort with the reason for any fallback, branch, PR, current head SHA and state (`planned`, `running`, `blocked`, `in-review`, `verified`, `merged`, `abandoned`).
-- **Verification ledger.** One row per PR and head SHA: the evidence scopes observed, links and verdict (`verified`, `partially-verified`, `blocked`, `failed`). A new head SHA voids the previous verdict for that PR.
-- **Gates.** Each owner decision needed, its options, the recommended default and which units wait on it.
-
-Each unit's detailed objective contract lives in its own task record or PR, per the [verification contract](verification.md#objective-contract). The program record links to it rather than duplicating it.
-
-## 4. Write a complete task contract per unit
-
-The initial message is the worker's whole context. A worker cannot see sibling workspaces or this chat. Write every field; an empty field means the unit is not scoped yet, so do not launch it.
+The initial message is the worker's whole context. It cannot see sibling workspaces or this chat. Write every field; `brief` and `launch` refuse a contract with a missing field.
 
 ```text
 OBJECTIVE      One sentence a stranger can execute, with the customer outcome.
 DECISIONS      Owner decisions, recorded assumptions, and questions that are out of scope for this unit.
 SCOPE          Paths this unit may change; paths it must not change; its branch name.
-CONTEXT        Links to the program record, task record, relevant files and PRs. Paste upstream unit results it depends on.
+CONTEXT        Links to the program issue, task record, relevant files and PRs. Paste upstream unit results it depends on.
 ACCEPTANCE     Observable criteria, one per line, with required evidence scopes.
 VERIFY         Exact commands, application journey and environment; known limits of each.
 SHARED         Accounts, databases, ports, previews and services, and whether this unit may mutate them.
 LIMITS         Time or spend cap; on reaching it, push work, report partial results and stop.
 FORBIDDEN      No force-push, no edits to other units' branches, no base-branch push, no work outside SCOPE.
-DELIVERY       Ready-for-review PR to the base branch, linked to the program record; auto-merge policy for this unit.
+DELIVERY       Ready-for-review PR to the base branch, linked to the program issue; auto-merge is queued by the coordinator.
 REPORT         Status, branch, head SHA, PR, each criterion's result and evidence, deviations, blockers, follow-ups.
-STANDING       The standing orders, pasted verbatim.
 ```
 
-Size the contract to the unit. A one-line fix can be a short paragraph that still names the objective, scope, verification and report.
+`launch` appends the standing orders and a coordination block that tells the worker its unit, the program issue and the exact `report` commands. Size the rest to the unit; a one-line fix can use one short line per field.
 
-## 5. Launch workers
+## 4. Launch workers
 
-Before the first launch, confirm the starting branch contains the jfactory adoption commit and that the repository's cloud setup script prepares dependencies. Otherwise the worker starts without these instructions or tools.
+Before the first launch, confirm the base branch contains the jfactory adoption commit, so workers load these instructions and the tool, and that the repository's cloud setup script prepares dependencies.
 
-Pilot one unit through the whole path, from contract to verified PR, before launching the rest when the unit shape is new. Correct the contract template and verification recipe from what the pilot reveals. For near-identical, cheap units, the first unit serves as the pilot.
+Pilot one unit from contract to verified PR before launching the rest when the unit shape is new. Correct the contract and verification recipe from what the pilot reveals. For near-identical cheap units, the first unit is the pilot.
 
-Before each launch batch, choose every unit's tier and run the usage reader under [model selection](models.md) for the model to launch. Launch each independent unit in its own workspace:
+Before each launch batch, run the usage reader under [model selection](models.md) and pass `--fallback --reason` with its reading when it chooses a fallback. Use `launch --dry-run` to review the exact message, then `launch`. It records the workspace link and session on the unit and posts a launch comment. Use `conductor session create` only for an agent that should share an existing workspace, such as a same-checkout reviewer; two writers in one checkout are not isolated. Refill free slots as units finish instead of waiting for a whole batch.
 
-```sh
-conductor workspace create --repo-url <repository URL> --branch <base branch> \
-  --name "<unit name>" --agent <agent> --model <model> [--effort <level>] --message-file <contract file> --json
-```
+## 5. Worker protocol
 
-Record the returned workspace link and first session id in the program record. Keep the program's workspaces together in one personal sidebar section: create it once with `conductor section create "Program: <outcome>"`, record its id, move the coordinator's workspace into it with `conductor workspace move --section <section id>`, and move each new worker with `conductor workspace move <workspace id> --section <section id>`. Use `conductor session create` only for a second agent that should share an existing workspace's files, such as a reviewer. Two writers in one checkout are not isolated. Refill the running window as units finish instead of waiting for a whole batch.
+A worker whose task contract names a program issue:
+
+1. Reports `running` when it starts.
+2. Follows the normal jfactory loop for its unit only: objective contract, implementation, verification and a ready-for-review PR linked to the program issue. It does not queue auto-merge; the coordinator does after independent verification.
+3. Reports `in-review` with the PR, head SHA and criterion results after each push that changes the PR, `blocked` with `--question` when it needs a decision, or `failed` with the reason.
+4. Applies owner feedback given directly in its workspace within its unit, and includes it as an owner decision in the next report. Feedback that changes scope or affects other units is reported as `blocked` with a question rather than acted on alone.
+5. Continues independent in-scope work while a question is open, and does not edit the issue body, launch workspaces or touch other units' branches.
+6. Stops at a safe boundary, pushes and reports when a report prints `PROGRAM ON HOLD`, or when its limits are reached.
 
 ## 6. Monitor by evidence, not by interrupting
 
-Check state read-only at natural points: after a critical step, on a scheduled wakeup, and before reporting to the owner.
+Run `sync` at natural points: after a critical step, on a scheduled wakeup, and before reporting to the owner. It prints counts, what changed, units whose session went idle without a final report, and units ready to launch. Use the host's scheduled wakeups with a long fallback interval rather than tight polling.
 
-- `conductor session status <session>` for whether the worker is running or idle.
-- `conductor session message <session> --after <last seen message id>` for its latest report or question.
-- `gh pr list`, `gh pr view <number> --json headRefOid,state,statusCheckRollup,body` and pushed branches for actual output.
+For detail, read `conductor session message <session> --after <last seen message id>` and the PR. Do not send a message to check progress; a message starts another turn and can redirect the worker. Send one with `conductor message create --session <session>` only to answer a question, deliver a changed dependency or correct scope, and restate the relevant standing orders when you do.
 
-Do not send a message to check progress. A message starts another turn and can redirect the worker. Send one with `conductor message create --session <session>` only to answer a question, deliver a changed dependency or correct scope, and restate the relevant standing orders when you do. Use the host's scheduled wakeups with a long fallback interval rather than tight polling.
-
-Answer worker questions from recorded decisions when possible. Otherwise park a gate, route the worker to independent in-scope work, and batch gates for the owner.
+A worker question becomes an open decision at `sync`. Answer it from recorded decisions when possible with `gate resolve` and a message to the worker. Otherwise batch it for the owner.
 
 ## 7. Verify each result independently
 
-A worker's report is a claim. At the PR's current head SHA, inspect the criteria, the checks that ran, the application evidence and whether the assertions prove the claim. Record the verdict in the ledger. CI status is an input, not a verdict.
+A worker's report is a claim. At the PR's current head SHA, inspect the criteria, the checks that ran, the application evidence and whether the assertions prove the claim. Record the result with `verdict`. CI status is an input, not a verdict. A new head voids the previous verdict at the next `sync`.
 
-For expensive, judgment-heavy or high-risk units, or whenever you delegate verification, launch a separate verifier session or workspace. It uses the verify tier from [model selection](models.md): GPT Luna 6 in fast mode, or Opus 5.5 at low effort when the worker ran on a Codex model or Codex has no usage remaining. Its report is evidence for your verdict, not the verdict itself. Archive the verifier once its report is recorded. A failed verification becomes a fix task for the worker, not a re-run of the same check.
+Every `implement` unit that produces a PR gets a `verify` unit that depends on it, launched with `--stack-on` so it checks out the PR branch once the worker reports `in-review`. Its contract asks it to re-run the acceptance checks and application journey, review the diff, and follow the PR through CI and review comments. It runs `verify_plan.py plan` for the PR, reports a recommended verdict with evidence and does not change product code; defects become a fix task for the original worker. Choose its effort by risk. The coordinator inspects that evidence and records the `verdict`.
+It runs on GPT Luna 6 in fast mode, or Opus 5.5 at low effort when the implementer ran on Codex; see the verify tier in [model selection](models.md). Archive the verifier's workspace once its verdict is recorded.
 
 ## 8. Integrate continuously
 
-Land verified units as they finish rather than at the end. Follow [PR delivery](delivery.md), [worktree coordination](worktrees.md#deliver-and-integrate) and [auto-merge setup](auto-merge.md). Queue protected auto-merge only for a unit whose required evidence passed at its current head and whose owner gates are settled. For overlapping units, merge one at a time. After each merge, have dependent workers update from the base, rerun affected checks and report a new head SHA. A conflict-free merge is not proof of combined behavior.
+Land verified units as they finish rather than at the end. Follow [PR delivery](delivery.md), [worktree coordination](worktrees.md#deliver-and-integrate) and [auto-merge setup](auto-merge.md). `merge` queues protected auto-merge pinned to the verified head. For overlapping units, merge one at a time. After each merge, message dependent workers to update from the base, rerun affected checks and report the new head. A conflict-free merge is not proof of combined behavior.
 
-Archive each unit's workspace as soon as it is finished rather than at program close, so the sidebar shows only live work. Archive a workspace when its unit is `merged`, or `abandoned` with its work pushed or intentionally discarded, and its sessions are idle. Use `conductor workspace archive <workspace id>` and record the archive in the program record. Conductor's CLI archives workspaces; it does not delete them. Archived workspaces stay listed under `conductor workspace list --include-archived`. Archive only workspaces this program created. Leave the owner's own workspaces and other coordinators' workspaces alone, even when they look idle.
+Archive each unit's workspace as soon as it is finished rather than at program close, so the sidebar shows only live work. Archive a workspace when its unit is `merged` or `done`, or `abandoned` with its work pushed or intentionally discarded, and its sessions are idle. Use `conductor workspace archive <workspace id>` and record the archive in the program record. Conductor's CLI archives workspaces; it does not delete them. Archived workspaces stay listed under `conductor workspace list --include-archived`. Archive only workspaces this program created. Leave the owner's own workspaces and other coordinators' workspaces alone, even when they look idle.
 
 The coordinator does not force-push, retarget or close another worker's PR. Those actions are worker tasks or owner decisions.
 
 ## 9. Recover from failures and interruptions
 
-- **Stalled or failed worker.** Check its last message, branch and PR. A worker stopped by a usage limit continues on the fallback model as described in [model selection](models.md#3-decide-record-and-revisit); that is not a failed attempt. Otherwise retry once with a narrower contract or a different model when the failure mode warrants it. After two failed attempts, abandon the unit, record why and replan around it.
-- **Late or duplicated output.** Reconcile it against the current base, program record and ledger before accepting anything.
-- **Program-wide failure.** When further launches would repeat the same failure, add a stop line at the top of the standing orders, let running workers finish, fix the cause and then clear the stop line.
-- **Coordinator interruption.** A new coordinator session follows [session pickup](../vendor/pstack/skills/poteto-mode/playbooks/session-pickup.md): read the program record, then `conductor workspace list --repo <repository> --include-archived --json`, each unit's session status and `gh pr list`. Resume from that state without relaunching finished units.
-- **Owner-requested pause.** Follow [pause safely](../vendor/pstack/skills/poteto-mode/playbooks/pause-safely.md): tell workers to stop at a safe boundary and push their work, then update the program record with the resume point.
+- **Stalled or failed worker.** Read its last messages, branch and PR. A worker stopped by a usage limit has not failed: continue it on the role's fallback per [model selection](models.md#3-decide-record-and-revisit), which does not count toward the attempt limit. Otherwise, mark it `failed` with the reason and relaunch once with a narrower contract or another model when the failure warrants it. `launch` refuses a fourth attempt; abandon the unit with `set --state abandoned --note` and replan around it.
+- **Late or duplicated output.** Reconcile it against the current base, program issue and ledger before accepting anything.
+- **Program-wide failure.** When further launches would repeat the same failure, add the hold label, let running workers stop safely, fix the cause and remove the label.
+- **Coordinator interruption.** A new coordinator session follows [session pickup](../vendor/pstack/skills/poteto-mode/playbooks/session-pickup.md): `list`, read the program issue, then `sync`. Resume from that state without relaunching finished units.
+- **Owner-requested pause.** Add the hold label and follow [pause safely](../vendor/pstack/skills/poteto-mode/playbooks/pause-safely.md) for the coordinator's own work.
 
 ## 10. Escalate and close
 
 Ask the owner only for product or preference decisions that no experiment settles, irreversible or unauthorized actions, standing orders that contradict observed reality, and dead ends that survived a replan. Batch these questions and keep routine retries, CI triage and merge mechanics out of them.
 
-Close when every unit is `merged` or `abandoned` with a reason. Confirm the done condition on the merged base, including required application evidence. Before reporting, list `conductor workspace list --mine --repo <repository> --json` and archive any remaining workspace this program created that meets the archive rule in step 8, including verifier and probe sessions. Then delete the program's section with `conductor section delete <section id>`. Ask before archiving the coordinator's own workspace, which the owner may still be reading. Report the done condition, units and PR links, verdicts at merged SHAs, what was abandoned and why, remaining gates and the program record link. Add recurring corrections to the standing orders template or an enforced check.
+Confirm the done condition on the merged base, including required application evidence, then run `close`. Before reporting, list `conductor workspace list --mine --repo <repository> --json` and archive any remaining workspace this program created whose unit is `merged`, `done` or `abandoned` with its work pushed or intentionally discarded, including verifier and probe sessions. Then delete the program's section with `conductor section delete <section id>`. Ask before archiving the coordinator's own workspace, which the owner may still be reading. Leave the owner's other workspaces and other coordinators' workspaces alone. Report the done condition, units and PR links, verdicts at merged SHAs, what was abandoned and why, remaining decisions and the program issue. Add recurring corrections to the standing orders template or an enforced check.
 
 ## What this does not provide
 
-These are instructions for an active coordinating agent, using Conductor's CLI and GitHub. jfactory does not install a background supervisor, scheduler or webhook. Nothing launches until an agent follows this procedure on request. Conductor routines can trigger agents from webhooks when the owner configures one separately. This procedure has not yet been evaluated end to end across models.
+jfactory does not install a background supervisor, scheduler or webhook. Nothing launches or syncs unless an agent runs the tool, so a coordinator session that stops leaves workers running unsupervised until someone resumes it. Conductor routines can trigger agents from webhooks when the owner configures one separately. The tool's rules are tested against simulated `gh` and `conductor`; an end-to-end program with real workers has not yet been evaluated.

@@ -40,6 +40,10 @@
           {
             "context": "checks",
             "integration_id": 15368
+          },
+          {
+            "context": "jfactory verified",
+            "integration_id": 15368
           }
         ]
       }

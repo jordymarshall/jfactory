@@ -19,7 +19,7 @@ It connects four loops:
 
 You can give the agent a bounded outcome and let it work through routine implementation and verification without repeatedly saying "keep going." You stay involved in consequential product choices and customer feedback.
 
-The result distinguishes **what you decided, what the agent inferred, what exists, what was verified, and what you accepted**. Changes ship through a PR and default to protected squash auto-merge once the agreed verification and repository requirements pass. Missing proof keeps the PR open. Setup establishes whether merging also deploys.
+The result distinguishes **what you decided, what the agent inferred, what exists, what was verified, and what you accepted**. You agree what counts as verified before work starts. The checks each PR needs come from what it changes: a map links code paths to features and their verification recipes, docs-only changes need only static checks, and unrecognised files need everything. A verifier from a different model family confirms the result at the PR's latest commit, and a required `jfactory verified` check enforces it. The agent works until that standard passes, then merges the PR automatically through protected squash auto-merge. Missing proof keeps the PR open. Merging deploys at most to staging; production releases happen only when you deliberately ask. Setup reconfigures or flags a repository whose merges release production.
 
 ## 2. How to use
 
@@ -90,9 +90,13 @@ Ask one coordinating agent in Conductor:
 
 > Use jfactory to deliver [feature A], [feature B] and [feature C] in parallel. Clarify each outcome and its acceptance criteria with me first, then run at most three workspaces at a time.
 
-The coordinator agrees outcomes and open decisions with you, prototypes unresolved design questions, and writes a complete task contract per feature. It launches each feature in its own Conductor workspace, then tracks units, verdicts and your pending decisions in one durable program record. It checks each worker's actual PR and evidence rather than trusting its summary, and merges overlapping PRs one at a time under protected auto-merge. If the coordinator is interrupted, a new session resumes from that record. See the [coordination procedure](skills/jfactory/references/coordination.md).
+The coordinator agrees outcomes and open decisions with you, then opens one GitHub issue as the program's dashboard. It writes a complete brief per feature and launches each in its own Conductor workspace, choosing the agent and model by role. Workers report their state and PRs to that issue. The coordinator checks each PR's actual evidence at its latest commit, records a verdict and merges overlapping PRs one at a time under protected auto-merge.
 
-This runs only while an agent follows the procedure. jfactory has no background supervisor, and parallel workspaces multiply cost, so it starts them only when you ask.
+A bundled tool, `coord.py`, enforces the mechanics. It refuses launches beyond the concurrency limit, with incomplete briefs, unmerged dependencies, open decisions or unavailable models. It refuses merges without a verified verdict at the current commit.
+
+Your role: agree outcomes up front, watch the issue, answer decisions in chat or on the issue, and add the `jfactory-hold` label to stop new launches and pause workers. The coordinator and its workers are grouped in one Conductor sidebar section. Open any worker to give it feedback directly; it reports that feedback so the coordinator can relay it to affected features. The default model policy uses Claude Opus 5.5 for every feature and change, and GPT-6 Sol in fast mode for all verification, review and PR follow-through. Effort ranges from low to high by difficulty. Override it in `.jfactory/coordination.json`. See the [coordination procedure](skills/jfactory/references/coordination.md).
+
+This runs only while an agent uses it. jfactory has no background supervisor, and parallel workspaces multiply cost, so it starts them only when you ask.
 
 Each launched agent's model is chosen by task tier and current usage. Core coding uses Opus 5.5, or GPT Astra 6 when Claude usage is exhausted. Faster work uses GPT Sol 6, or Opus 5.5 at low effort. Very simple tasks use GPT Luna 6, and verification uses GPT Luna 6 in fast mode. Before launching, agents run `scripts/usage.py`. It reads Claude and Codex session and weekly usage from Conductor session records and Codex logs, runs a small probe session when a reading is missing or stale, and prints the model to use. Agents record any fallback. A coordinator groups its workspaces in one sidebar section and archives each one when its unit merges. See [model selection](skills/jfactory/references/models.md).
 

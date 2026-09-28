@@ -1,0 +1,44 @@
+name: jfactory verified
+# pull_request_target and issue_comment both load this file from the base or default branch,
+# so a PR cannot edit the steps that publish its own status.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created, edited, deleted]
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+concurrency:
+  group: jfactory-verified-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+env:
+  JFACTORY_DIR: skills/jfactory
+jobs:
+  status:
+    if: >-
+      (github.event_name == 'pull_request_target' && !github.event.pull_request.head.repo.fork) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve the PR's base branch
+        id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: echo "ref=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json baseRefName --jq .baseRefName)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.base.outputs.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Evaluate the independent verdict at the PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: >-
+          python3 "$JFACTORY_DIR/scripts/verify_plan.py" --repo "$GITHUB_REPOSITORY" check --pr "$PR"
+          --set-status --target-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
