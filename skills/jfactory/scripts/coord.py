@@ -37,7 +37,7 @@ BRIEF_FIELDS = ['OBJECTIVE', 'DECISIONS', 'SCOPE', 'CONTEXT', 'ACCEPTANCE', 'VER
 # Owner policy (see references/models.md): Opus builds; GPT Luna 6 in fast mode verifies, reviews and
 # handles PRs. `fallback` is used only when the primary has no usage left. A verifier always comes from
 # another family than the unit's actual implementer, so `alternate` covers Codex-implemented units.
-# Opus runs verification at low effort only (`pin_effort`).
+# `pin_efforts` fixes the effort per agent: Opus verifies at low effort only, however it was chosen.
 DEFAULT_POLICY = {
     'limit': 3,
     'roles': {
@@ -45,9 +45,9 @@ DEFAULT_POLICY = {
                       'efforts': ['low', 'medium', 'high'], 'fast': False,
                       'fallback': {'agent': 'codex', 'model': 'gpt-6-astra', 'fast': False}},
         'verify': {'agent': 'codex', 'model': 'gpt-6-luna', 'effort': 'medium',
-                   'efforts': ['low', 'medium', 'high'], 'fast': True,
-                   'fallback': {'agent': 'claude', 'model': 'opus-5-5-1m', 'fast': False, 'pin_effort': 'low'},
-                   'alternate': {'agent': 'claude', 'model': 'opus-5-5-1m', 'fast': False, 'pin_effort': 'low'}},
+                   'efforts': ['low', 'medium', 'high'], 'fast': True, 'pin_efforts': {'claude': 'low'},
+                   'fallback': {'agent': 'claude', 'model': 'opus-5-5-1m', 'fast': False},
+                   'alternate': {'agent': 'claude', 'model': 'opus-5-5-1m', 'fast': False}},
     },
 }
 POLICY_FILE = Path('.jfactory/coordination.json')
@@ -397,10 +397,15 @@ def cmd_launch(args):
             raise Refused(f"The {unit['role']} policy has no fallback")
         role.update(role['fallback'])
         choice = f'fallback: {args.reason}'
-    role['effort'] = role.pop('pin_effort', None) or unit.get('effort') or role.get('effort')
+    role['effort'] = unit.get('effort') or role.get('effort')
     for key in ('agent', 'model', 'effort'):
         if getattr(args, key):
             role[key] = getattr(args, key)
+    pinned = role.pop('pin_efforts', {}).get(role['agent'])
+    if pinned:
+        if args.effort and args.effort != pinned:
+            raise Refused(f"{role['agent']} runs the {unit['role']} role at {pinned} effort only")
+        role['effort'] = pinned
     if role.get('efforts') and role['effort'] not in role['efforts'] and not (args.agent or args.model):
         raise Refused(f"Effort {role['effort']} is outside the {unit['role']} policy: {', '.join(role['efforts'])}")
     catalog = {a['agent']: a for a in run_json('conductor', 'model', '--json')['agents']}

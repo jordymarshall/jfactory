@@ -217,6 +217,20 @@ class CoordTest(unittest.TestCase):
         self.assertIn('same agent family', self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on', 'a',
                                                       '--fallback', '--reason', 'Codex weekly 95%', ok=False))
 
+    def test_opus_verifier_effort_stays_low_even_when_requested_higher(self):
+        self.start(['a', '--objective', 'x'], ['r', '--objective', 'verify a', '--role', 'verify', '--depends', 'a',
+                                                '--effort', 'high'], limit=3)
+        self.coord('launch', '1', 'a', '--brief', str(self.brief), '--fallback', '--reason', 'Claude weekly 95%')
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.coord('sync', '1')
+        for override in (['--effort', 'high'], ['--agent', 'claude', '--model', 'opus-5-5-1m', '--effort', 'max']):
+            self.assertIn('low effort only', self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on',
+                                                        'a', *override, ok=False))
+        self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on', 'a')
+        verifier = self.db()['workspaces'][-1]
+        self.assertEqual((verifier['agent'], verifier['model'], verifier['effort']), ('claude', 'opus-5-5-1m', 'low'))
+
     def test_effort_outside_policy_is_refused(self):
         self.start(['a', '--objective', 'x'])
         self.assertIn('outside the implement policy', self.coord('add', '1', 'b', '--objective', 'y', '--effort', 'max',
