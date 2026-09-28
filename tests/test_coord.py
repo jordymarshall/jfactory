@@ -214,6 +214,18 @@ class CoordTest(unittest.TestCase):
         self.assertNotIn('merged', self.db())
         self.assertIn('deploys to: **unknown**', self.db()['issues']['1']['body'])
 
+    def test_merge_refuses_a_production_target(self):
+        self.coord('init', '--title', 'Prod', '--merge-deploys', 'production')
+        self.coord('add', '1', 'a', '--objective', 'x', '--requires', 'unit')
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.coord('sync', '1')
+        self.coord('verdict', '1', 'a', '--head', 'aaa1111', '--verdict', 'verified', '--scopes', 'unit',
+                   '--evidence', 'x', '--verifier', 'codex/gpt-6-sol')
+        self.assertIn('deploys to production', self.coord('merge', '1', 'a', ok=False))
+        self.assertNotIn('merged', self.db())
+
     def test_repository_policy_override(self):
         (self.tmp / '.jfactory').mkdir()
         (self.tmp / '.jfactory' / 'coordination.json').write_text(json.dumps(

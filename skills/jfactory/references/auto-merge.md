@@ -7,7 +7,7 @@ The default delivery preference is a non-draft PR followed by auto-merge once ve
 This is jfactory's default unless the owner records otherwise:
 
 - **Verified means the agreed standard passed.** Before implementation, each objective records its acceptance criteria and the evidence scopes each criterion requires (see the [verification contract](verification.md)). The agent works until every criterion passes at those scopes on the PR's current head. For application criteria, use the PR preview or staging, not production. Then it queues auto-merge without asking again. Missing, failed or stale proof keeps the PR open. Never weaken the standard to reach a merge.
-- **Merging deploys at most to staging.** The base branch should deploy to a staging target, or nowhere. If merging currently releases production, auto-merge stays off until the release path is reconfigured with the owner's authorization, or the owner explicitly accepts merge-to-production for that repository.
+- **Merging deploys at most to staging.** The base branch should deploy to a staging target, or nowhere. If merging currently releases production, auto-merge stays off until the release path is reconfigured, with the owner's authorization, so merges reach staging or nothing. There is no auto-merge exception for merge-to-production.
 - **Production is a deliberate owner action.** Release to production only when the owner asks for that release. A merge, green CI, a verified verdict or a standing auto-merge authorization is not a production request. Record the manual release command or procedure in the repository's delivery docs.
 
 ## Establish the repository gates once
