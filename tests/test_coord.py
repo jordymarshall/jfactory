@@ -63,7 +63,12 @@ class CoordTest(unittest.TestCase):
         workspace = self.db()['workspaces'][0]
         self.assertEqual((workspace['agent'], workspace['model'], workspace['effort'], workspace['fast'],
                           workspace['branch']), ('claude', 'opus-5-5-1m', 'medium', False, 'main'))
-        self.assertIn('report --repo o/r 1 a --state in-review', workspace['message'])
+        command = next(line.strip() for line in workspace['message'].splitlines() if '--state in-review' in line)
+        self.assertIn('--repo o/r report 1 a --state in-review', command)
+        # The printed command must parse exactly as a worker would run it.
+        argv = command.split(' ', 2)[2].replace('<number>', '7').replace('<sha>', 'abc').split()
+        argv = [a.strip('"') for a in argv][:9]
+        self.coord(*argv[2:])
         self.assertIn('owner decision', workspace['message'])
         self.assertEqual(self.db()['section'], 'Program: Two features')
         self.assertEqual(self.db()['moves'], [['sec1'], ['w1', 'sec1']])
