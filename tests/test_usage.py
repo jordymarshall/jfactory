@@ -123,7 +123,7 @@ class UsageTests(unittest.TestCase):
         self.claude(5, 1, 2)
         self.codex_log(10, 3)
         out = self.run_usage()
-        self.assertEqual(out['choice'], {'frontier': ('claude', 'opus-5-5-1m', None),
+        self.assertEqual(out['choice'], {'frontier': ('claude', 'opus-5-5-1m', 'medium'),
                                          'fast': ('codex', 'gpt-6-sol', None),
                                          'trivial': ('codex', 'gpt-6-luna', None),
                                          'verify': ('codex', 'gpt-6-luna', None)})
@@ -142,7 +142,7 @@ class UsageTests(unittest.TestCase):
     def test_just_below_reserve_keeps_primary(self):
         self.claude(89, 89, 1)
         self.codex_log(10, 1)
-        self.assertEqual(self.run_usage()['choice']['frontier'], ('claude', 'opus-5-5-1m', None))
+        self.assertEqual(self.run_usage()['choice']['frontier'], ('claude', 'opus-5-5-1m', 'medium'))
 
     def test_codex_limit_reached_uses_opus_low_for_fast_and_trivial(self):
         self.claude(5, 1, 1)
@@ -150,7 +150,7 @@ class UsageTests(unittest.TestCase):
         out = self.run_usage()
         self.assertEqual(out['choice']['fast'], ('claude', 'opus-5-5-1m', 'low'))
         self.assertEqual(out['choice']['trivial'], ('claude', 'opus-5-5-1m', 'low'))
-        self.assertEqual(out['choice']['frontier'], ('claude', 'opus-5-5-1m', None))
+        self.assertEqual(out['choice']['frontier'], ('claude', 'opus-5-5-1m', 'medium'))
 
     def test_both_exhausted_holds_until_earliest_reset(self):
         self.claude(50, 97, 1, 'rejected')
