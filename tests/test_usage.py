@@ -112,6 +112,7 @@ class UsageTests(unittest.TestCase):
         output = json.loads(result.stdout)
         output['returncode'] = result.returncode
         output['choice'] = {c['tier']: (c['agent'], c['model'], c['effort']) for c in output['choices']}
+        output['fast'] = {c['tier']: c['fast'] for c in output['choices']}
         return output
 
     def calls(self):
@@ -124,7 +125,8 @@ class UsageTests(unittest.TestCase):
         out = self.run_usage()
         self.assertEqual(out['choice'], {'frontier': ('claude', 'opus-5-5-1m', None),
                                          'fast': ('codex', 'gpt-6-sol', None),
-                                         'trivial': ('codex', 'gpt-6-luna', None)})
+                                         'trivial': ('codex', 'gpt-6-luna', None),
+                                         'verify': ('codex', 'gpt-6-luna', None)})
         self.assertEqual(out['accounts']['claude']['windows'][1], {'name': 'weekly', 'used_percent': 1.0,
                                                                    'resets_at': '2026-10-02T17:00:00Z'})
         self.assertNotIn('session create', self.calls())
@@ -193,6 +195,31 @@ class UsageTests(unittest.TestCase):
         self.assertEqual([w['name'] for w in out['accounts']['codex']['windows']], ['five_hour', 'weekly'])
         self.assertEqual(out['choice']['fast'], ('claude', 'opus-5-5-1m', 'low'))
 
+    def test_verify_uses_luna_fast_and_switches_family_for_codex_work(self):
+        self.claude(5, 1, 1)
+        self.codex_log(10, 1)
+        out = self.run_usage('--tier', 'verify')
+        self.assertEqual(out['choice']['verify'], ('codex', 'gpt-6-luna', None))
+        self.assertTrue(out['fast']['verify'])
+        out = self.run_usage('--tier', 'verify', '--implementer', 'codex')
+        self.assertEqual(out['choice']['verify'], ('claude', 'opus-5-5-1m', 'low'))
+        self.assertFalse(out['fast']['verify'])
+
+    def test_verify_holds_rather_than_same_family_when_other_family_is_exhausted(self):
+        self.claude(50, 95, 1)
+        self.codex_log(10, 1)
+        out = self.run_usage('--tier', 'verify', '--implementer', 'codex')
+        self.assertEqual(out['returncode'], 3)
+        self.assertEqual(out['choice']['verify'], (None, None, None))
+        self.assertIn('same family as the implementer', out['choices'][0]['reason'])
+
+    def test_codex_exhaustion_moves_verification_to_opus_low_without_fast_mode(self):
+        self.claude(5, 1, 1)
+        self.codex_log(92, 1)
+        out = self.run_usage('--tier', 'verify')
+        self.assertEqual(out['choice']['verify'], ('claude', 'opus-5-5-1m', 'low'))
+        self.assertFalse(out['fast']['verify'])
+
     def test_policy_matches_model_reference(self):
         sys.path.insert(0, str(SCRIPT.parent))
         try:
@@ -202,8 +229,8 @@ class UsageTests(unittest.TestCase):
         text = MODELS.read_text()
         for tier, options in usage.POLICY.items():
             row = next(line for line in text.splitlines() if line.lower().startswith(f'| {tier} '))
-            found = re.findall(r'--agent (\w+) --model ([\w.-]+)(?: --effort (\w+))?', row)
-            self.assertEqual([(a, m, e or None) for a, m, e in found], options, tier)
+            found = re.findall(r'--agent (\w+) --model ([\w.-]+)(?: --effort (\w+))?( --fast-mode)?', row)
+            self.assertEqual([(a, m, e or None, bool(f)) for a, m, e, f in found], options, tier)
 
 
 if __name__ == '__main__':

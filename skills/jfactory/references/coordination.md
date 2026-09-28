@@ -71,7 +71,7 @@ conductor workspace create --repo-url <repository URL> --branch <base branch> \
   --name "<unit name>" --agent <agent> --model <model> [--effort <level>] --message-file <contract file> --json
 ```
 
-Record the returned workspace link and first session id in the program record. Use `conductor session create` only for a second agent that should share an existing workspace's files, such as a reviewer. Two writers in one checkout are not isolated. Refill the running window as units finish instead of waiting for a whole batch.
+Record the returned workspace link and first session id in the program record. Keep the program's workspaces together in one personal sidebar section: create it once with `conductor section create "Program: <outcome>"`, record its id, move the coordinator's workspace into it with `conductor workspace move --section <section id>`, and move each new worker with `conductor workspace move <workspace id> --section <section id>`. Use `conductor session create` only for a second agent that should share an existing workspace's files, such as a reviewer. Two writers in one checkout are not isolated. Refill the running window as units finish instead of waiting for a whole batch.
 
 ## 6. Monitor by evidence, not by interrupting
 
@@ -89,11 +89,13 @@ Answer worker questions from recorded decisions when possible. Otherwise park a 
 
 A worker's report is a claim. At the PR's current head SHA, inspect the criteria, the checks that ran, the application evidence and whether the assertions prove the claim. Record the verdict in the ledger. CI status is an input, not a verdict.
 
-For expensive, judgment-heavy or high-risk units, launch a separate reviewer session or workspace to verify. Use the frontier tier from [model selection](models.md) and prefer the model from a different family than the worker when that account has usage remaining; otherwise disclose that the review was same-family. A failed verification becomes a fix task for the worker, not a re-run of the same check.
+For expensive, judgment-heavy or high-risk units, or whenever you delegate verification, launch a separate verifier session or workspace. It uses the verify tier from [model selection](models.md): GPT Luna 6 in fast mode, or Opus 5.5 at low effort when the worker ran on a Codex model or Codex has no usage remaining. Its report is evidence for your verdict, not the verdict itself. Archive the verifier once its report is recorded. A failed verification becomes a fix task for the worker, not a re-run of the same check.
 
 ## 8. Integrate continuously
 
 Land verified units as they finish rather than at the end. Follow [PR delivery](delivery.md), [worktree coordination](worktrees.md#deliver-and-integrate) and [auto-merge setup](auto-merge.md). Queue protected auto-merge only for a unit whose required evidence passed at its current head and whose owner gates are settled. For overlapping units, merge one at a time. After each merge, have dependent workers update from the base, rerun affected checks and report a new head SHA. A conflict-free merge is not proof of combined behavior.
+
+Archive each unit's workspace as soon as it is finished rather than at program close, so the sidebar shows only live work. Archive a workspace when its unit is `merged`, or `abandoned` with its work pushed or intentionally discarded, and its sessions are idle. Use `conductor workspace archive <workspace id>` and record the archive in the program record. Conductor's CLI archives workspaces; it does not delete them. Archived workspaces stay listed under `conductor workspace list --include-archived`. Archive only workspaces this program created. Leave the owner's own workspaces and other coordinators' workspaces alone, even when they look idle.
 
 The coordinator does not force-push, retarget or close another worker's PR. Those actions are worker tasks or owner decisions.
 
@@ -109,7 +111,7 @@ The coordinator does not force-push, retarget or close another worker's PR. Thos
 
 Ask the owner only for product or preference decisions that no experiment settles, irreversible or unauthorized actions, standing orders that contradict observed reality, and dead ends that survived a replan. Batch these questions and keep routine retries, CI triage and merge mechanics out of them.
 
-Close when every unit is `merged` or `abandoned` with a reason. Confirm the done condition on the merged base, including required application evidence. Archive only workspaces whose work is pushed or intentionally abandoned. Report the done condition, units and PR links, verdicts at merged SHAs, what was abandoned and why, remaining gates and the program record link. Add recurring corrections to the standing orders template or an enforced check.
+Close when every unit is `merged` or `abandoned` with a reason. Confirm the done condition on the merged base, including required application evidence. Before reporting, list `conductor workspace list --mine --repo <repository> --json` and archive any remaining workspace this program created that meets the archive rule in step 8, including verifier and probe sessions. Then delete the program's section with `conductor section delete <section id>`. Ask before archiving the coordinator's own workspace, which the owner may still be reading. Report the done condition, units and PR links, verdicts at merged SHAs, what was abandoned and why, remaining gates and the program record link. Add recurring corrections to the standing orders template or an enforced check.
 
 ## What this does not provide
 
