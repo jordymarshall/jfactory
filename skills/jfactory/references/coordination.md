@@ -12,7 +12,7 @@ State, once, before any worker starts:
 
 - The program objective and a countable done condition, for example "these three outcomes are merged, each with its required application evidence at the merged revision."
 - The units. One unit is one coherent objective delivered as one PR with its own evidence. Name dependencies between units.
-- Limits: at most three concurrently running workers unless the owner sets another number, the agents and models to use, wall-clock or spend limits, and the merge/release policy already authorized for the repository.
+- Limits: at most three concurrently running workers unless the owner sets another number, the agents and models to use, wall-clock or spend limits, and the merge/release policy already authorized for the repository. Unless the owner names models, apply [model selection](models.md), which checks current session and weekly usage for each account.
 
 Run the product interview for each substantial feature before its worker starts, reusing settled answers. A worker cannot interview the owner mid-flight without stalling, so unresolved product choices are settled here or parked as gates. Reversible preparation can proceed while the owner reviews the framing.
 
@@ -31,7 +31,7 @@ Product or preference choices that no prototype settles go to the owner with opt
 Cloud workspaces can disappear, so program state cannot live only in the coordinator's chat or scratch files. Use the repository's existing tracker. If it has none, open one GitHub issue per program, titled `Program: <outcome>`, and link it from every unit PR. Record:
 
 - **Standing orders.** Numbered constraints that apply to every worker, such as delivery policy, forbidden paths, shared-resource rules and escalation rules. When you restate an instruction to a worker, add it here first.
-- **Units.** One row per unit: objective, dependencies, owned paths, workspace link, session id, branch, PR, current head SHA and state (`planned`, `running`, `blocked`, `in-review`, `verified`, `merged`, `abandoned`).
+- **Units.** One row per unit: objective, dependencies, owned paths, workspace link, session id, agent, model and effort with the reason for any fallback, branch, PR, current head SHA and state (`planned`, `running`, `blocked`, `in-review`, `verified`, `merged`, `abandoned`).
 - **Verification ledger.** One row per PR and head SHA: the evidence scopes observed, links and verdict (`verified`, `partially-verified`, `blocked`, `failed`). A new head SHA voids the previous verdict for that PR.
 - **Gates.** Each owner decision needed, its options, the recommended default and which units wait on it.
 
@@ -64,11 +64,11 @@ Before the first launch, confirm the starting branch contains the jfactory adopt
 
 Pilot one unit through the whole path, from contract to verified PR, before launching the rest when the unit shape is new. Correct the contract template and verification recipe from what the pilot reveals. For near-identical, cheap units, the first unit serves as the pilot.
 
-Launch each independent unit in its own workspace:
+Before each launch batch, choose every unit's tier and check remaining usage under [model selection](models.md). Launch each independent unit in its own workspace:
 
 ```sh
 conductor workspace create --repo-url <repository URL> --branch <base branch> \
-  --name "<unit name>" --agent <agent> --model <model> --message-file <contract file> --json
+  --name "<unit name>" --agent <agent> --model <model> [--effort <level>] --message-file <contract file> --json
 ```
 
 Record the returned workspace link and first session id in the program record. Use `conductor session create` only for a second agent that should share an existing workspace's files, such as a reviewer. Two writers in one checkout are not isolated. Refill the running window as units finish instead of waiting for a whole batch.
@@ -89,7 +89,7 @@ Answer worker questions from recorded decisions when possible. Otherwise park a 
 
 A worker's report is a claim. At the PR's current head SHA, inspect the criteria, the checks that ran, the application evidence and whether the assertions prove the claim. Record the verdict in the ledger. CI status is an input, not a verdict.
 
-For expensive, judgment-heavy or high-risk units, launch a separate reviewer session or workspace to verify. Prefer a different model family from the worker when Conductor offers one; otherwise disclose that the review was same-family. A failed verification becomes a fix task for the worker, not a re-run of the same check.
+For expensive, judgment-heavy or high-risk units, launch a separate reviewer session or workspace to verify. Use the frontier tier from [model selection](models.md) and prefer the model from a different family than the worker when that account has usage remaining; otherwise disclose that the review was same-family. A failed verification becomes a fix task for the worker, not a re-run of the same check.
 
 ## 8. Integrate continuously
 
@@ -99,7 +99,7 @@ The coordinator does not force-push, retarget or close another worker's PR. Thos
 
 ## 9. Recover from failures and interruptions
 
-- **Stalled or failed worker.** Check its last message, branch and PR. Retry once with a narrower contract or a different model when the failure mode warrants it. After two failed attempts, abandon the unit, record why and replan around it.
+- **Stalled or failed worker.** Check its last message, branch and PR. A worker stopped by a usage limit continues on the fallback model as described in [model selection](models.md#3-decide-record-and-revisit); that is not a failed attempt. Otherwise retry once with a narrower contract or a different model when the failure mode warrants it. After two failed attempts, abandon the unit, record why and replan around it.
 - **Late or duplicated output.** Reconcile it against the current base, program record and ledger before accepting anything.
 - **Program-wide failure.** When further launches would repeat the same failure, add a stop line at the top of the standing orders, let running workers finish, fix the cause and then clear the stop line.
 - **Coordinator interruption.** A new coordinator session follows [session pickup](../vendor/pstack/skills/poteto-mode/playbooks/session-pickup.md): read the program record, then `conductor workspace list --repo <repository> --include-archived --json`, each unit's session status and `gh pr list`. Resume from that state without relaunching finished units.
