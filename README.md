@@ -4,6 +4,7 @@ jfactory is a set of instructions and small tools that you install into a softwa
 
 You stay in charge of three things: what gets built, product decisions the agent can't settle alone, and releasing to production.
 
+- [jfactory in two minutes](#jfactory-in-two-minutes)
 - [What you get](#what-you-get)
 - [How it fits together](#how-it-fits-together)
 - [The four loops](#the-four-loops)
@@ -19,6 +20,45 @@ You stay in charge of three things: what gets built, product decisions the agent
 - [What jfactory adds to your project](#what-jfactory-adds-to-your-project)
 - [Limits](#limits)
 - [Relationship to Lauren Tan's pstack](#relationship-to-lauren-tans-pstack)
+
+## jfactory in two minutes
+
+**🔒 Enforced** means a script or GitHub check blocks the step if it's skipped. **📋 Instructed** means the agent is told to do it, and nothing mechanical stops it from skipping.
+
+**Once per repository.** You say *"Setup jfactory from https://github.com/jordymarshall/jfactory in this project"*.
+
+1. **Install.** The installer copies jfactory into the project and adds a pointer in `AGENTS.md`, so the agent uses it for all engineering work. It never overwrites your text. 🔒 Enforced (`install.py` refuses conflicts)
+2. **Interview.** The agent asks you who the product is for, what hurts today, what success looks like, what's out of scope and what to build first. It offers a recommended answer for each, and records your answers in `.jfactory/setup.md`. 🔒 Enforced (`setup_check.py` won't report setup complete until you've answered)
+3. **Build the safety net.**
+   - a **verifier** that drives your real app;
+   - a **map** from code areas to their checks, each area marked high-risk or low-risk;
+   - the **`jfactory verified`** GitHub check;
+   - a record of **what merging deploys** (staging or nothing).
+
+   🔒 Enforced for the map, the check and the deploy record (`setup_check.py --remote` won't report setup complete while any is missing or GitHub doesn't require the checks). 📋 Instructed for the verifier itself.
+
+**Every request after that,** for example *"Let users save items and find them later"*:
+
+4. **Objective.** The agent writes what "done" means as observable criteria, each with the evidence that proves it. It also chooses which loops the work needs (product, UX, engineering) and asks you only about undecided choices. 📋 Instructed. 🔒 The PR can't pass `jfactory verified` without an Objective section.
+5. **Loop.** It implements, runs the real check, reads the result and fixes, until every criterion passes. It never weakens a criterion to finish. 📋 Instructed
+6. **PR and plan.** It opens a PR. `verify_plan.py` reads the changed files and decides:
+   - **docs only:** static checks;
+   - **low-risk areas:** CI only;
+   - **high-risk areas** (anything users see, data, auth, money, security, agent instructions) or **unknown files:** a second opinion.
+
+   🔒 Enforced
+7. **Second opinion.** For high-risk changes, a model from a *different family* re-runs the checks on the PR's latest commit and posts a verdict. A stale commit, a same-family verdict or a missing feature is refused, and every new commit resets it. 🔒 Enforced (`verify_plan.py` and the `jfactory verified` check)
+8. **Auto-merge.** GitHub merges once the required checks pass. Merging deploys to staging at most; production is only ever your call. 🔒 GitHub enforces the checks once your ruleset requires CI and `jfactory verified` (setup checks this). The staging-only rule is 🔒 enforced by `coord.py` and `setup_check.py`, and 📋 instructed for a single agent's PR.
+9. **Handoff.** You get what changed, the actual checks and results, what's unproven, and the PR link. You try it; your feedback starts the next loop. 📋 Instructed
+
+**Always on:**
+
+10. **Learning.** When you correct the agent twice, it moves the fix to the strongest place it fits: code that makes the mistake impossible, then a lint or CI check, then instructions or a skill. 📋 Instructed
+11. **Parallel work.** Say *"deliver A, B and C in parallel"*. One coordinator agent runs one isolated workspace per feature, with a GitHub issue as the dashboard. 🔒 `coord.py` refuses unsafe launches and merges, and launches nothing while the issue has the `jfactory-hold` label. 📋 Merging overlapping PRs one at a time is an instruction.
+
+![How one change flows through jfactory](docs/diagrams/change-flow.png)
+
+The sections below explain each step in depth.
 
 ## What you get
 
@@ -142,7 +182,7 @@ The agent stops at the agreed objective. It proposes the next one instead of qui
 
 **What's enforced, and what isn't.**
 
-- Writing the objective and checking each criterion are instructions: the verifier is told to check every criterion and list the results in its verdict.
+- The PR must state its objective: for any change that isn't static, the `jfactory verified` check fails without an `Objective` section or an `Objective:` link. Checking each criterion is an instruction: the verifier is told to check every criterion and list the results in its verdict.
 - The tools enforce the mechanics around the verdict: that it's for the PR's latest commit, from a different model family, and covers every high-risk feature the PR touches. They don't read the criteria themselves.
 - For parallel work, `coord.py` also refuses a worker brief without acceptance criteria, and a verdict that lacks the unit's required evidence scopes.
 - If you record criteria in a machine-readable acceptance file, `evidence.py` can also check that each one has fresh, passing evidence.

@@ -153,7 +153,7 @@ def git_files(base):
 
 def pr_info(repo, number):
     pr = json.loads(run('gh', 'pr', 'view', str(number), '--repo', repo, '--json',
-                        'headRefOid,baseRefName,comments,isCrossRepository'))
+                        'headRefOid,baseRefName,comments,isCrossRepository,body'))
     files = run('gh', 'api', f'repos/{repo}/pulls/{number}/files', '--paginate', '--jq', '.[].filename')
     pr['files'] = [line for line in files.splitlines() if line]
     return pr
@@ -185,9 +185,19 @@ def same_family_refusal(verifier, implementer, allowed):
     return None
 
 
+OBJECTIVE_RE = re.compile(r'^\s*(?:#+\s*objective\b|\**objective\**\s*:)', re.I | re.M)
+
+
+def states_objective(body):
+    """A PR states its objective in an `Objective` heading or an `Objective:` line (which may link the issue)."""
+    return bool(OBJECTIVE_RE.search(body or ''))
+
+
 def evaluate(pr, config):
     """Return (state, description) for the jfactory verified status at the PR head."""
     result = plan(pr['files'], config)
+    if result['level'] != 'static' and config.get('require_objective', True) and not states_objective(pr.get('body')):
+        return 'failure', 'PR does not state its objective: add an "Objective" section or an "Objective:" link'
     if not result['needs_verifier']:
         if result['level'] == 'ci':
             return 'success', 'Low-risk change (verify: ci); required CI checks apply'

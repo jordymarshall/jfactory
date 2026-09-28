@@ -108,6 +108,7 @@ class GateTest(unittest.TestCase):
         db = json.loads(self.state.read_text()) if self.state.exists() else {}
         pr = db.get('prs', {}).get('5', {'comments': []})
         pr.update({'headRefOid': head, 'baseRefName': 'main', 'isCrossRepository': False, 'files': files})
+        pr.setdefault('body', '## Objective\nSave briefs.\n')
         db.update({'config': config, 'association': association, 'prs': {'5': pr}})
         self.state.write_text(json.dumps(db))
 
@@ -162,6 +163,21 @@ class GateTest(unittest.TestCase):
         self.assertIn('No verdict', self.run_script('check', '--pr', '5', code=1))
         self.verdict('--features', 'briefs')
         self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+
+    def test_non_static_pr_must_state_its_objective(self):
+        self.write(files=['tests/test_a.py'])
+        db = json.loads(self.state.read_text())
+        db['prs']['5']['body'] = 'Fixes things.'
+        self.state.write_text(json.dumps(db))
+        self.assertIn('does not state its objective', self.run_script('check', '--pr', '5', code=1))
+        db['prs']['5']['body'] = 'Objective: https://github.com/o/r/issues/22'
+        self.state.write_text(json.dumps(db))
+        self.assertIn('success: Low-risk change', self.run_script('check', '--pr', '5'))
+        self.write(files=['docs/guide.md'])
+        db = json.loads(self.state.read_text())
+        db['prs']['5']['body'] = ''
+        self.state.write_text(json.dumps(db))
+        self.assertIn('success: Static-only', self.run_script('check', '--pr', '5'))
 
     def test_static_only_passes_without_verifier(self):
         self.write(files=['docs/guide.md'])
