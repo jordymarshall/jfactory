@@ -106,7 +106,7 @@ A workspace preview exposes a running dev server. A PR preview is a hosted build
 
 ### Relationship to Lauren Tan's methodology
 
-jfactory uses pinned pstack skills for creating and maintaining real-app verification, investigating code, reviewing changes and evaluating agent workflows. Its coordination procedure adapts her prototype, multi-PR planning and orchestration playbooks to Conductor workspaces and GitHub. It adds explicit product alignment, UX research, documentation reconciliation and portable repository setup. See [the methodology and its current evidence limits](skills/jfactory/references/methodology.md).
+jfactory uses pinned pstack skills for creating and maintaining real-app verification, investigating code, reviewing changes and evaluating agent workflows. Its coordination procedure adapts her prototype, multi-PR planning and orchestration playbooks to Conductor workspaces and GitHub. From her September 2026 talks it takes the idea of earning autonomy step by step, and the correction ladder: fix each recurring agent mistake in the codebase first, then static analysis, then instructions and skills, and only last a written style rule. It adds explicit product alignment, UX research, documentation reconciliation and portable repository setup. See [the methodology and its current evidence limits](skills/jfactory/references/methodology.md).
 
 <details>
 <summary>Manual installation and updates</summary>
@@ -135,7 +135,7 @@ python3 tests/browser_smoke.py
 python3 tests/dashboard_smoke.py
 ```
 
-For this repository, [the main ruleset](.github/rulesets/main.json) requires PRs, squash merges, and both the GitHub Actions `checks` job against current `main` and the `jfactory verified` status. An administrator must import or update the rule in GitHub; committing its JSON does not activate it. Agents enable auto-merge only after verifying both the task and the active server rules.
+For this repository, [the main ruleset](.github/rulesets/main.json) requires PRs, squash merges, and both the GitHub Actions `checks` job against current `main` and the `jfactory verified` status. An administrator must import or update the rule in GitHub; committing its JSON does not activate it. [AGENTS.md](AGENTS.md) records what is active remotely. Agents enable auto-merge only after verifying both the task and the active server rules.
 
 Tests cover installation preservation, evidence freshness/scopes, private report serving, real browser actions and dashboard handoff. CI uses disposable local pages, not real competitor accounts. Conductor's external authentication gateway and a real user's login require separate validation. See [browser setup](skills/jfactory/skills/jfactory-ux/references/browser.md) and [cloud handoff](skills/jfactory/skills/jfactory-ux/references/cloud-conductor.md) for current limits.
 
