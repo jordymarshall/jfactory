@@ -35,7 +35,7 @@ Map navigation, key user-visible objects and their relationships, state transiti
 
 Record transitions as video and traces, including successful paths. For motion, note trigger, affected element, property, timing/easing if observable, interruption/reversal and reduced-motion behavior. Collect active animation metadata during the action when useful. An animation can finish between CLI calls; use one `run-code` action and observation. Do not guess exact timings from a screenshot or equate a requested recording frame rate with measured performance.
 
-Separate **observed facts**, **inferred design intent**, **recommendations for our customer**, and **unknowns**. Link observations to action evidence. Replay consequential findings. Do not claim full understanding beyond the observed account, role, plan, routes, states and date. Agent critique is a hypothesis until owner/customer feedback supports it.
+Separate **observed facts**, **inferred design intent**, **recommendations for our customer**, and **unknowns**. Link observations to action evidence. Replay consequential findings. Do not claim full understanding beyond the observed account, role, plan, routes, states and date. Agent critique is a hypothesis until owner/customer feedback supports it. An independent score against a rubric agreed in the objective can close a `judgment` criterion; it still does not establish customer value.
 
 ## Return a reviewable result
 

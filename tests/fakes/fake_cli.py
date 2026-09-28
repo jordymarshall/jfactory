@@ -71,6 +71,18 @@ if tool == 'git' and args[:2] == ['diff', '--name-only']:
 if tool == 'gh' and args[:1] == ['api'] and args[1].endswith('/files'):
     number = args[1].split('/')[-2]
     done('\n'.join(db['prs'][number].get('files', ['src/x.py'])))
+if tool == 'gh' and args[:1] == ['api'] and len(args) == 2:
+    # Repository settings for setup_check.py: repos/<o>/<r>, its rules and classic protection.
+    if args[1].endswith('/protection'):
+        if 'protection' not in db:
+            path.write_text(json.dumps(db))
+            sys.stderr.write('Branch not protected (HTTP 404)')
+            sys.exit(1)
+        done(db['protection'])
+    if '/rules/branches/' in args[1]:
+        done(db.get('rules', []))
+    if args[1].count('/') == 2:
+        done(db.get('repo', {'default_branch': 'main', 'allow_auto_merge': False}))
 if tool == 'gh' and args[:3] == ['api', '-X', 'POST']:
     db.setdefault('statuses', []).append({a.split('=', 1)[0]: a.split('=', 1)[1] for a in args if '=' in a})
     done()

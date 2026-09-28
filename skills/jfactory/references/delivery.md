@@ -16,7 +16,7 @@ The user may only see the final message. Make it self-contained and concise, lin
 
 - The agreed outcome, consequential owner decisions and any agent assumptions.
 - What actually changed, and how the user can try it.
-- What was checked: actual commands or user actions, observed results, tested revision/environment and evidence links. State whether evidence is from components, the application, real providers or a deployment. Name failed, skipped, pending and blocked checks.
+- What was checked: actual commands or user actions, observed results, tested revision/environment and evidence links. State whether evidence is from components, the application, real providers or a deployment. Label `judgment` results as assessments and name who scored them. Name failed, skipped, pending and blocked checks.
 - The PR link and remote head, plus unresolved acceptance or integration gaps. State owner acceptance only when it happened.
 
 For a scene-audio change, inspect and test trimming, reordering and mute behavior, including playback/timing and persistence where required. A component test or encoded-file check proves its own scope; it cannot establish that the whole signed-in editor/render journey passed. "Confirmed, audio stays attached" without the actual checks and evidence is an incomplete handoff. If the turn only records an owner decision, say that explicitly and do not imply new implementation or verification.

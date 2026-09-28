@@ -36,7 +36,7 @@ def payload(root):
 def managed_block(skill_path):
     return (f'{START}\n\n**Engineering workflow.** '
             f'Use [jfactory]({skill_path}/SKILL.md) proactively for repository setup and engineering work. '
-            'For "Setup jfactory", follow its complete repository adoption procedure after installation: reconcile stale docs and instructions, prepare tools/environments, and report readiness with evidence and exact gaps. '
+            'For "Setup jfactory" or an update, follow its complete repository adoption procedure after installation: reconcile stale docs and instructions, interview the owner about the product, prepare tools/environments and delivery gates, and report readiness with evidence and exact gaps. Setup is finished only when its scripts/setup_check.py passes or reports only owner-blocked areas. '
             'Resume the same setup record on subsequent runs. '
             'Establish or resume the agreed objective, map acceptance criteria to actual verification, '
             'implement/check/correct within scope, and update existing canonical records. '
@@ -177,7 +177,8 @@ def main():
     try:
         dest = install(Path(__file__).resolve().parents[1], args.target, args.agent, args.update)
         print(f'Installed {dest}. Repository adoption is still pending. Read {dest / "SKILL.md"} '
-              'and follow references/setup.md now. Reload skill discovery afterward if needed; '
+              'and follow references/setup.md now, including the owner interview. Finish by running '
+              f'python3 {dest / "scripts" / "setup_check.py"} --remote. Reload skill discovery afterward if needed; '
               'do not report the project ready from installation alone.')
         return 0
     except (ValueError, OSError, KeyError) as error:

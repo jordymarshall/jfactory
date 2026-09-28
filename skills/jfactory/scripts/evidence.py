@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-SCOPES = {'unit', 'component', 'integration', 'application', 'provider', 'deployed', 'static'}
+SCOPES = {'unit', 'component', 'integration', 'application', 'provider', 'deployed', 'static', 'judgment'}
 EVIDENCE = Path('.context/jfactory')
 
 
