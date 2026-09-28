@@ -35,7 +35,9 @@ Update affected canonical documentation with material decisions and results, usi
 
 ## Plan and coordinate larger work
 
-Settle an open design or empirical question with a throwaway prototype before building on it. Split a large change into ordered PRs that each carry their own evidence. When the owner asks for several objectives in parallel, follow the [coordination procedure](references/coordination.md): agree outcomes first, write a complete task contract per unit, launch isolated Conductor workspaces within the agreed limit, monitor by evidence, verify each PR at its head and integrate one overlapping change at a time. Start parallel workspaces only on the owner's request or agreement.
+Settle an open design or empirical question with a throwaway prototype before building on it. Split a large change into ordered PRs that each carry their own evidence. When the owner asks for several objectives in parallel, follow the [coordination procedure](references/coordination.md) and its `scripts/coord.py` tool: agree outcomes first, keep state in one GitHub program issue, write a complete task contract per unit, launch isolated Conductor workspaces under the model policy and concurrency limit, verify each PR at its head and merge one overlapping change at a time. Start parallel workspaces only on the owner's request or agreement.
+
+If your task contract names a program issue, you are a worker: follow the [worker protocol](references/coordination.md#5-worker-protocol) and report through the tool.
 
 ## Deliver a pull request
 

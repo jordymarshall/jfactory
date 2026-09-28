@@ -21,12 +21,12 @@ The [coordination procedure](coordination.md) adapts pstack's orchestration play
 | Task tool with `environment: "cloud"` | `conductor workspace create` for an isolated worker; `conductor session create` only for an agent sharing that workspace |
 | Resuming an agent | `conductor message create --session <id>`, used only to answer, redirect or correct scope, never to check liveness |
 | Cursor dashboard liveness | `conductor session status`, `conductor session message --after`, pushed branches and `gh pr view` |
-| `orch.ts` store and `status.md` | The durable program record in the repository's tracker or one GitHub issue; the Bun CLI is not imported |
+| `orch.ts` store, `units.tsv`, ledger, gates and `status.md` | One GitHub program issue managed by `scripts/coord.py`; the Bun CLI is not imported |
 | `gt` stacks and the stacker role | Independent PRs from the base by default; `gh stack` or explicit stacked branches only when a dependency needs it, with merge order recorded |
 | Babysitter and merge rules | Protected auto-merge under [auto-merge setup](auto-merge.md), plus coordinator verification at each head SHA |
 | Ten-lane swarm, perf lanes and review video in the multi-PR plan | The unit's own [verification contract](verification.md); larger lane counts only on the owner's request |
 | `check-plan.mjs`, `/goal`, `/loop` and cloud-sleeper ticks | Not imported. Use the host's scheduled wakeups or loop facility when present |
-| Named Cursor models | Models listed by `conductor model`, chosen by the owner's policy |
+| Named Cursor models and `pstack-models.mdc` | The role-based model policy in the [coordination procedure](coordination.md#model-policy), overridable in `.jfactory/coordination.json` and checked against `conductor model` |
 
 Upstream autonomous shipping and its preference to act without asking stay subordinate to jfactory's objective contract, product interview and the repository's authorization.
 

@@ -90,9 +90,13 @@ Ask one coordinating agent in Conductor:
 
 > Use jfactory to deliver [feature A], [feature B] and [feature C] in parallel. Clarify each outcome and its acceptance criteria with me first, then run at most three workspaces at a time.
 
-The coordinator agrees outcomes and open decisions with you, prototypes unresolved design questions, and writes a complete task contract per feature. It launches each feature in its own Conductor workspace, then tracks units, verdicts and your pending decisions in one durable program record. It checks each worker's actual PR and evidence rather than trusting its summary, and merges overlapping PRs one at a time under protected auto-merge. If the coordinator is interrupted, a new session resumes from that record. See the [coordination procedure](skills/jfactory/references/coordination.md).
+The coordinator agrees outcomes and open decisions with you, then opens one GitHub issue as the program's dashboard. It writes a complete brief per feature and launches each in its own Conductor workspace, choosing the agent and model by role. Workers report their state and PRs to that issue. The coordinator checks each PR's actual evidence at its latest commit, records a verdict and merges overlapping PRs one at a time under protected auto-merge.
 
-This runs only while an agent follows the procedure. jfactory has no background supervisor, and parallel workspaces multiply cost, so it starts them only when you ask.
+A bundled tool, `coord.py`, enforces the mechanics. It refuses launches beyond the concurrency limit, with incomplete briefs, unmerged dependencies, open decisions or unavailable models. It refuses merges without a verified verdict at the current commit.
+
+Your role: agree outcomes up front, watch the issue, answer decisions in chat or on the issue, and add the `jfactory-hold` label to stop new launches and pause workers. The default model policy is Claude Opus for features, Claude Sonnet for small changes and prototypes, and Codex for independent review. Override it in `.jfactory/coordination.json`. See the [coordination procedure](skills/jfactory/references/coordination.md).
+
+This runs only while an agent uses it. jfactory has no background supervisor, and parallel workspaces multiply cost, so it starts them only when you ask.
 
 In Conductor cloud, setup prepares the repository bootstrap command and registers it when authorized tools allow, or gives you the exact settings step. Committing a local setup file alone does not configure cloud workspaces. See [environment setup](skills/jfactory/references/environments.md) and [worktree coordination](skills/jfactory/references/worktrees.md).
 
