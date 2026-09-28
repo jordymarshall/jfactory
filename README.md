@@ -277,7 +277,7 @@ In [Conductor](https://www.conductor.build), ask one agent to coordinate:
 | Owner | You | Agrees outcomes and answers decisions; can pause everything | Needs to babysit workers |
 | Coordinator | The agent you asked | Plans units, writes briefs, launches and monitors workers, launches verifiers, records verdicts, merges | Edits a worker's code, or merges a high-risk change without a verified verdict |
 | Worker | One agent per unit, in its own Conductor workspace | Runs the normal jfactory loop for its unit and opens one PR | Touches other units' branches, merges or launches workers |
-| Verifier | One per PR, from a different model family | Re-runs the checks and reviews the PR at its latest commit, then recommends a verdict | Changes product code |
+| Verifier | One per PR that touches a high-risk area, from a different model family | Re-runs the checks and reviews the PR at its latest commit, then recommends a verdict | Changes product code |
 
 ### How a program runs
 
