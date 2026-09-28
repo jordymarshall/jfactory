@@ -75,6 +75,104 @@ class CoordTest(unittest.TestCase):
         unit = self.program_state()['units']['a']
         self.assertEqual((unit['state'], unit['session'], unit['attempts']), ('running', 's1', 1))
 
+    def test_sync_archives_finished_workspaces_once_their_sessions_stop(self):
+        self.start(['a', '--objective', 'x'], ['r', '--objective', 'verify a', '--role', 'verify', '--depends', 'a'],
+                   ['b', '--objective', 'y'], limit=3)
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.coord('launch', '1', 'b', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.coord('sync', '1')
+        self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on', 'a')
+        self.coord('report', '1', 'r', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.set_db(prs={'7': {'state': 'MERGED', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}},
+                    sessions={'s1': 'idle', 's3': 'working'})
+        out = self.coord('sync', '1')
+        self.assertEqual(self.db().get('archived'), ['w1'])
+        self.assertIn('r: done but its session is still working', out)
+        self.set_db(sessions={'s1': 'idle', 's3': 'idle'})
+        self.coord('sync', '1')
+        self.coord('sync', '1')
+        self.assertEqual(self.db()['archived'], ['w1', 'w3'])
+        units = self.program_state()['units']
+        self.assertTrue(units['a']['archived'] and units['r']['archived'])
+        self.assertNotIn('archived', units['b'])
+
+    def test_keep_workspaces_and_dry_run_do_not_archive(self):
+        self.start(['a', '--objective', 'x'])
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'MERGED', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}},
+                    sessions={'s1': 'idle'})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.coord('sync', '1', '--dry-run')
+        self.coord('sync', '1', '--keep-workspaces')
+        self.assertNotIn('archived', self.db())
+
+    def test_close_archives_abandoned_work_and_deletes_the_section(self):
+        self.start(['a', '--objective', 'x'])
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.set_db(sessions={'s1': 'idle'})
+        self.coord('set', '1', 'a', '--state', 'abandoned', '--note', 'superseded')
+        out = self.coord('close', '1')
+        self.assertEqual(self.db()['archived'], ['w1'])
+        self.assertEqual(self.db()['deleted_sections'], ['sec1'])
+        self.assertIn('coordinator workspace stays open', out)
+        self.assertEqual(self.db()['issues']['1']['state'], 'CLOSED')
+
+    def test_close_keeps_its_section_when_an_idle_workspace_fails_to_archive(self):
+        self.start(['a', '--objective', 'x'])
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.coord('set', '1', 'a', '--state', 'abandoned')
+        self.set_db(sessions={'s1': 'idle'}, archive_fail=['w1'],
+                    sections=[{'id': 'sec1', 'name': 'Program: Two features', 'workspaceIds': ['w1']}])
+        out = self.coord('close', '1')
+        self.assertIn('workspace not archived', out)
+        self.assertNotIn('deleted_sections', self.db())
+
+    def test_sync_reports_status_and_archive_failures_without_crashing(self):
+        self.start(['a', '--objective', 'x'], ['b', '--objective', 'y'], ['c', '--objective', 'z'], limit=3)
+        for uid in ('a', 'b', 'c'):
+            self.coord('launch', '1', uid, '--brief', str(self.brief))
+        self.coord('set', '1', 'b', '--state', 'abandoned')
+        self.coord('set', '1', 'c', '--state', 'abandoned')
+        self.set_db(sessions={'s1': 'unavailable', 's2': 'unavailable', 's3': 'idle'}, archive_fail=['w3'])
+        out = self.coord('sync', '1')
+        self.assertIn('a: session status unavailable', out)
+        self.assertIn('b: workspace not archived; session status unavailable', out)
+        self.assertIn('c: workspace not archived', out)
+        self.assertNotIn('archived', self.db())
+        units = self.program_state()['units']
+        self.assertFalse(units['b'].get('archived') or units['c'].get('archived'))
+
+    def test_tidy_deletes_only_finished_program_sections(self):
+        self.start(['a', '--objective', 'x'])
+        self.set_db(archived=['w9'], issues={**self.db()['issues'], '2': {
+            'title': 'Program: Old pilot', 'state': 'CLOSED', 'url': 'u', 'body': '', 'comments': []}},
+            sections=[{'id': 'old', 'name': 'Program: Old pilot', 'workspaceIds': ['live-coordinator']},
+                      {'id': 'empty', 'name': 'Program: Abandoned idea', 'workspaceIds': ['w9']},
+                      {'id': 'live', 'name': 'Program: Two features', 'workspaceIds': ['w1']},
+                      {'id': 'mine', 'name': 'Personal', 'workspaceIds': []}])
+        self.set_db(sections=self.db()['sections'] + [
+            {'id': 'busy', 'name': 'Program: Old pilot', 'workspaceIds': ['w7']}], sessions={'s7': 'working'})
+        out = self.coord('tidy')
+        self.assertEqual(self.db()['deleted_sections'], ['old', 'empty'])
+        self.assertIn("'Program: Old pilot' (program closed)", out)
+        self.assertIn("'Program: Abandoned idea' (no active workspaces)", out)
+        self.coord('tidy')
+        self.assertEqual(self.db()['deleted_sections'], ['old', 'empty'])
+
+    def test_close_keeps_section_while_a_finished_session_is_still_working(self):
+        self.start(['a', '--objective', 'x'])
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.coord('set', '1', 'a', '--state', 'abandoned')
+        self.set_db(sections=[{'id': 'sec1', 'name': 'Program: Two features', 'workspaceIds': ['w1']}])
+        out = self.coord('close', '1')
+        self.assertEqual(self.db()['issues']['1']['state'], 'CLOSED')
+        self.coord('tidy')
+        self.assertNotIn('archived', self.db())
+        self.assertNotIn('deleted_sections', self.db())
+        self.assertIn('still working', out)
+
     def test_refuses_incomplete_brief_limit_dependency_hold_and_unknown_model(self):
         self.start(['a', '--objective', 'x'], ['b', '--objective', 'y'], ['c', '--objective', 'z', '--depends', 'a'],
                    limit=1)
