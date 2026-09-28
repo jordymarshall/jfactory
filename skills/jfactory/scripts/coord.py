@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import usage  # noqa: E402
 import verify_plan  # noqa: E402
 
 PROGRAM_LABEL = 'jfactory-program'
@@ -34,22 +35,27 @@ MAX_ATTEMPTS = 3
 BRIEF_FIELDS = ['OBJECTIVE', 'DECISIONS', 'SCOPE', 'CONTEXT', 'ACCEPTANCE', 'VERIFY', 'SHARED',
                 'LIMITS', 'FORBIDDEN', 'DELIVERY', 'REPORT']
 
-# Owner policy (see references/models.md): Opus builds; GPT Luna 6 in fast mode verifies, reviews and
-# handles PRs. `fallback` is used only when the primary has no usage left. A verifier always comes from
-# another family than the unit's actual implementer, so `alternate` covers Codex-implemented units.
-# `pin_efforts` fixes the effort per agent: Opus verifies at low effort only, however it was chosen.
-DEFAULT_POLICY = {
-    'limit': 3,
-    'roles': {
-        'implement': {'agent': 'claude', 'model': 'opus-5-5-1m', 'effort': 'medium',
-                      'efforts': ['low', 'medium', 'high'], 'fast': False,
-                      'fallback': {'agent': 'codex', 'model': 'gpt-6-astra', 'fast': False}},
-        'verify': {'agent': 'codex', 'model': 'gpt-6-luna', 'effort': 'medium',
-                   'efforts': ['low', 'medium', 'high'], 'fast': True, 'pin_efforts': {'claude': 'low'},
-                   'fallback': {'agent': 'claude', 'model': 'opus-5-5-1m', 'fast': False},
-                   'alternate': {'agent': 'claude', 'model': 'opus-5-5-1m', 'fast': False}},
-    },
-}
+# Owner policy (see references/models.md). Each role is one model tier from usage.POLICY, so the table
+# exists once: `implement` is the frontier tier for features and fixes, `fast` and `trivial` cover routine and
+# very simple work, and `verify` checks another unit. `fallback` is used only when the primary has no usage
+# left. A verifier always comes from another family than the unit's actual implementer, so `alternate` covers
+# Codex-implemented units. `pin_efforts` fixes the effort per agent: Opus fallbacks run at low effort only.
+EFFORTS = ['low', 'medium', 'high']
+ROLE_TIERS = {'implement': 'frontier', 'fast': 'fast', 'trivial': 'trivial', 'verify': 'verify'}
+
+
+def role_from_tier(tier):
+    (agent, model, effort, fast), (fb_agent, fb_model, fb_effort, fb_fast) = usage.POLICY[tier]
+    role = {'agent': agent, 'model': model, 'effort': effort or 'medium', 'efforts': EFFORTS, 'fast': fast,
+            'fallback': {'agent': fb_agent, 'model': fb_model, 'fast': fb_fast}}
+    if fb_effort:
+        role['pin_efforts'] = {fb_agent: fb_effort}
+    if tier == 'verify':
+        role['alternate'] = dict(role['fallback'])
+    return role
+
+
+DEFAULT_POLICY = {'limit': 3, 'roles': {name: role_from_tier(tier) for name, tier in ROLE_TIERS.items()}}
 POLICY_FILE = Path('.jfactory/coordination.json')
 
 
@@ -154,7 +160,12 @@ def policy(root):
         override = json.loads(path.read_text())
         merged['limit'] = override.get('limit', merged['limit'])
         merged['merge_deploys'] = override.get('merge_deploys')
-        merged['roles'].update(override.get('roles', {}))
+        # A role override changes only the fields it names; the rest, such as the fallback, stay.
+        for name, fields in override.get('roles', {}).items():
+            role = {**merged['roles'].get(name, {}), **fields}
+            if not role.get('agent') or not role.get('model'):
+                raise Refused(f'Role {name} in {POLICY_FILE} needs an agent and a model')
+            merged['roles'][name] = role
     return merged
 
 
@@ -566,8 +577,18 @@ def cmd_sync(args):
         archived, archive_notes = archive_finished(state)
         changes += archived
         notes += archive_notes
-    ready = [u for u, v in state['units'].items() if v['state'] == 'planned'
-             and all(state['units'][d]['state'] == 'merged' for d in v['depends'])]
+    ready = []
+    for name, unit in state['units'].items():
+        if unit['state'] != 'planned':
+            continue
+        depends = [state['units'][d] for d in unit['depends']]
+        if all(d['state'] == 'merged' for d in depends):
+            ready.append(name)
+        elif unit['role'] == 'verify' and all(d['state'] in ('merged', 'in-review', 'verified') and
+                                              (d['state'] == 'merged' or d.get('pr')) for d in depends):
+            # A verifier checks its target's PR before it merges, on the target's branch.
+            stack = [d for d in unit['depends'] if state['units'][d]['state'] != 'merged']
+            ready.append(f"{name} (--stack-on {' '.join(stack)})")
     if not args.dry_run:
         save(args.repo, args.program, state)
     print(summary(state))
@@ -713,7 +734,7 @@ def main(argv=None):
     p.add_argument('program', type=int)
     p.add_argument('unit')
     p.add_argument('--objective', required=True)
-    p.add_argument('--role', default='implement')
+    p.add_argument('--role', default='implement', help='implement, fast, trivial or verify (see models.md tiers)')
     p.add_argument('--effort', help='Chosen by difficulty within the role policy, e.g. low, medium or high')
     p.add_argument('--depends', type=listing, default=[])
     p.add_argument('--paths', type=listing, default=[])

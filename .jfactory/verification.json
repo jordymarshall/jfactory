@@ -30,6 +30,11 @@
       "recipe": "Run tests/test_coord.py and tests/test_verify_plan.py; exercise changed commands against real GitHub and Conductor with a dry-run program",
       "suites": ["checks"]
     },
+    "model-selection": {
+      "paths": ["skills/jfactory/scripts/usage.py", "tests/test_usage.py"],
+      "recipe": "Run tests/test_usage.py, whose policy test compares usage.POLICY with the models.md table, and tests/test_coord.py, whose roles are built from it; run usage.py --no-probe in a Conductor workspace and compare its readings with the provider's usage page",
+      "suites": ["checks"]
+    },
     "ux-helpers": {
       "paths": ["skills/jfactory/skills/jfactory-ux/scripts/**", "tests/test_study.py", "tests/browser_smoke.py", "tests/dashboard_smoke.py"],
       "recipe": "Run tests/test_study.py, tests/browser_smoke.py and tests/dashboard_smoke.py",

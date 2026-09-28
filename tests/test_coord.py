@@ -377,6 +377,45 @@ class CoordTest(unittest.TestCase):
         self.coord('launch', '1', 'a', '--brief', str(self.brief))
         self.assertEqual(self.db()['workspaces'][0]['model'], 'gpt-5.6-sol')
 
+    def test_partial_role_override_keeps_the_rest_of_the_role(self):
+        (self.tmp / '.jfactory').mkdir()
+        (self.tmp / '.jfactory' / 'coordination.json').write_text(json.dumps(
+            {'merge_deploys': 'none', 'roles': {'implement': {'effort': 'high'}, 'verify': {'efforts': ['low']}}}))
+        self.coord('init', '--title', 'Partial')
+        self.coord('add', '1', 'a', '--objective', 'x', '--requires', 'unit')
+        self.coord('launch', '1', 'a', '--brief', str(self.brief), '--fallback', '--reason', 'Claude weekly 95%')
+        worker = self.db()['workspaces'][-1]
+        self.assertEqual((worker['agent'], worker['model'], worker['effort']), ('codex', 'gpt-6-astra', 'high'))
+        (self.tmp / '.jfactory' / 'coordination.json').write_text(json.dumps({'roles': {'new': {'effort': 'low'}}}))
+        self.assertIn('needs an agent and a model', self.coord('init', '--title', 'Broken', ok=False))
+
+    def test_fast_and_trivial_roles_follow_their_tiers(self):
+        self.start(['copy', '--objective', 'Fix a label', '--role', 'trivial', '--effort', 'low'],
+                   ['ci', '--objective', 'Fix a known CI failure', '--role', 'fast'], limit=3)
+        self.coord('launch', '1', 'copy', '--brief', str(self.brief))
+        self.coord('launch', '1', 'ci', '--brief', str(self.brief), '--fallback', '--reason', 'Codex weekly 95%')
+        trivial, fast = self.db()['workspaces']
+        self.assertEqual((trivial['agent'], trivial['model'], trivial['effort']), ('codex', 'gpt-6-luna', 'low'))
+        self.assertEqual((fast['agent'], fast['model'], fast['effort']), ('claude', 'opus-5-5-1m', 'low'))
+
+    def test_sync_offers_a_verifier_once_its_target_has_a_pr(self):
+        self.start(['a', '--objective', 'x'], ['r', '--objective', 'verify a', '--role', 'verify', '--depends', 'a'],
+                   limit=3)
+        self.assertNotIn('r (--stack-on', self.coord('sync', '1'))
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.assertIn('Ready to launch (3 free slots): r (--stack-on a)', self.coord('sync', '1'))
+
+    def test_verdict_needs_a_known_implementer(self):
+        self.start(['a', '--objective', 'x'])
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.coord('sync', '1')
+        self.assertIn('model family', self.coord('verdict', '1', 'a', '--head', 'aaa1111', '--verdict', 'verified',
+                                                 '--scopes', 'unit', '--evidence', 'x', '--verifier',
+                                                 'codex/gpt-6-luna', ok=False))
+
 
 if __name__ == '__main__':
     unittest.main()

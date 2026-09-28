@@ -16,14 +16,14 @@ Read the pinned originals this adapts: [orchestrate](../vendor/pstack/skills/pot
 
 | Command | Who | What it does |
 | --- | --- | --- |
-| `init --title --outcome [--standing FILE]` | Coordinator | Creates the program issue labelled `jfactory-program` with the model policy and standing orders, plus a Conductor sidebar section containing the coordinator workspace |
+| `init --title --outcome [--standing FILE] [--base] [--limit] [--merge-deploys]` | Coordinator | Creates the program issue labelled `jfactory-program` with the model policy and standing orders, plus a Conductor sidebar section containing the coordinator workspace |
 | `list` | Anyone | Lists open program issues, for resuming |
-| `add <issue> <unit> --objective --requires SCOPES [--role] [--effort] [--depends] [--paths]` | Coordinator | Adds a planned unit with the evidence scopes that define verified, its role and difficulty-based effort |
+| `add <issue> <unit> --objective --requires SCOPES [--role] [--effort] [--depends] [--paths]` | Coordinator | Adds a planned unit with the evidence scopes that define verified, its role (`implement`, `fast`, `trivial` or `verify`) and difficulty-based effort |
 | `brief <file>` | Coordinator | Checks a task contract has every required field |
-| `launch <issue> <unit> --brief FILE [--dry-run]` | Coordinator | Creates the unit's Conductor workspace with the policy's agent and model, moves it into the program's sidebar section, after checking hold, concurrency limit, dependencies, open decisions, brief completeness, attempt limit, model availability and reviewer model family |
+| `launch <issue> <unit> --brief FILE [--dry-run] [--stack-on UNIT] [--fallback --reason] [--agent/--model/--effort]` | Coordinator | Creates the unit's Conductor workspace with the policy's agent and model, moves it into the program's sidebar section, after checking hold, concurrency limit, dependencies, open decisions, brief completeness, attempt limit, model availability and reviewer model family |
 | `report <issue> <unit> --state ...` | Worker | Posts a structured comment with its state, PR, head SHA, note or question |
-| `sync <issue>` | Coordinator | Folds worker reports, PR state and session status into the issue, voids verdicts on new heads and lists units ready to launch |
-| `verdict <issue> <unit> --head --verdict --scopes --evidence --verifier [--full]` | Coordinator | Records verification only at the PR's current head, requires every declared scope, and posts the PR verdict that the `jfactory verified` status reads |
+| `sync <issue> [--dry-run]` | Coordinator | Folds worker reports, PR state and session status into the issue, voids verdicts on new heads and lists units ready to launch, including verifiers whose target has a PR (with the `--stack-on` to use) |
+| `verdict <issue> <unit> --head --verdict --scopes --evidence --verifier [--full] [--features]` | Coordinator | Records verification only at the PR's current head, requires every declared scope, and posts the PR verdict that the `jfactory verified` status reads. The implementer is the unit's launched model, so units launched outside the tool cannot be verified through it |
 | `merge <issue> <unit>` | Coordinator | Queues protected auto-merge pinned to the verified head, only with a `verified` verdict at that head, no open decisions, and a recorded `merge_deploys` of `staging` or `none` |
 | `gate add` / `gate resolve` | Coordinator | Records an owner decision and its answer; open decisions block launch and merge for their units |
 | `set <issue> <unit> --state` | Coordinator | Marks a unit blocked, failed or abandoned with a note |
@@ -35,18 +35,20 @@ The tool is a guard, not a supervisor. It runs only when an agent calls it, and 
 
 ## Model policy
 
-Each unit has a role. The default policy is the owner's:
+Each unit has a role, and each role is one tier of [model selection](models.md). The tool builds its roles from the same table as the usage reader, so the two cannot drift:
 
-| Role | Agent and model | Use |
+| Role | Tier | Use |
 | --- | --- | --- |
-| `implement` | Claude `opus-5-5-1m`; fallback Codex `gpt-6-astra` | Features, fixes, prototypes and every other code change |
-| `verify` | Codex `gpt-6-luna`, fast mode; Claude `opus-5-5-1m` at low effort when the implementer ran on Codex or as the fallback when Codex has no usage | Verification, review and PR follow-through for another unit, always from a different model family than its implementer |
+| `implement` (default) | Frontier | Features, fixes, prototypes and other code changes that need strong judgment |
+| `fast` | Fast | Well-scoped routine edits, follow-up fixes with a known cause, CI triage |
+| `trivial` | Trivial | Renames, copy and formatting changes, lookups |
+| `verify` | Verify | Verification, review and PR follow-through for another unit, always from a different model family than its implementer |
 
-These follow [model selection](models.md). Use `launch --fallback --reason "<usage reading>"` only when the primary has no usage remaining; the reason is recorded on the unit. The verifier's family switch happens automatically.
+Use `launch --fallback --reason "<usage reading>"` only when the primary has no usage remaining; the reason is recorded on the unit. A verifier's family switch after Codex implementation happens automatically and is recorded as `alternate`, not as a fallback.
 
-Both roles choose effort per unit by difficulty, from `low` to `high` (default `medium`). Use `low` for mechanical edits and narrow checks, `medium` for ordinary features and reviews, and `high` for ambiguous, cross-cutting or high-risk work. Set it with `add --effort` or `launch --effort`; the tool refuses levels outside the role's range. Raise effort on a retry when the previous attempt failed from difficulty rather than a bad contract. The exception is an Opus 5.5 verifier, which always runs at `low` effort: the tool applies it whatever the unit's effort, and refuses `launch --effort` with another level.
+Every role chooses effort per unit by difficulty, from `low` to `high` (default `medium`). Use `low` for mechanical edits and narrow checks, `medium` for ordinary features and reviews, and `high` for ambiguous, cross-cutting or high-risk work. Set it with `add --effort` or `launch --effort`; the tool refuses levels outside the role's range. Raise effort on a retry when the previous attempt failed from difficulty rather than a bad contract. The exception is Opus 5.5 as a fast, trivial or verify model, which always runs at `low` effort: the tool applies it whatever the unit's effort, and refuses `launch --effort` with another level.
 
-A repository overrides the policy in `.jfactory/coordination.json`, for example `{"limit": 2, "roles": {"implement": {"agent": "codex", "model": "gpt-6-sol", "effort": "medium", "efforts": ["medium", "high"], "fast": true}}}`. Setup records the owner's policy there. `init` copies the effective policy into the program issue, so later edits to the file do not change a running program. `launch --agent/--model/--effort` overrides one unit and is recorded on it. The tool refuses models Conductor does not offer (`conductor model`), fast mode on a model without it, and a verifier from the same agent family as the unit it reviews. `--allow-same-family` only permits the launch; the resulting verdict is still refused by `verify_plan.py` and the `jfactory verified` status unless the repository's `.jfactory/verification.json` sets `"allow_same_family": true`, which is an owner decision to disclose in the PR.
+A repository overrides the policy in `.jfactory/coordination.json`, for example `{"limit": 2, "merge_deploys": "none", "roles": {"implement": {"effort": "high"}}}`. A role override changes only the fields it names; the fallback and other fields stay. Setup records the owner's policy there. `init` copies the effective policy into the program issue, so later edits to the file do not change a running program. `launch --agent/--model/--effort` overrides one unit and is recorded on it. The tool refuses models Conductor does not offer (`conductor model`), fast mode on a model without it, and a verifier from the same agent family as the unit it reviews. `--allow-same-family` only permits the launch. Whether a same-family verdict counts is the owner's decision recorded as `"allow_same_family": true` in `.jfactory/verification.json`; without it, `verdict` refuses to post one and the `jfactory verified` status rejects it. Disclose that decision in the PR.
 
 ## Where the owner is in the loop
 
@@ -138,7 +140,7 @@ A worker question becomes an open decision at `sync`. Answer it from recorded de
 
 A worker's report is a claim. At the PR's current head SHA, inspect the criteria, the checks that ran, the application evidence and whether the assertions prove the claim. Record the result with `verdict`. CI status is an input, not a verdict. A new head voids the previous verdict at the next `sync`.
 
-Every `implement` unit that produces a PR gets a `verify` unit that depends on it, launched with `--stack-on` so it checks out the PR branch once the worker reports `in-review`. Its contract asks it to re-run the acceptance checks and application journey, review the diff, and follow the PR through CI and review comments. It runs `verify_plan.py plan` for the PR, reports a recommended verdict with evidence and does not change product code; defects become a fix task for the original worker. Choose its effort by risk. The coordinator inspects that evidence and records the `verdict`.
+Every unit that produces a PR gets a `verify` unit that depends on it, launched with `--stack-on` so it checks out the PR branch once the worker reports `in-review`. Its contract asks it to re-run the acceptance checks and application journey, review the diff, and follow the PR through CI and review comments. It runs `verify_plan.py plan` for the PR, reports a recommended verdict with evidence and does not change product code; defects become a fix task for the original worker. Choose its effort by risk. The coordinator inspects that evidence and records the `verdict`.
 It runs on GPT Luna 6 in fast mode, or Opus 5.5 at low effort when the implementer ran on Codex; see the verify tier in [model selection](models.md). Archive the verifier's workspace once its verdict is recorded.
 
 ## 8. Integrate continuously

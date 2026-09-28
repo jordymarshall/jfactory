@@ -236,7 +236,12 @@ def choose(tier, readings, reserve, implementer=None):
         if not reading:
             return {**choice, 'reason': '; '.join(notes + [f'{agent} usage unknown; start on this model and switch if it stops at a limit'])}
         if not exhausted(reading, reserve):
-            reason = 'primary' if agent == POLICY[tier][0][0] else 'fallback'
+            if agent == POLICY[tier][0][0]:
+                reason = 'primary'
+            elif tier == 'verify' and implementer == POLICY[tier][0][0]:
+                reason = 'alternate'  # the family switch for a verifier, not a usage fallback
+            else:
+                reason = 'fallback'
             return {**choice, 'reason': '; '.join(notes + [f'{reason}: {agent} {summary(reading)}'])}
         notes.append(f'{agent} has no usage remaining ({summary(reading)})')
     resets = [earliest_reset(readings[a], reserve) for a, *_ in options if readings.get(a)]
