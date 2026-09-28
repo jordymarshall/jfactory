@@ -12,7 +12,7 @@ from pathlib import Path
 # Keep in step with references/models.md.
 # Each option is (agent, model, effort, fast mode).
 POLICY = {
-    'frontier': [('claude', 'opus-5-5-1m', None, False), ('codex', 'gpt-6-astra', None, False)],
+    'frontier': [('claude', 'opus-5-5-1m', 'medium', False), ('codex', 'gpt-6-astra', None, False)],
     'fast': [('codex', 'gpt-6-sol', None, False), ('claude', 'opus-5-5-1m', 'low', False)],
     'trivial': [('codex', 'gpt-6-luna', None, False), ('claude', 'opus-5-5-1m', 'low', False)],
     'verify': [('codex', 'gpt-6-luna', None, True), ('claude', 'opus-5-5-1m', 'low', False)],

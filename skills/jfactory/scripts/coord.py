@@ -45,8 +45,8 @@ ROLE_TIERS = {'implement': 'frontier', 'fast': 'fast', 'trivial': 'trivial', 've
 
 
 def role_from_tier(tier):
-    (agent, model, _, fast), (fb_agent, fb_model, fb_effort, fb_fast) = usage.POLICY[tier]
-    role = {'agent': agent, 'model': model, 'effort': 'medium', 'efforts': EFFORTS, 'fast': fast,
+    (agent, model, effort, fast), (fb_agent, fb_model, fb_effort, fb_fast) = usage.POLICY[tier]
+    role = {'agent': agent, 'model': model, 'effort': effort or 'medium', 'efforts': EFFORTS, 'fast': fast,
             'fallback': {'agent': fb_agent, 'model': fb_model, 'fast': fb_fast}}
     if fb_effort:
         role['pin_efforts'] = {fb_agent: fb_effort}
@@ -243,11 +243,95 @@ def session_states(state):
     for uid, unit in state['units'].items():
         if unit['state'] not in ACTIVE or not unit.get('session'):
             continue
-        status = run_json('conductor', 'session', 'status', unit['session'], '--json').get('status', 'unknown')
+        try:
+            status = run_json('conductor', 'session', 'status', unit['session'], '--json').get('status', 'unknown')
+        except (Refused, ValueError) as error:
+            notes.append(f'{uid}: session status unavailable: {error}')
+            continue
         unit['session_status'] = status
         if status not in ('working', 'running'):
             notes.append(f'{uid}: session is {status} without a final report; read its latest messages')
     return notes
+
+
+def archive_finished(state):
+    """Archive the workspace of every merged, done or abandoned unit once its session is idle."""
+    changes, notes = [], []
+    for uid, unit in state['units'].items():
+        if unit['state'] not in TERMINAL or not unit.get('workspace') or unit.get('archived'):
+            continue
+        if unit.get('session'):
+            try:
+                status = run_json('conductor', 'session', 'status', unit['session'], '--json').get('status', 'unknown')
+            except Refused as error:
+                notes.append(f'{uid}: workspace not archived; session status unavailable: {error}')
+                continue
+            if status in ('working', 'running'):
+                notes.append(f'{uid}: {unit["state"]} but its session is still {status}; archive after it stops')
+                continue
+        try:
+            run('conductor', 'workspace', 'archive', unit['workspace'])
+        except Refused as error:
+            notes.append(f'{uid}: workspace not archived: {error}')
+            continue
+        unit['archived'] = now()
+        changes.append(f'{uid}: workspace archived')
+    return changes, notes
+
+
+def busy(workspace):
+    """True when any session in the workspace is still working, or its state cannot be read."""
+    try:
+        sessions = run_json('conductor', 'workspace', 'session', workspace, '--limit', '100', '--json').get('data') or []
+        return any(run_json('conductor', 'session', 'status', s['id'], '--json').get('status') in ('working', 'running')
+                   for s in sessions)
+    except (Refused, ValueError, KeyError):
+        return True
+
+
+def tidy_sections(repo, keep=()):
+    """Delete finished `Program:` sidebar sections: every workspace in it is archived, or its program issue is
+    closed and none of its remaining workspaces is still working."""
+    changes, notes = [], []
+    try:
+        sections, offset = [], 0
+        while True:
+            page = run_json('conductor', 'section', 'list', '--limit', '100', '--offset', str(offset), '--json')
+            sections += page.get('data') or []
+            if not page.get('hasMore'):
+                break
+            offset += 100
+        closed = {i['title'] for i in json.loads(gh(repo, 'issue', 'list', '--label', PROGRAM_LABEL, '--state', 'closed',
+                                                    '--limit', '200', '--json', 'title'))}
+    except (Refused, ValueError) as error:
+        return [], [f'sidebar sections not tidied: {error}']
+    for section in sections:
+        name = section.get('name') or ''
+        if not name.startswith('Program: ') or section['id'] in keep:
+            continue  # The owner's own sections are never touched.
+        live = []
+        for workspace in section.get('workspaceIds') or []:
+            try:
+                if run_json('conductor', 'workspace', 'get', workspace, '--json').get('state') != 'archived':
+                    live.append(workspace)
+            except (Refused, ValueError):
+                live.append(workspace)
+        if live and (name not in closed or any(busy(w) for w in live)):
+            continue
+        try:
+            run('conductor', 'section', 'delete', section['id'])
+        except Refused as error:
+            notes.append(f'section {name!r} not deleted: {error}')
+            continue
+        changes.append(f"deleted section {name!r} ({'program closed' if name in closed else 'no active workspaces'})")
+    return changes, notes
+
+
+def cmd_tidy(args):
+    changes, notes = tidy_sections(args.repo)
+    print('Changed: ' + ('; '.join(changes) if changes else 'nothing'))
+    for note in notes:
+        print('Check: ' + note)
 
 
 def verdict_at_head(state, unit):
@@ -489,6 +573,10 @@ def cmd_sync(args):
     state = load(args.repo, args.program)
     changes = fold_reports(state) + refresh_prs(state, args.repo)
     notes = session_states(state)
+    if not args.dry_run and not args.keep_workspaces:
+        archived, archive_notes = archive_finished(state)
+        changes += archived
+        notes += archive_notes
     ready = []
     for name, unit in state['units'].items():
         if unit['state'] != 'planned':
@@ -602,9 +690,26 @@ def cmd_close(args):
     open_units = [u for u, v in state['units'].items() if v['state'] not in TERMINAL]
     if open_units:
         raise Refused(f'Units not merged, done or abandoned: {", ".join(open_units)}')
+    notes = []
+    if not args.keep_workspaces:
+        archived, notes = archive_finished(state)
+        if state.get('section') and not notes:
+            try:
+                run('conductor', 'section', 'delete', state['section'])
+                state['section'] = None
+            except Refused as error:
+                notes.append(f'sidebar section not deleted: {error}')
     save(args.repo, args.program, state)
     gh(args.repo, 'issue', 'close', str(args.program), '--comment', summary(state))
     print('Closed. ' + summary(state))
+    if not args.keep_workspaces:
+        tidied, tidy_notes = tidy_sections(args.repo, keep=[state['section']] if state.get('section') else [])
+        notes += tidy_notes
+        for change in tidied:
+            print('Tidied: ' + change)
+    for note in notes:
+        print('Check: ' + note)
+    print('This coordinator workspace stays open; archive it once the owner has read the result.')
 
 
 def main(argv=None):
@@ -661,9 +766,10 @@ def main(argv=None):
     p.add_argument('--note')
     p.add_argument('--question')
     p.set_defaults(func=cmd_report)
-    p = sub.add_parser('sync', help='Fold reports, PRs and sessions into the issue')
+    p = sub.add_parser('sync', help='Fold reports, PRs and sessions into the issue and archive finished workspaces')
     p.add_argument('program', type=int)
     p.add_argument('--dry-run', action='store_true')
+    p.add_argument('--keep-workspaces', action='store_true', help='do not archive finished units\' workspaces')
     p.set_defaults(func=cmd_sync)
     p = sub.add_parser('set', help='Coordinator: set a unit state')
     p.add_argument('program', type=int)
@@ -696,8 +802,11 @@ def main(argv=None):
     p.add_argument('--units', type=listing, default=[])
     p.add_argument('--answer')
     p.set_defaults(func=cmd_gate)
-    p = sub.add_parser('close', help='Close a finished program')
+    p = sub.add_parser('tidy', help='Delete finished Program sidebar sections')
+    p.set_defaults(func=cmd_tidy)
+    p = sub.add_parser('close', help='Close a finished program, archive its workspaces and delete its section')
     p.add_argument('program', type=int)
+    p.add_argument('--keep-workspaces', action='store_true', help='do not archive workspaces or delete the section')
     p.set_defaults(func=cmd_close)
 
     args = parser.parse_args(argv)
