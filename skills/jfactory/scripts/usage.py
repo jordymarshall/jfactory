@@ -10,10 +10,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # Keep in step with references/models.md.
+# Each option is (agent, model, effort, fast mode).
 POLICY = {
-    'frontier': [('claude', 'opus-5-5-1m', None), ('codex', 'gpt-6-astra', None)],
-    'fast': [('codex', 'gpt-6-sol', None), ('claude', 'opus-5-5-1m', 'low')],
-    'trivial': [('codex', 'gpt-6-luna', None), ('claude', 'opus-5-5-1m', 'low')],
+    'frontier': [('claude', 'opus-5-5-1m', None, False), ('codex', 'gpt-6-astra', None, False)],
+    'fast': [('codex', 'gpt-6-sol', None, False), ('claude', 'opus-5-5-1m', 'low', False)],
+    'trivial': [('codex', 'gpt-6-luna', None, False), ('claude', 'opus-5-5-1m', 'low', False)],
+    'verify': [('codex', 'gpt-6-luna', None, True), ('claude', 'opus-5-5-1m', 'low', False)],
 }
 PROBES = {'claude': ('haiku-4-5', None), 'codex': ('gpt-6-luna', 'low')}
 PROBE_MESSAGE = 'Reply with the single word ok. Do not use any tools.'
@@ -222,21 +224,24 @@ def earliest_reset(reading, reserve):
     return min(times) if times else None
 
 
-def choose(tier, readings, reserve):
+def choose(tier, readings, reserve, implementer=None):
     notes = []
-    for agent, model, effort in POLICY[tier]:
+    options = POLICY[tier]
+    if tier == 'verify' and implementer:
+        notes = [f'{a} skipped: same family as the implementer' for a, *_ in options if a == implementer]
+        options = [option for option in options if option[0] != implementer]
+    for agent, model, effort, fast in options:
+        choice = {'tier': tier, 'agent': agent, 'model': model, 'effort': effort, 'fast': fast}
         reading = readings.get(agent)
         if not reading:
-            return {'tier': tier, 'agent': agent, 'model': model, 'effort': effort,
-                    'reason': '; '.join(notes + [f'{agent} usage unknown; start on this model and switch if it stops at a limit'])}
+            return {**choice, 'reason': '; '.join(notes + [f'{agent} usage unknown; start on this model and switch if it stops at a limit'])}
         if not exhausted(reading, reserve):
-            reason = 'primary' if not notes else 'fallback'
-            return {'tier': tier, 'agent': agent, 'model': model, 'effort': effort,
-                    'reason': '; '.join(notes + [f'{reason}: {agent} {summary(reading)}'])}
+            reason = 'primary' if agent == POLICY[tier][0][0] else 'fallback'
+            return {**choice, 'reason': '; '.join(notes + [f'{reason}: {agent} {summary(reading)}'])}
         notes.append(f'{agent} has no usage remaining ({summary(reading)})')
-    resets = [earliest_reset(readings[a], reserve) for a, _, _ in POLICY[tier] if readings.get(a)]
+    resets = [earliest_reset(readings[a], reserve) for a, *_ in options if readings.get(a)]
     resets = [r for r in resets if r]
-    return {'tier': tier, 'agent': None, 'model': None, 'effort': None,
+    return {'tier': tier, 'agent': None, 'model': None, 'effort': None, 'fast': False,
             'hold_until': min(resets) if resets else None, 'reason': '; '.join(notes)}
 
 
@@ -268,6 +273,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--tier', choices=sorted(POLICY), action='append',
                         help='tier to choose a model for; repeat for several (default: all)')
+    parser.add_argument('--implementer', choices=['claude', 'codex'],
+                        help='agent that implemented the work under verification; the verify tier skips its family')
     parser.add_argument('--reserve', type=float, default=90, help='used percent that counts as no usage remaining')
     parser.add_argument('--max-age', type=float, default=20, help='minutes before a reading is refreshed by a probe')
     parser.add_argument('--no-probe', action='store_true', help='never launch a probe session')
@@ -276,7 +283,7 @@ def main():
     args = parser.parse_args()
 
     readings = collect(args)
-    choices = [choose(tier, readings, args.reserve) for tier in (args.tier or ['frontier', 'fast', 'trivial'])]
+    choices = [choose(tier, readings, args.reserve, args.implementer) for tier in (args.tier or list(POLICY))]
     if args.json:
         print(json.dumps({'checked_at': iso(now()), 'reserve_percent': args.reserve, 'accounts': readings,
                           'choices': choices}, indent=2))
@@ -293,7 +300,8 @@ def main():
         for choice in choices:
             if choice['model']:
                 effort = f" --effort {choice['effort']}" if choice['effort'] else ''
-                print(f"{choice['tier']}: --agent {choice['agent']} --model {choice['model']}{effort}  [{choice['reason']}]")
+                fast = ' --fast-mode' if choice['fast'] else ''
+                print(f"{choice['tier']}: --agent {choice['agent']} --model {choice['model']}{effort}{fast}  [{choice['reason']}]")
             else:
                 print(f"{choice['tier']}: HOLD until {choice['hold_until'] or 'a reset'}  [{choice['reason']}]")
     return 3 if any(not c['model'] for c in choices) else 0

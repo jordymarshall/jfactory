@@ -6,12 +6,15 @@ Use this when jfactory launches or delegates to another agent: a Conductor works
 
 | Tier | Use for | Primary | Fallback when the primary has no usage remaining |
 | --- | --- | --- | --- |
-| Frontier | Core coding that needs strong intelligence: implementation, debugging, architecture, coordination and judgment-heavy review | Opus 5.5: `--agent claude --model opus-5-5-1m` | GPT Astra 6: `--agent codex --model gpt-6-astra` |
+| Frontier | Core coding that needs strong intelligence: implementation, debugging, architecture and coordination | Opus 5.5: `--agent claude --model opus-5-5-1m` | GPT Astra 6: `--agent codex --model gpt-6-astra` |
 | Fast | Well-scoped work where speed matters more than depth: routine edits, follow-up fixes with a clear cause, CI triage, focused checks | GPT Sol 6: `--agent codex --model gpt-6-sol` | Opus 5.5 at low effort: `--agent claude --model opus-5-5-1m --effort low` |
 | Trivial | Very simple or very fast tasks: lookups, renames, formatting, short summaries | GPT Luna 6: `--agent codex --model gpt-6-luna` | Opus 5.5 at low effort: `--agent claude --model opus-5-5-1m --effort low` |
+| Verify | Verifying or reviewing another agent's work: rerun its checks at the PR head, inspect evidence against the acceptance criteria and report a verdict | GPT Luna 6 in fast mode: `--agent codex --model gpt-6-luna --fast-mode` | Opus 5.5 at low effort: `--agent claude --model opus-5-5-1m --effort low` |
 
 - The task decides the tier. Remaining usage only decides between a tier's primary and fallback. Do not move core coding down a tier to save usage.
-- Use the host's default effort unless a row names one. The fast and trivial fallbacks run Opus 5.5 at `low` only, never a higher effort.
+- Use the host's default effort unless a row names one. The fast, trivial and verify fallbacks run Opus 5.5 at `low` only, never a higher effort.
+- Verification runs GPT Luna 6 in fast mode for speed. The Opus fallback runs without fast mode, because Claude fast mode can draw on extra usage and this setup must not depend on it.
+- A verifier comes from a different family than the agent that implemented the work. When a Codex model implemented it, verify with Opus 5.5 at low effort: `usage.py --tier verify --implementer codex`. If the other family has no usage remaining, hold the verdict until its reset rather than verifying with the same family.
 - Do not substitute models outside this table, such as other Claude, GPT or Cursor models, unless the owner asks.
 - [`usage.py`](../scripts/usage.py) encodes this table; change both together. Confirm the ids with `conductor model` before launching. If an id is missing, use the tier's other model and report the missing id.
 - Host subagents can use only the host's own models. Apply the tier where the host offers its model; otherwise inherit the current model and say so. Launch a Conductor session on another provider only when the task warrants a separate agent.
