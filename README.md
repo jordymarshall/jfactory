@@ -35,11 +35,11 @@ You stay in charge of three things: what gets built, product decisions the agent
    - the **`jfactory verified`** GitHub check;
    - a record of **what merging deploys** (staging or nothing).
 
-   🔒 Enforced for the map, the check and the deploy record (`setup_check.py --remote` won't report setup complete while any is missing or GitHub doesn't require the checks). 📋 Instructed for the verifier itself.
+   🔒 `setup_check.py --remote` won't report setup complete while the map, the check workflow or the deploy record is missing, or while GitHub doesn't require the checks. It only warns about unmapped files or unset risk levels, which default to the strictest verification anyway. 📋 Building the verifier itself is an instruction.
 
 **Every request after that,** for example *"Let users save items and find them later"*:
 
-4. **Objective.** The agent writes what "done" means as observable criteria, each with the evidence that proves it. It also chooses which loops the work needs (product, UX, engineering) and asks you only about undecided choices. 📋 Instructed. 🔒 The PR can't pass `jfactory verified` without an Objective section.
+4. **Objective.** The agent writes what "done" means as observable criteria, each with the evidence that proves it. It also chooses which loops the work needs (product, UX, engineering) and asks you only about undecided choices. 📋 Instructed. 🔒 For any change that isn't static, the PR can't pass `jfactory verified` without a non-empty Objective section or `Objective:` link. The check re-runs when you edit the PR description.
 5. **Loop.** It implements, runs the real check, reads the result and fixes, until every criterion passes. It never weakens a criterion to finish. 📋 Instructed
 6. **PR and plan.** It opens a PR. `verify_plan.py` reads the changed files and decides:
    - **docs only:** static checks;
@@ -47,8 +47,8 @@ You stay in charge of three things: what gets built, product decisions the agent
    - **high-risk areas** (anything users see, data, auth, money, security, agent instructions) or **unknown files:** a second opinion.
 
    🔒 Enforced
-7. **Second opinion.** For high-risk changes, a model from a *different family* re-runs the checks on the PR's latest commit and posts a verdict. A stale commit, a same-family verdict or a missing feature is refused, and every new commit resets it. 🔒 Enforced (`verify_plan.py` and the `jfactory verified` check)
-8. **Auto-merge.** GitHub merges once the required checks pass. Merging deploys to staging at most; production is only ever your call. 🔒 GitHub enforces the checks once your ruleset requires CI and `jfactory verified` (setup checks this). The staging-only rule is 🔒 enforced by `coord.py` and `setup_check.py`, and 📋 instructed for a single agent's PR.
+7. **Second opinion.** For high-risk changes, a model from a *different family* re-runs the checks on the PR's latest commit and posts a verdict. 🔒 `verify_plan.py` and the `jfactory verified` check refuse a verdict for a stale commit, from the same model family, or missing a high-risk feature, and every new commit resets it. 📋 That the verifier really re-ran the checks is an instruction: the verdict's evidence is a written description the tools don't validate.
+8. **Auto-merge.** GitHub merges once the required checks pass. Merging deploys to staging at most; production is only ever your call. 🔒 GitHub enforces the checks once your ruleset requires CI and `jfactory verified` (setup checks this). The staging-only rule is 🔒 enforced by `coord.py merge`, and `setup_check.py` refuses to mark delivery verified when merging releases production. For a single agent's own PR it's 📋 an instruction.
 9. **Handoff.** You get what changed, the actual checks and results, what's unproven, and the PR link. You try it; your feedback starts the next loop. 📋 Instructed
 
 **Always on:**

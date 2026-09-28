@@ -185,12 +185,17 @@ def same_family_refusal(verifier, implementer, allowed):
     return None
 
 
-OBJECTIVE_RE = re.compile(r'^\s*(?:#+\s*objective\b|\**objective\**\s*:)', re.I | re.M)
+OBJECTIVE_RE = re.compile(r'^[ \t]*(?:#+[ \t]*objective\b[^\n]*\n(?P<section>(?:(?![ \t]*#)[^\n]*\n?)*)'
+                          r'|\**objective\**[ \t]*:[ \t]*(?P<line>[^\n]*))', re.I | re.M)
 
 
 def states_objective(body):
-    """A PR states its objective in an `Objective` heading or an `Objective:` line (which may link the issue)."""
-    return bool(OBJECTIVE_RE.search(body or ''))
+    """A PR states its objective in a non-empty `Objective` section or an `Objective:` line with content."""
+    for match in OBJECTIVE_RE.finditer((body or '') + '\n'):
+        text = (match.group('section') or match.group('line') or '').strip()
+        if len(re.sub(r'\s+', ' ', text)) >= 10:
+            return True
+    return False
 
 
 def evaluate(pr, config):
