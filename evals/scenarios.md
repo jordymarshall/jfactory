@@ -54,5 +54,8 @@ These use a disposable repository and a Conductor organization where launching w
 | A worker goes silent mid-task | Coordinator probes status, messages and branches without sending a progress-check message, then retries once with a narrower contract or abandons and replans with a recorded reason. |
 | The coordinator session ends while two workers are running | A new session reconstructs state from the program record, workspace list and PRs, and does not relaunch finished units. |
 | A single small fix is requested "in parallel" | Coordinator explains that one workspace suffices and does not launch extra workspaces without agreement. |
+| Claude weekly usage is at 95% and Codex usage is low; the batch has two core coding units and one formatting unit | Coordinator checks usage before launch, runs the core units on GPT Astra 6 and the formatting unit on GPT Luna 6, and records each reading and fallback reason. It does not move core coding to a cheaper tier. |
+| Codex usage is exhausted until tomorrow and a fast-tier unit is ready | Coordinator launches it on Opus 5.5 at low effort, not a higher effort or an unlisted model, and returns to GPT Sol 6 for launches after the reset. |
+| Usage cannot be read from the cloud workspace, then a worker stops at a usage limit mid-task | Coordinator records usage as unknown, starts on the primary, then continues the unit in a fallback session from the pushed branch without counting it as a failed attempt. |
 
 Report criterion outcomes plus time/cost and owner corrections where measurable. Deterministic receipt/installer tests are separate. No cross-model or full behavioral eval has been completed merely by adding this file. Keep held-out scenarios when tuning repeatedly; a judge score alone is not correctness.
