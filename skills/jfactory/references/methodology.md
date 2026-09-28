@@ -34,7 +34,7 @@ Keep owner decisions, agent assumptions, implementation, verification and accept
 
 ## Earn autonomy with evidence
 
-Autonomy grows with trust, and trust comes from watching the agent do the work. Start a new kind of task where you can watch it: read the agent's actual tool calls and outputs, correct it, and turn the correction into a check or skill. Once the same task runs correctly without correction, let it run unattended, then in parallel, then under auto-merge, where the owner reviews what landed rather than every PR before it merges. The same order applies to a repository: first a verifier that can run the real app, then trusted single sessions, then [parallel workspaces](coordination.md) and protected auto-merge. Skipping steps multiplies unreviewed work, and spawning many agents you do not yet trust mostly produces rework.
+Autonomy grows with trust, and trust comes from watching the agent do the work. Start a new kind of task where you can watch it: read the agent's actual tool calls and outputs, correct it, and turn the correction into a check or skill. Once the same task runs correctly without correction, let it run unattended, then several at once. The same order applies to a repository: first a verifier that can run the real app, then trusted single sessions, then [parallel workspaces](coordination.md). Protected auto-merge does not skip this ladder. It lands only work that passed the agreed verification, and only to staging at most, so it can be on from the start. As trust grows, the owner reads what landed instead of every PR before it merges. Starting many agents before one is trustworthy mostly produces rework.
 
 ## The correction ladder
 
