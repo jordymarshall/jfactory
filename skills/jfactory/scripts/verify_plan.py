@@ -256,7 +256,7 @@ def evaluate(pr, config):
     """Return (state, description) for the jfactory verified status at the PR head."""
     result = plan(pr['files'], config)
     if result['level'] != 'static' and config.get('require_objective', True) and not states_objective(pr.get('body')):
-        return 'failure', 'PR description must start with its objective: an "## Objective" section or "Objective:" line'
+        return 'failure', 'PR description must start with its objective: an Objective heading (such as "## Objective") or "Objective:" line'
     if not result['needs_verifier']:
         if result['level'] == 'ci':
             return 'success', 'Low-risk change (verify: ci); required CI checks apply'
