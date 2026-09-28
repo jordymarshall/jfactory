@@ -213,7 +213,8 @@ def check_remote(repo, branch, report, states):
         gaps.append(f'{branch} requires no CI check besides "{verify_plan.CONTEXT}"')
     if gaps:
         level = 'FAIL' if states.get('PR delivery') == 'verified' else 'WARN'
-        report.add(level, 'Protected auto-merge is not fully enforced: ' + '; '.join(gaps))
+        report.add(level, 'Protected auto-merge is not fully enforced: ' + '; '.join(gaps) +
+                   ' (apply templates/ruleset-main.json; see references/auto-merge.md)')
         return False
     report.add('PASS', f'GitHub requires PRs and {", ".join(sorted(contexts))} on {branch}; auto-merge is allowed')
     return True

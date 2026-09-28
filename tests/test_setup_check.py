@@ -145,6 +145,15 @@ class SetupCheckTest(unittest.TestCase):
         (self.root / '.jfactory' / 'setup.md').write_text(record(states=states))
         self.assertIn('PR delivery cannot be "not applicable"', self.check('--remote', '--repo', 'o/r', code=1))
 
+    def test_ruleset_template_requires_both_checks_without_bypass(self):
+        ruleset = json.loads((ROOT / 'skills' / 'jfactory' / 'templates' / 'ruleset-main.json').read_text())
+        rules = {r['type']: r.get('parameters', {}) for r in ruleset['rules']}
+        contexts = [c['context'] for c in rules['required_status_checks']['required_status_checks']]
+        self.assertEqual(contexts, ['REPLACE_WITH_YOUR_CI_CHECK_NAME', 'jfactory verified'])
+        self.assertTrue(rules['required_status_checks']['strict_required_status_checks_policy'])
+        self.assertEqual(rules['pull_request']['allowed_merge_methods'], ['squash'])
+        self.assertEqual((ruleset['bypass_actors'], ruleset['enforcement']), ([], 'active'))
+
     def test_production_merges_cannot_be_verified_delivery(self):
         (self.root / '.jfactory' / 'coordination.json').write_text('{"merge_deploys": "production"}')
         self.assertIn('Merging releases production', self.check(code=1))

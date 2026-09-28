@@ -4,7 +4,7 @@ This repository is jfactory's own source. It uses the bundle in place through [A
 
 ## Readiness
 
-Last reviewed 2026-09-28 against `main` at `3d0127a`, plus the setup-checker PR.
+Last reviewed 2026-09-28 against `main` at `6ae1299`.
 
 | Area | State | Evidence or reason |
 | --- | --- | --- |
@@ -13,7 +13,7 @@ Last reviewed 2026-09-28 against `main` at `3d0127a`, plus the setup-checker PR.
 | Workspace tools | verified | Python 3 only; the browser smokes also need Node, Chrome and Playwright's ffmpeg. In the Conductor cloud workspace (Python 3.9.25, Node 24.14.1), the unit tests, `check-upstream.py`, `tests/browser_smoke.py` and `tests/dashboard_smoke.py` passed. CI runs Python 3.10. No cloud setup script is needed. |
 | Verification | verified | `.jfactory/verification.json` maps every tracked file except the gate paths, which always need full verification. `setup_check.py` confirms it and the `jfactory verified` workflow. |
 | Environments | not applicable | Nothing deploys. |
-| PR delivery | blocked | Repository auto-merge is on. The active ruleset "Verified squash merges to main" (id 24086594) requires PRs, squash merges and `checks` against the latest main, with no bypass. It does not yet require `jfactory verified`. The owner approved requiring it on 2026-09-28, but this workspace's GitHub App token cannot edit rulesets (HTTP 403), so the owner has to import the committed ruleset. `merge_deploys` is `none`. |
+| PR delivery | verified | Repository auto-merge is on. The active ruleset "Verified squash merges to main" (id 24086594) requires PRs, squash merges, no bypass, and both `checks` and `jfactory verified` against the latest main. The owner added `jfactory verified` on 2026-09-28, and `setup_check.py --remote` confirmed it. `merge_deploys` is `none`. |
 
 ## Owner interview
 
@@ -27,11 +27,7 @@ Last reviewed 2026-09-28 against `main` at `3d0127a`, plus the setup-checker PR.
 
 ## Open owner decisions
 
-1. **Require `jfactory verified` on main.** Approved. The Conductor GitHub App token lacks the Administration permission rulesets need (HTTP 403), so someone with admin rights on GitHub has to apply it. Either:
-   - On GitHub, open Settings → Rules → Rulesets → "Verified squash merges to main" → Require status checks to pass → Add checks → `jfactory verified` (source: GitHub Actions) → Save changes.
-   - Or run, signed in as the owner: `gh api -X PUT repos/jordymarshall/jfactory/rulesets/24086594 --input .github/rulesets/main.json`
-
-   Then rerun `setup_check.py --remote` and mark PR delivery verified.
+None. (Requiring `jfactory verified` on main was applied by the owner on 2026-09-28.)
 
 ## Next objective
 
