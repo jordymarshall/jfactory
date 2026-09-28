@@ -129,6 +129,21 @@ class CoordTest(unittest.TestCase):
         self.assertIn('workspace not archived', out)
         self.assertNotIn('deleted_sections', self.db())
 
+    def test_sync_reports_status_and_archive_failures_without_crashing(self):
+        self.start(['a', '--objective', 'x'], ['b', '--objective', 'y'], ['c', '--objective', 'z'], limit=3)
+        for uid in ('a', 'b', 'c'):
+            self.coord('launch', '1', uid, '--brief', str(self.brief))
+        self.coord('set', '1', 'b', '--state', 'abandoned')
+        self.coord('set', '1', 'c', '--state', 'abandoned')
+        self.set_db(sessions={'s1': 'unavailable', 's2': 'unavailable', 's3': 'idle'}, archive_fail=['w3'])
+        out = self.coord('sync', '1')
+        self.assertIn('a: session status unavailable', out)
+        self.assertIn('b: workspace not archived; session status unavailable', out)
+        self.assertIn('c: workspace not archived', out)
+        self.assertNotIn('archived', self.db())
+        units = self.program_state()['units']
+        self.assertFalse(units['b'].get('archived') or units['c'].get('archived'))
+
     def test_tidy_deletes_only_finished_program_sections(self):
         self.start(['a', '--objective', 'x'])
         self.set_db(archived=['w9'], issues={**self.db()['issues'], '2': {

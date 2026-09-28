@@ -232,7 +232,11 @@ def session_states(state):
     for uid, unit in state['units'].items():
         if unit['state'] not in ACTIVE or not unit.get('session'):
             continue
-        status = run_json('conductor', 'session', 'status', unit['session'], '--json').get('status', 'unknown')
+        try:
+            status = run_json('conductor', 'session', 'status', unit['session'], '--json').get('status', 'unknown')
+        except (Refused, ValueError) as error:
+            notes.append(f'{uid}: session status unavailable: {error}')
+            continue
         unit['session_status'] = status
         if status not in ('working', 'running'):
             notes.append(f'{uid}: session is {status} without a final report; read its latest messages')

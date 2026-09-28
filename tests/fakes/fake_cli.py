@@ -59,6 +59,10 @@ if tool == 'conductor':
         db.setdefault('deleted_sections', []).append(args[2])
         done({'section': {'id': args[2], 'workspaceIds': []}})
     if args[:2] == ['session', 'status']:
+        if db.get('sessions', {}).get(args[2]) == 'unavailable':
+            path.write_text(json.dumps(db))
+            sys.stderr.write('status unavailable')
+            sys.exit(1)
         done({'status': db.get('sessions', {}).get(args[2], 'working')})
 if tool == 'git' and args[:1] == ['show']:
     done(json.dumps(db.get('config', {'static': ['**/*.md'], 'features': {'all': {'paths': ['**']}}})))
