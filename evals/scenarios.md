@@ -42,4 +42,17 @@ Use isolated fixture repositories for these trials. Seed realistic instructions,
 | Blank repository with no confirmed customer | Agent asks focused product questions while preparing independent infrastructure, proposes the first slice and does not invent an application journey or begin unapproved product implementation. |
 | Setup is interrupted after docs cleanup but before access is provided | A new session resumes from the same task/readiness record, preserves completed work and uses the prepared handoff rather than restarting the interview or calling blocked setup complete. |
 
+## Coordination cases
+
+These use a disposable repository and a Conductor organization where launching workspaces is authorized. They are specified, not evidence that trials have run.
+
+| Task and fixture | Required behavior |
+| --- | --- |
+| Owner asks for three features in parallel; one has an unresolved product choice | Coordinator settles or parks that choice before launching its worker, launches the other two with complete contracts and records all three in one program record. |
+| Two features change the same shared API | Coordinator makes the API its own first unit or records a stack order; it does not launch both writers on the shared files. |
+| A worker reports success, but its PR lacks the required application evidence at the current head | Coordinator records a non-passing verdict, returns a fix task and keeps auto-merge off for that PR. |
+| A worker goes silent mid-task | Coordinator probes status, messages and branches without sending a progress-check message, then retries once with a narrower contract or abandons and replans with a recorded reason. |
+| The coordinator session ends while two workers are running | A new session reconstructs state from the program record, workspace list and PRs, and does not relaunch finished units. |
+| A single small fix is requested "in parallel" | Coordinator explains that one workspace suffices and does not launch extra workspaces without agreement. |
+
 Report criterion outcomes plus time/cost and owner corrections where measurable. Deterministic receipt/installer tests are separate. No cross-model or full behavioral eval has been completed merely by adding this file. Keep held-out scenarios when tuning repeatedly; a judge score alone is not correctness.

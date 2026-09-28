@@ -13,7 +13,13 @@ Read the selected original and its relevant references. The compatibility mappin
 | Audit/update the verification map | [maintain-verification-skill](../vendor/pstack/skills/maintain-verification-skill/SKILL.md) |
 | Adversarial code review | [interrogate](../vendor/pstack/skills/interrogate/SKILL.md); report available reviewer/model limits |
 | Evaluate a skill or prompt change | [eval playbook](../vendor/pstack/skills/poteto-mode/playbooks/eval.md), [arena](../vendor/pstack/skills/arena/SKILL.md) phases B/C and its referenced principles |
+| Settle a design or empirical question before building | [prototype](../vendor/pstack/skills/poteto-mode/playbooks/prototype.md); the result is throwaway evidence for a decision |
+| Choose a module shape before implementation | [architect](../vendor/pstack/skills/architect/SKILL.md), which uses how, why and arena |
+| Split a large change into ordered PRs | [multi-PR plan](../vendor/pstack/skills/poteto-mode/playbooks/multi-phase-plan.md) and [sequence verifiable units](../vendor/pstack/skills/principle-sequence-verifiable-units/SKILL.md), with [coordination translations](compatibility.md#coordination-translations) |
+| Deliver several objectives through separate workspaces | jfactory's [coordination procedure](coordination.md), which adapts [orchestrate](../vendor/pstack/skills/poteto-mode/playbooks/orchestrate.md) |
+| Drive one objective to a checkable done condition | [autonomous run](../vendor/pstack/skills/poteto-mode/playbooks/autonomous-run.md), within the objective contract |
+| Resume or pause another session's work | [session pickup](../vendor/pstack/skills/poteto-mode/playbooks/session-pickup.md), [pause safely](../vendor/pstack/skills/poteto-mode/playbooks/pause-safely.md) |
 | Keep an unattended decision trail | [show-me-your-work](../vendor/pstack/skills/show-me-your-work/SKILL.md); use one task-local trail with links from the existing task |
 
 
-The seven supporting principles cover proving behavior, testing public behavior, fixing root causes, minimizing unnecessary complexity, reconsidering design when requirements change, isolating concurrent state, and encoding recurring lessons in executable structure. Use them when the selected workflow calls for them.
+The supporting principles cover proving behavior, testing public behavior, fixing root causes, minimizing unnecessary complexity, reconsidering design when requirements change, isolating concurrent state, encoding recurring lessons in executable structure, sequencing verifiable units, exploring alternative designs, protecting the context window and avoiding unnecessary owner blocking. Use them when the selected workflow calls for them.

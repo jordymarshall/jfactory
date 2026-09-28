@@ -1,6 +1,6 @@
 ---
 name: jfactory
-description: Run connected product, UX and engineering loops with explicit objectives, browser research, executable verification, evidence and a pull request. Use for "Setup jfactory", repository adoption or cleanup, features, fixes, app experience research and preparing changes for review.
+description: Run connected product, UX and engineering loops with explicit objectives, browser research, executable verification, evidence and a pull request. Use for "Setup jfactory", repository adoption or cleanup, features, fixes, app experience research, multi-PR plans, coordinating several workspaces and preparing changes for review.
 ---
 
 # jfactory
@@ -32,6 +32,10 @@ Choose the next unresolved criterion. Investigate actual code, implement the sma
 Select only relevant original methods from [pstack routing](references/pstack.md). Use focused regression tests where practical, real application journeys for user-facing changes, and independent review proportionate to the change. Investigation/review instructions may request bounded subagents when the host permits them. Larger competing implementations or unattended campaigns require the user's request.
 
 Update affected canonical documentation with material decisions and results, using [documentation reconciliation](references/documentation.md) when guidance is stale or duplicated. Keep requirement, implementation, verification and owner acceptance separate. Preserve historical proof and mark affected old evidence stale. Avoid a new plan or status file every turn.
+
+## Plan and coordinate larger work
+
+Settle an open design or empirical question with a throwaway prototype before building on it. Split a large change into ordered PRs that each carry their own evidence. When the owner asks for several objectives in parallel, follow the [coordination procedure](references/coordination.md): agree outcomes first, write a complete task contract per unit, launch isolated Conductor workspaces within the agreed limit, monitor by evidence, verify each PR at its head and integrate one overlapping change at a time. Start parallel workspaces only on the owner's request or agreement.
 
 ## Deliver a pull request
 

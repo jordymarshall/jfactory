@@ -4,7 +4,7 @@ Each worktree or cloud workspace has its own checkout. It may have different ins
 
 ## Workspaces, sessions and deployments
 
-jfactory guides an active coding agent. It is not a scheduler. Creating a branch, pushing a PR or merging one does not, through jfactory, create another workspace, start another session or choose the next objective. Existing host automation can do those things only when separately configured and authorized. At setup, inspect and record what actually triggers them.
+jfactory guides an active coding agent. It is not a scheduler. Creating a branch, pushing a PR or merging one does not, through jfactory, create another workspace, start another session or choose the next objective. When the owner asks one agent to deliver several objectives in parallel, that agent follows the [coordination procedure](coordination.md) to launch and supervise workers. Other host automation acts only when separately configured and authorized. At setup, inspect and record what actually triggers it.
 
 Use an isolated worktree or cloud workspace for a distinct objective. Additional sessions in the same workspace may share the same files, branch, processes and credentials; a fresh chat is not file isolation. Keep one writer per checkout unless explicit coordination gives agents disjoint ownership. A local worktree inside one cloud VM is also not a new cloud workspace or a test of fresh-VM provisioning.
 
