@@ -23,6 +23,9 @@ WORKER_STATES = {'running', 'blocked', 'in-review', 'failed'}
 ACTIVE = {'running'}
 TERMINAL = {'merged', 'abandoned'}
 VERDICTS = {'verified', 'partially-verified', 'blocked', 'failed'}
+SCOPES = {'unit', 'component', 'integration', 'application', 'provider', 'deployed', 'static'}
+# Auto-merge is allowed only when merging the base cannot release production.
+SAFE_MERGE_TARGETS = {'staging', 'none'}
 MAX_ATTEMPTS = 3
 BRIEF_FIELDS = ['OBJECTIVE', 'DECISIONS', 'SCOPE', 'CONTEXT', 'ACCEPTANCE', 'VERIFY', 'SHARED',
                 'LIMITS', 'FORBIDDEN', 'DELIVERY', 'REPORT']
@@ -94,17 +97,20 @@ def render(state):
         lines += [state['outcome'], '']
     lines += ['Coordinated with jfactory. Workers report as comments; the coordinator owns this body.',
               f"Add the `{HOLD_LABEL}` label to stop new launches and tell workers to pause.", '']
+    lines += [f"Merging to `{state['base']}` deploys to: **{state.get('merge_deploys') or 'unknown'}**. "
+              'Production releases only on a deliberate owner request.', '']
     lines += ['## Standing orders', '']
     lines += [f'{i}. {order}' for i, order in enumerate(state['standing'], 1)] or ['None recorded.']
-    lines += ['', '## Units', '', '| Unit | State | Role/model | Depends | PR | Head | Workspace | Note |',
-              '| --- | --- | --- | --- | --- | --- | --- | --- |']
+    lines += ['', '## Units', '', '| Unit | State | Role/model | Requires | Depends | PR | Head | Workspace | Note |',
+              '| --- | --- | --- | --- | --- | --- | --- | --- | --- |']
     for uid, unit in state['units'].items():
         pr = f"#{unit['pr']}" if unit.get('pr') else ''
         link = f"[open]({unit['link']})" if unit.get('link') else ''
         planned = state['policy'].get(unit['role'], {})
         model = f"{unit['role']}: {unit.get('agent') or planned.get('agent', '')}/" \
                 f"{unit.get('model') or planned.get('model', '')}"
-        lines.append(f"| {uid} | {unit['state']} | {model} | {', '.join(unit['depends'])} | {pr} | "
+        lines.append(f"| {uid} | {unit['state']} | {model} | {', '.join(unit.get('requires', []))} | "
+                     f"{', '.join(unit['depends'])} | {pr} | "
                      f"{(unit.get('head') or '')[:7]} | {link} | {cell(unit.get('note'))} |")
     lines += ['', '## Verification ledger', '', '| PR | Head | Verdict | Scopes | Evidence | At |',
               '| --- | --- | --- | --- | --- | --- |']
@@ -133,10 +139,12 @@ def comment(repo, number, text):
 
 def policy(root):
     merged = json.loads(json.dumps(DEFAULT_POLICY))
+    merged['merge_deploys'] = None
     path = root / POLICY_FILE
     if path.is_file():
         override = json.loads(path.read_text())
         merged['limit'] = override.get('limit', merged['limit'])
+        merged['merge_deploys'] = override.get('merge_deploys')
         merged['roles'].update(override.get('roles', {}))
     return merged
 
@@ -249,7 +257,8 @@ def cmd_init(args):
         if args.standing else []
     state = {'version': 1, 'title': args.title, 'outcome': args.outcome or '', 'base': args.base,
              'repo_url': args.repo_url or f'https://github.com/{args.repo}', 'limit': args.limit or pol['limit'],
-             'policy': pol['roles'], 'standing': standing, 'units': {}, 'ledger': [], 'gates': [],
+             'policy': pol['roles'], 'merge_deploys': args.merge_deploys or pol['merge_deploys'],
+             'standing': standing, 'units': {}, 'ledger': [], 'gates': [],
              'created': now()}
     state['section'], note = make_section(args.title)
     url = gh(args.repo, 'issue', 'create', '--title', f'Program: {args.title}', '--label', PROGRAM_LABEL,
@@ -287,6 +296,9 @@ def cmd_add(args):
         raise Refused(f'Unit {args.unit} already exists')
     if args.role not in state['policy']:
         raise Refused(f'Unknown role {args.role}; policy has {", ".join(state["policy"])}')
+    unknown = [scope for scope in args.requires if scope not in SCOPES]
+    if not args.requires or unknown:
+        raise Refused(f'--requires must name the evidence scopes that define verified: {", ".join(sorted(SCOPES))}')
     missing = [d for d in args.depends if d not in state['units']]
     if missing:
         raise Refused(f'Add dependencies first: {", ".join(missing)}')
@@ -294,7 +306,7 @@ def cmd_add(args):
     if args.effort and allowed and args.effort not in allowed:
         raise Refused(f'Effort {args.effort} is outside the {args.role} policy: {", ".join(allowed)}')
     state['units'][args.unit] = {'objective': args.objective, 'role': args.role, 'depends': args.depends,
-                                 'effort': args.effort,
+                                 'effort': args.effort, 'requires': args.requires,
                                  'paths': args.paths, 'state': 'planned', 'attempts': 0, 'updated': now(),
                                  'note': ''}
     save(args.repo, args.program, state)
@@ -472,6 +484,9 @@ def cmd_verdict(args):
     head = json.loads(gh(args.repo, 'pr', 'view', str(unit['pr']), '--json', 'headRefOid'))['headRefOid']
     if head != args.head:
         raise Refused(f'PR #{unit["pr"]} head is {head[:7]}, not {args.head[:7]}; verify the current head')
+    lacking = [scope for scope in unit.get('requires', []) if scope not in args.scopes]
+    if args.verdict == 'verified' and lacking:
+        raise Refused(f'{args.unit} requires {", ".join(lacking)} evidence before it can be verified')
     state['ledger'].append({'pr': unit['pr'], 'head': head, 'verdict': args.verdict, 'scopes': args.scopes,
                             'evidence': args.evidence, 'at': now()})
     unit['head'] = head
@@ -491,6 +506,10 @@ def cmd_merge(args):
     gates = [g['id'] for g in state['gates'] if g['status'] == 'open' and args.unit in g['units']]
     if gates:
         raise Refused(f'Open owner decisions block merge: {", ".join(gates)}')
+    if state.get('merge_deploys') not in SAFE_MERGE_TARGETS:
+        raise Refused(f"Merging to {state['base']} deploys to {state.get('merge_deploys') or 'an unrecorded target'}; "
+                      'auto-merge needs merges that reach staging or nothing. Reconfigure releases, or record '
+                      '"merge_deploys" in .jfactory/coordination.json and start a new program')
     gh(args.repo, 'pr', 'merge', str(unit['pr']), '--auto', '--squash', '--match-head-commit', unit['head'])
     comment(args.repo, args.program, f"Queued protected auto-merge for `{args.unit}` (#{unit['pr']}) at "
                                      f"{unit['head'][:7]}.")
@@ -541,6 +560,8 @@ def main(argv=None):
     p.add_argument('--limit', type=int)
     p.add_argument('--standing', help='File with one standing order per line')
     p.add_argument('--repo-url')
+    p.add_argument('--merge-deploys', choices=['staging', 'none', 'production'],
+                   help='What merging to the base deploys; auto-merge requires staging or none')
     p.set_defaults(func=cmd_init)
     p = sub.add_parser('list', help='List open programs')
     p.set_defaults(func=cmd_list)
@@ -552,6 +573,8 @@ def main(argv=None):
     p.add_argument('--effort', help='Chosen by difficulty within the role policy, e.g. low, medium or high')
     p.add_argument('--depends', type=listing, default=[])
     p.add_argument('--paths', type=listing, default=[])
+    p.add_argument('--requires', type=listing, default=[],
+                   help='Evidence scopes a verified verdict must include, e.g. application,unit')
     p.set_defaults(func=cmd_add)
     p = sub.add_parser('brief', help='Check a task contract for required fields')
     p.add_argument('brief')

@@ -18,13 +18,13 @@ Read the pinned originals this adapts: [orchestrate](../vendor/pstack/skills/pot
 | --- | --- | --- |
 | `init --title --outcome [--standing FILE]` | Coordinator | Creates the program issue labelled `jfactory-program` with the model policy and standing orders, plus a Conductor sidebar section containing the coordinator workspace |
 | `list` | Anyone | Lists open program issues, for resuming |
-| `add <issue> <unit> --objective [--role] [--effort] [--depends] [--paths]` | Coordinator | Adds a planned unit with its role and difficulty-based effort |
+| `add <issue> <unit> --objective --requires SCOPES [--role] [--effort] [--depends] [--paths]` | Coordinator | Adds a planned unit with the evidence scopes that define verified, its role and difficulty-based effort |
 | `brief <file>` | Coordinator | Checks a task contract has every required field |
 | `launch <issue> <unit> --brief FILE [--dry-run]` | Coordinator | Creates the unit's Conductor workspace with the policy's agent and model, moves it into the program's sidebar section, after checking hold, concurrency limit, dependencies, open decisions, brief completeness, attempt limit, model availability and reviewer model family |
 | `report <issue> <unit> --state ...` | Worker | Posts a structured comment with its state, PR, head SHA, note or question |
 | `sync <issue>` | Coordinator | Folds worker reports, PR state and session status into the issue, voids verdicts on new heads and lists units ready to launch |
-| `verdict <issue> <unit> --head --verdict --scopes --evidence` | Coordinator | Records verification only if the head matches the PR's current head |
-| `merge <issue> <unit>` | Coordinator | Queues protected auto-merge pinned to the verified head, only with a `verified` verdict at that head and no open decisions |
+| `verdict <issue> <unit> --head --verdict --scopes --evidence` | Coordinator | Records verification only at the PR's current head; `verified` must include every required scope |
+| `merge <issue> <unit>` | Coordinator | Queues protected auto-merge pinned to the verified head, only with a `verified` verdict at that head, no open decisions, and a recorded `merge_deploys` of `staging` or `none` |
 | `gate add` / `gate resolve` | Coordinator | Records an owner decision and its answer; open decisions block launch and merge for their units |
 | `set <issue> <unit> --state` | Coordinator | Marks a unit blocked, failed or abandoned with a note |
 | `close <issue>` | Coordinator | Closes the program only when every unit is merged or abandoned |
@@ -68,7 +68,8 @@ State, once, before any worker starts:
 
 - The program objective and a countable done condition, for example "these three outcomes are merged, each with its required application evidence at the merged revision."
 - The units. One unit is one coherent objective delivered as one PR with its own evidence. Name dependencies and each unit's owned paths.
-- The concurrency limit (default three), the model policy, wall-clock or spend limits, and the merge/release policy already authorized for the repository.
+- Each unit's verification standard: its acceptance criteria and the evidence scopes that define verified (`add --requires`, such as `application,unit`). Application evidence comes from the PR preview or staging. Workers loop until the standard passes; the coordinator merges without asking again once it does.
+- The concurrency limit (default three), the model policy, wall-clock or spend limits, and what merging deploys (`init --merge-deploys` or `.jfactory/coordination.json`). `merge` refuses unless merges reach staging or nothing; production releases stay a deliberate owner action.
 
 Run the product interview for each substantial feature before its worker starts, reusing settled answers. A worker cannot interview the owner mid-flight without stalling, so unresolved product choices are settled here or recorded with `gate add`. Reversible preparation can proceed while the owner reviews the framing.
 

@@ -19,7 +19,7 @@ It connects four loops:
 
 You can give the agent a bounded outcome and let it work through routine implementation and verification without repeatedly saying "keep going." You stay involved in consequential product choices and customer feedback.
 
-The result distinguishes **what you decided, what the agent inferred, what exists, what was verified, and what you accepted**. Changes ship through a PR and default to protected squash auto-merge once the agreed verification and repository requirements pass. Missing proof keeps the PR open. Setup establishes whether merging also deploys.
+The result distinguishes **what you decided, what the agent inferred, what exists, what was verified, and what you accepted**. You agree what counts as verified before work starts. The agent works until that standard passes, then merges the PR automatically through protected squash auto-merge. Missing proof keeps the PR open. Merging deploys at most to staging; production releases happen only when you deliberately ask. Setup reconfigures or flags a repository whose merges release production.
 
 ## 2. How to use
 

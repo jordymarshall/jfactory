@@ -52,9 +52,9 @@ class CoordTest(unittest.TestCase):
         self.state.write_text(json.dumps(db))
 
     def start(self, *units, limit=2):
-        self.coord('init', '--title', 'Two features', '--limit', str(limit))
+        self.coord('init', '--title', 'Two features', '--limit', str(limit), '--merge-deploys', 'staging')
         for unit in units:
-            self.coord('add', '1', *unit)
+            self.coord('add', '1', *unit, *([] if '--requires' in unit else ['--requires', 'unit']))
 
     def test_launch_uses_policy_and_tells_worker_how_to_report(self):
         self.start(['a', '--objective', 'Save items'])
@@ -89,7 +89,7 @@ class CoordTest(unittest.TestCase):
         self.assertEqual(len(self.db()['workspaces']), 1)
 
     def test_worker_report_sync_verdict_and_merge_gate_on_current_head(self):
-        self.start(['a', '--objective', 'x'])
+        self.start(['a', '--objective', 'x', '--requires', 'application'])
         self.coord('launch', '1', 'a', '--brief', str(self.brief))
         self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
         self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111', '--note', 'done')
@@ -153,7 +153,7 @@ class CoordTest(unittest.TestCase):
         self.coord('set', '1', 'a', '--state', 'abandoned', '--note', 'replanned')
         self.coord('sync', '1')
         self.assertEqual(self.program_state()['units']['a']['state'], 'abandoned')
-        self.coord('add', '1', 'b', '--objective', 'y')
+        self.coord('add', '1', 'b', '--objective', 'y', '--requires', 'static')
         self.assertIn('not merged or abandoned: b', self.coord('close', '1', ok=False))
         self.coord('set', '1', 'b', '--state', 'abandoned')
         self.coord('close', '1')
@@ -162,18 +162,36 @@ class CoordTest(unittest.TestCase):
     def test_effort_outside_policy_is_refused(self):
         self.start(['a', '--objective', 'x'])
         self.assertIn('outside the implement policy', self.coord('add', '1', 'b', '--objective', 'y', '--effort', 'max',
-                                                                 ok=False))
+                                                                 '--requires', 'unit', ok=False))
         self.assertIn('outside the implement policy', self.coord('launch', '1', 'a', '--brief', str(self.brief),
                                                                  '--effort', 'max', ok=False))
+
+    def test_verified_needs_required_scopes_and_merge_needs_non_production_target(self):
+        self.coord('init', '--title', 'Prod merges')
+        self.assertIn('--requires must name', self.coord('add', '1', 'a', '--objective', 'x', ok=False))
+        self.coord('add', '1', 'a', '--objective', 'x', '--requires', 'application,unit')
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.coord('sync', '1')
+        self.assertIn('requires application evidence', self.coord('verdict', '1', 'a', '--head', 'aaa1111', '--verdict',
+                                                               'verified', '--scopes', 'unit', '--evidence', 'x',
+                                                               ok=False))
+        self.coord('verdict', '1', 'a', '--head', 'aaa1111', '--verdict', 'verified', '--scopes', 'unit,application',
+                   '--evidence', 'x')
+        self.assertIn('unrecorded target', self.coord('merge', '1', 'a', ok=False))
+        self.assertNotIn('merged', self.db())
+        self.assertIn('deploys to: **unknown**', self.db()['issues']['1']['body'])
 
     def test_repository_policy_override(self):
         (self.tmp / '.jfactory').mkdir()
         (self.tmp / '.jfactory' / 'coordination.json').write_text(json.dumps(
-            {'limit': 5, 'roles': {'implement': {'agent': 'codex', 'model': 'gpt-5.6-sol', 'effort': 'high',
+            {'limit': 5, 'merge_deploys': 'production', 'roles': {'implement': {'agent': 'codex', 'model': 'gpt-5.6-sol', 'effort': 'high',
                                                   'efforts': ['high']}}}))
-        self.start(['a', '--objective', 'x'], limit=0)
+        self.coord('init', '--title', 'Override')
+        self.coord('add', '1', 'a', '--objective', 'x', '--requires', 'unit', '--effort', 'high')
         state = self.program_state()
-        self.assertEqual(state['limit'], 5)
+        self.assertEqual((state['limit'], state['merge_deploys']), (5, 'production'))
         self.coord('launch', '1', 'a', '--brief', str(self.brief))
         self.assertEqual(self.db()['workspaces'][0]['model'], 'gpt-5.6-sol')
 
