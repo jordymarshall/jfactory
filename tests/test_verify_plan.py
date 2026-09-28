@@ -83,6 +83,13 @@ class PlanTest(unittest.TestCase):
             self.assertFalse(verify_plan.plan([path], example)['static_only'], path)
         self.assertTrue(verify_plan.plan(['docs/guide.md'], example)['static_only'])
 
+    def test_objective_is_found_in_visible_prose(self):
+        for body in ('## Objective\nSave briefs for returning users', 'Objective: https://github.com/o/r/issues/22',
+                     '```\ncode\n```\n## Objective\nSave briefs for returning users',
+                     '<!-- note --> Objective: save briefs for returning users',
+                     '**Objective:** save briefs for returning users'):
+            self.assertTrue(verify_plan.states_objective(body), body)
+
     def test_glob_semantics(self):
         self.assertTrue(verify_plan.matches('a/b/c.md', ['**/*.md']))
         self.assertTrue(verify_plan.matches('c.md', ['**/*.md']))
@@ -172,7 +179,12 @@ class GateTest(unittest.TestCase):
         self.assertIn('does not state its objective', self.run_script('check', '--pr', '5', code=1))
         for empty in ('## Objective\n\n## Summary\nStuff', 'Objective:', 'Objective: tbd',
                       '```\n## Objective\nSave briefs for returning users\n```\n',
-                      '<!--\nObjective: save briefs for returning users\n-->'):
+                      '<!--\nObjective: save briefs for returning users\n-->',
+                      '```\n## Objective\nSave briefs for returning users\n',
+                      '<!--\n## Objective\nSave briefs for returning users\n',
+                      '````\n```\n## Objective\nSave briefs for returning users\n```\n````\n',
+                      '    ## Objective\n    Save briefs for returning users\n',
+                      'Intro <!-- Objective: save briefs for returning users -->'):
             db['prs']['5']['body'] = empty
             self.state.write_text(json.dumps(db))
             self.assertIn('does not state its objective', self.run_script('check', '--pr', '5', code=1), empty)

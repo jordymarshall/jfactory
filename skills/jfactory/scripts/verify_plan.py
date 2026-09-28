@@ -185,18 +185,65 @@ def same_family_refusal(verifier, implementer, allowed):
     return None
 
 
-OBJECTIVE_RE = re.compile(r'^[ \t]*(?:#+[ \t]*objective\b[^\n]*\n(?P<section>(?:(?![ \t]*#)[^\n]*\n?)*)'
-                          r'|\**objective\**[ \t]*:[ \t]*(?P<line>[^\n]*))', re.I | re.M)
+OBJECTIVE_HEADING = re.compile(r'^ {0,3}#{1,6}[ \t]+objective\b', re.I)
+OBJECTIVE_LINE = re.compile(r'^ {0,3}\**objective\**[ \t]*:[ \t]*(.*)$', re.I)
+FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
+HEADING = re.compile(r'^ {0,3}#{1,6}(?:[ \t]|$)')
+
+
+def visible_lines(body):
+    """Lines GitHub shows as prose: code fences, indented code and HTML comments are dropped.
+
+    Follows CommonMark: a fence closes only with the same character at least as long as the opener,
+    and an unclosed fence or comment hides the rest of the document.
+    """
+    lines, fence, comment = [], None, False
+    for line in (body or '').splitlines():
+        if comment:
+            if '-->' in line:
+                comment = False
+                line = line.split('-->', 1)[1]
+            else:
+                continue
+        if fence:
+            closing = FENCE.match(line)
+            if closing and closing.group(1)[0] == fence[0] and len(closing.group(1)) >= len(fence) \
+                    and not line.strip().lstrip(fence[0]):
+                fence = None
+            continue
+        opening = FENCE.match(line)
+        if opening:
+            fence = opening.group(1)
+            continue
+        if line.startswith('    ') or line.startswith('\t'):
+            continue  # indented code block
+        while '<!--' in line:
+            before, rest = line.split('<!--', 1)
+            if '-->' in rest:
+                line = before + rest.split('-->', 1)[1]
+            else:
+                line, comment = before, True
+        lines.append(line)
+    return lines
 
 
 def states_objective(body):
-    """A PR states its objective in a non-empty `Objective` section or an `Objective:` line with content."""
-    # Only visible text counts: an objective inside a code fence or an HTML comment is not stated.
-    visible = re.sub(r'<!--.*?-->', '', body or '', flags=re.S)
-    visible = re.sub(r'^[ \t]*(```|~~~).*?^[ \t]*\1[^\n]*$', '', visible, flags=re.S | re.M)
-    for match in OBJECTIVE_RE.finditer(visible + '\n'):
-        text = (match.group('section') or match.group('line') or '').strip()
-        if len(re.sub(r'\s+', ' ', text)) >= 10:
+    """A PR states its objective in visible prose: a non-empty `Objective` section or `Objective:` line."""
+    lines = visible_lines(body)
+    for i, line in enumerate(lines):
+        match = OBJECTIVE_LINE.match(line)
+        if match:
+            text = match.group(1)
+        elif OBJECTIVE_HEADING.match(line):
+            section = []
+            for following in lines[i + 1:]:
+                if HEADING.match(following):
+                    break
+                section.append(following)
+            text = ' '.join(section)
+        else:
+            continue
+        if len(re.sub(r'\s+', ' ', text).strip()) >= 10:
             return True
     return False
 
