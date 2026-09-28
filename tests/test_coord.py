@@ -141,7 +141,7 @@ class CoordTest(unittest.TestCase):
         self.coord('launch', '1', 'r', '--brief', str(self.brief))
         verifier = self.db()['workspaces'][-1]
         self.assertEqual((verifier['agent'], verifier['model'], verifier['effort'], verifier['fast']),
-                         ('codex', 'gpt-6-sol', 'low', True))
+                         ('codex', 'gpt-6-luna', 'low', True))
         for _ in range(2):
             self.coord('set', '1', 'r', '--state', 'failed')
             self.coord('launch', '1', 'r', '--brief', str(self.brief))
@@ -204,7 +204,18 @@ class CoordTest(unittest.TestCase):
         self.coord('sync', '1')
         self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on', 'a')
         verifier = self.db()['workspaces'][-1]
-        self.assertEqual((verifier['agent'], verifier['model']), ('claude', 'opus-5-5-1m'))
+        self.assertEqual((verifier['agent'], verifier['model'], verifier['effort'], verifier['fast']),
+                         ('claude', 'opus-5-5-1m', 'low', False))
+
+    def test_verifier_fallback_holds_rather_than_verify_opus_work_with_opus(self):
+        self.start(['a', '--objective', 'x'], ['r', '--objective', 'verify a', '--role', 'verify', '--depends', 'a'],
+                   limit=3)
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.coord('sync', '1')
+        self.assertIn('same agent family', self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on', 'a',
+                                                      '--fallback', '--reason', 'Codex weekly 95%', ok=False))
 
     def test_effort_outside_policy_is_refused(self):
         self.start(['a', '--objective', 'x'])

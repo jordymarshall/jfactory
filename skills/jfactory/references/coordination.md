@@ -40,7 +40,7 @@ Each unit has a role. The default policy is the owner's:
 | Role | Agent and model | Use |
 | --- | --- | --- |
 | `implement` | Claude `opus-5-5-1m`; fallback Codex `gpt-6-astra` | Features, fixes, prototypes and every other code change |
-| `verify` | Codex `gpt-6-sol`, fast mode; fallback Codex `gpt-6-astra`; Claude `opus-5-5-1m` when the implementer ran on Codex | Verification, review and PR follow-through for another unit, always from a different model family than its implementer |
+| `verify` | Codex `gpt-6-luna`, fast mode; Claude `opus-5-5-1m` at low effort when the implementer ran on Codex or as the fallback when Codex has no usage | Verification, review and PR follow-through for another unit, always from a different model family than its implementer |
 
 These follow [model selection](models.md). Use `launch --fallback --reason "<usage reading>"` only when the primary has no usage remaining; the reason is recorded on the unit. The verifier's family switch happens automatically.
 
@@ -113,7 +113,7 @@ Before the first launch, confirm the base branch contains the jfactory adoption 
 
 Pilot one unit from contract to verified PR before launching the rest when the unit shape is new. Correct the contract and verification recipe from what the pilot reveals. For near-identical cheap units, the first unit is the pilot.
 
-Before each launch batch, check remaining usage under [model selection](models.md). Use `launch --dry-run` to review the exact message, then `launch`. It records the workspace link and session on the unit and posts a launch comment. Use `conductor session create` only for an agent that should share an existing workspace, such as a same-checkout reviewer; two writers in one checkout are not isolated. Refill free slots as units finish instead of waiting for a whole batch.
+Before each launch batch, run the usage reader under [model selection](models.md) and pass `--fallback --reason` with its reading when it chooses a fallback. Use `launch --dry-run` to review the exact message, then `launch`. It records the workspace link and session on the unit and posts a launch comment. Use `conductor session create` only for an agent that should share an existing workspace, such as a same-checkout reviewer; two writers in one checkout are not isolated. Refill free slots as units finish instead of waiting for a whole batch.
 
 ## 5. Worker protocol
 
@@ -139,10 +139,13 @@ A worker question becomes an open decision at `sync`. Answer it from recorded de
 A worker's report is a claim. At the PR's current head SHA, inspect the criteria, the checks that ran, the application evidence and whether the assertions prove the claim. Record the result with `verdict`. CI status is an input, not a verdict. A new head voids the previous verdict at the next `sync`.
 
 Every `implement` unit that produces a PR gets a `verify` unit that depends on it, launched with `--stack-on` so it checks out the PR branch once the worker reports `in-review`. Its contract asks it to re-run the acceptance checks and application journey, review the diff, and follow the PR through CI and review comments. It runs `verify_plan.py plan` for the PR, reports a recommended verdict with evidence and does not change product code; defects become a fix task for the original worker. Choose its effort by risk. The coordinator inspects that evidence and records the `verdict`.
+It runs on GPT Luna 6 in fast mode, or Opus 5.5 at low effort when the implementer ran on Codex; see the verify tier in [model selection](models.md). Archive the verifier's workspace once its verdict is recorded.
 
 ## 8. Integrate continuously
 
 Land verified units as they finish rather than at the end. Follow [PR delivery](delivery.md), [worktree coordination](worktrees.md#deliver-and-integrate) and [auto-merge setup](auto-merge.md). `merge` queues protected auto-merge pinned to the verified head. For overlapping units, merge one at a time. After each merge, message dependent workers to update from the base, rerun affected checks and report the new head. A conflict-free merge is not proof of combined behavior.
+
+Archive each unit's workspace as soon as it is finished rather than at program close, so the sidebar shows only live work. Archive a workspace when its unit is `merged` or `done`, or `abandoned` with its work pushed or intentionally discarded, and its sessions are idle. Use `conductor workspace archive <workspace id>` and record the archive in the program record. Conductor's CLI archives workspaces; it does not delete them. Archived workspaces stay listed under `conductor workspace list --include-archived`. Archive only workspaces this program created. Leave the owner's own workspaces and other coordinators' workspaces alone, even when they look idle.
 
 The coordinator does not force-push, retarget or close another worker's PR. Those actions are worker tasks or owner decisions.
 
@@ -158,7 +161,7 @@ The coordinator does not force-push, retarget or close another worker's PR. Thos
 
 Ask the owner only for product or preference decisions that no experiment settles, irreversible or unauthorized actions, standing orders that contradict observed reality, and dead ends that survived a replan. Batch these questions and keep routine retries, CI triage and merge mechanics out of them.
 
-Confirm the done condition on the merged base, including required application evidence, then run `close`. Archive only workspaces whose work is pushed or intentionally abandoned. Report the done condition, units and PR links, verdicts at merged SHAs, what was abandoned and why, remaining decisions and the program issue. Add recurring corrections to the standing orders template or an enforced check.
+Confirm the done condition on the merged base, including required application evidence, then run `close`. Before reporting, list `conductor workspace list --mine --repo <repository> --json` and archive any remaining workspace this program created whose unit is `merged`, `done` or `abandoned` with its work pushed or intentionally discarded, including verifier and probe sessions. Then delete the program's section with `conductor section delete <section id>`. Ask before archiving the coordinator's own workspace, which the owner may still be reading. Leave the owner's other workspaces and other coordinators' workspaces alone. Report the done condition, units and PR links, verdicts at merged SHAs, what was abandoned and why, remaining decisions and the program issue. Add recurring corrections to the standing orders template or an enforced check.
 
 ## What this does not provide
 

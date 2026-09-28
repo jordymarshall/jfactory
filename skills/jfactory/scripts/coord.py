@@ -34,19 +34,20 @@ MAX_ATTEMPTS = 3
 BRIEF_FIELDS = ['OBJECTIVE', 'DECISIONS', 'SCOPE', 'CONTEXT', 'ACCEPTANCE', 'VERIFY', 'SHARED',
                 'LIMITS', 'FORBIDDEN', 'DELIVERY', 'REPORT']
 
-# Owner policy (see references/models.md): Opus builds; GPT-6 Sol in fast mode verifies, reviews and
+# Owner policy (see references/models.md): Opus builds; GPT Luna 6 in fast mode verifies, reviews and
 # handles PRs. `fallback` is used only when the primary has no usage left. A verifier always comes from
 # another family than the unit's actual implementer, so `alternate` covers Codex-implemented units.
+# Opus runs verification at low effort only (`pin_effort`).
 DEFAULT_POLICY = {
     'limit': 3,
     'roles': {
         'implement': {'agent': 'claude', 'model': 'opus-5-5-1m', 'effort': 'medium',
                       'efforts': ['low', 'medium', 'high'], 'fast': False,
                       'fallback': {'agent': 'codex', 'model': 'gpt-6-astra', 'fast': False}},
-        'verify': {'agent': 'codex', 'model': 'gpt-6-sol', 'effort': 'medium',
+        'verify': {'agent': 'codex', 'model': 'gpt-6-luna', 'effort': 'medium',
                    'efforts': ['low', 'medium', 'high'], 'fast': True,
-                   'fallback': {'agent': 'codex', 'model': 'gpt-6-astra', 'fast': False},
-                   'alternate': {'agent': 'claude', 'model': 'opus-5-5-1m', 'fast': False}},
+                   'fallback': {'agent': 'claude', 'model': 'opus-5-5-1m', 'fast': False, 'pin_effort': 'low'},
+                   'alternate': {'agent': 'claude', 'model': 'opus-5-5-1m', 'fast': False, 'pin_effort': 'low'}},
     },
 }
 POLICY_FILE = Path('.jfactory/coordination.json')
@@ -396,7 +397,7 @@ def cmd_launch(args):
             raise Refused(f"The {unit['role']} policy has no fallback")
         role.update(role['fallback'])
         choice = f'fallback: {args.reason}'
-    role['effort'] = unit.get('effort') or role.get('effort')
+    role['effort'] = role.pop('pin_effort', None) or unit.get('effort') or role.get('effort')
     for key in ('agent', 'model', 'effort'):
         if getattr(args, key):
             role[key] = getattr(args, key)
@@ -651,7 +652,7 @@ def main(argv=None):
     p.add_argument('--verdict', required=True, choices=sorted(VERDICTS))
     p.add_argument('--scopes', type=listing, required=True)
     p.add_argument('--evidence', required=True)
-    p.add_argument('--verifier', help='agent/model that verified, e.g. codex/gpt-6-sol')
+    p.add_argument('--verifier', help='agent/model that verified, e.g. codex/gpt-6-luna')
     p.add_argument('--features', type=listing, default=[])
     p.add_argument('--full', action='store_true')
     p.set_defaults(func=cmd_verdict)
