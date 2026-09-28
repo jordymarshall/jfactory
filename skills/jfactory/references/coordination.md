@@ -16,11 +16,11 @@ Read the pinned originals this adapts: [orchestrate](../vendor/pstack/skills/pot
 
 | Command | Who | What it does |
 | --- | --- | --- |
-| `init --title --outcome [--standing FILE]` | Coordinator | Creates the program issue labelled `jfactory-program` with the model policy and standing orders |
+| `init --title --outcome [--standing FILE]` | Coordinator | Creates the program issue labelled `jfactory-program` with the model policy and standing orders, plus a Conductor sidebar section containing the coordinator workspace |
 | `list` | Anyone | Lists open program issues, for resuming |
 | `add <issue> <unit> --objective [--role] [--depends] [--paths]` | Coordinator | Adds a planned unit |
 | `brief <file>` | Coordinator | Checks a task contract has every required field |
-| `launch <issue> <unit> --brief FILE [--dry-run]` | Coordinator | Creates the unit's Conductor workspace with the policy's agent and model, after checking hold, concurrency limit, dependencies, open decisions, brief completeness, attempt limit, model availability and reviewer model family |
+| `launch <issue> <unit> --brief FILE [--dry-run]` | Coordinator | Creates the unit's Conductor workspace with the policy's agent and model, moves it into the program's sidebar section, after checking hold, concurrency limit, dependencies, open decisions, brief completeness, attempt limit, model availability and reviewer model family |
 | `report <issue> <unit> --state ...` | Worker | Posts a structured comment with its state, PR, head SHA, note or question |
 | `sync <issue>` | Coordinator | Folds worker reports, PR state and session status into the issue, voids verdicts on new heads and lists units ready to launch |
 | `verdict <issue> <unit> --head --verdict --scopes --evidence` | Coordinator | Records verification only if the head matches the PR's current head |
@@ -51,11 +51,16 @@ A repository overrides it in `.jfactory/coordination.json`, for example `{"limit
 | Moment | What the owner does |
 | --- | --- |
 | Framing | Agrees the outcomes, acceptance criteria, units, limit and policy. Answers product questions before workers start. |
-| While running | Opens the program issue to see units, PRs, verdicts and open decisions. Answers decisions in the coordinator's chat or as issue comments. Can open any worker's workspace from its link. |
+| While running | Opens the program issue to see units, PRs, verdicts and open decisions. Answers decisions in the coordinator's chat or as issue comments. |
+| Direct feedback | Opens any worker from the program's sidebar section and messages it, tries its preview, or comments on its PR. The worker applies feedback within its unit and reports it as an owner decision; the coordinator records it and relays it to affected units. Feedback that changes scope comes back as a decision instead of silent expansion. |
 | Stop | Adds the `jfactory-hold` label. `launch` refuses, and each worker is told at its next report to stop at a safe boundary and push. Removing the label resumes. |
 | Results | Receives each PR with its walkthrough and evidence, and the coordinator's checkpoint reports. Tries the result and gives product feedback. |
 
 GitHub usually does not notify you about actions taken with your own token, and agents typically use it. Do not rely on issue notifications; the coordinator's chat reports are the active channel, and the issue is the dashboard.
+
+### Why separate workspaces instead of sessions
+
+Sessions in one workspace share its checkout, branch, running processes and ports. Two implementing sessions would overwrite each other's files, produce one mixed branch and PR, and contend for the same dev server. A workspace per unit gives each worker its own checkout, branch, PR and cloud machine, so it can run and verify the app independently. Use an extra session only for an agent that should read the same checkout, such as a reviewer or explainer that does not write.
 
 ## 1. Frame the program with the owner
 
@@ -114,8 +119,9 @@ A worker whose task contract names a program issue:
 1. Reports `running` when it starts.
 2. Follows the normal jfactory loop for its unit only: objective contract, implementation, verification and a ready-for-review PR linked to the program issue. It does not queue auto-merge; the coordinator does after independent verification.
 3. Reports `in-review` with the PR, head SHA and criterion results after each push that changes the PR, `blocked` with `--question` when it needs a decision, or `failed` with the reason.
-4. Continues independent in-scope work while a question is open, and does not edit the issue body, launch workspaces or touch other units' branches.
-5. Stops at a safe boundary, pushes and reports when a report prints `PROGRAM ON HOLD`, or when its limits are reached.
+4. Applies owner feedback given directly in its workspace within its unit, and includes it as an owner decision in the next report. Feedback that changes scope or affects other units is reported as `blocked` with a question rather than acted on alone.
+5. Continues independent in-scope work while a question is open, and does not edit the issue body, launch workspaces or touch other units' branches.
+6. Stops at a safe boundary, pushes and reports when a report prints `PROGRAM ON HOLD`, or when its limits are reached.
 
 ## 6. Monitor by evidence, not by interrupting
 

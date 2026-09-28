@@ -30,6 +30,12 @@ if tool == 'conductor':
         db['workspaces'].append({'name': opt('--name'), 'branch': opt('--branch'), 'agent': opt('--agent'),
                                  'model': opt('--model'), 'message': Path(opt('--message-file')).read_text()})
         done({'id': f'w{n}', 'deepLink': f'conductor://workspace?id=w{n}', 'session': {'id': f's{n}'}})
+    if args[:2] == ['section', 'create']:
+        db['section'] = args[2]
+        done({'section': {'id': 'sec1', 'name': args[2], 'workspaceIds': []}})
+    if args[:2] == ['workspace', 'move']:
+        db.setdefault('moves', []).append([a for a in args[2:] if a != '--section'])
+        done()
     if args[:2] == ['session', 'status']:
         done({'status': db.get('sessions', {}).get(args[2], 'working')})
 if tool == 'gh':

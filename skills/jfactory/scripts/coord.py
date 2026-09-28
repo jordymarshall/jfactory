@@ -100,7 +100,9 @@ def render(state):
     for uid, unit in state['units'].items():
         pr = f"#{unit['pr']}" if unit.get('pr') else ''
         link = f"[open]({unit['link']})" if unit.get('link') else ''
-        model = f"{unit['role']}: {unit.get('agent', '')}/{unit.get('model', '')}"
+        planned = state['policy'].get(unit['role'], {})
+        model = f"{unit['role']}: {unit.get('agent') or planned.get('agent', '')}/" \
+                f"{unit.get('model') or planned.get('model', '')}"
         lines.append(f"| {uid} | {unit['state']} | {model} | {', '.join(unit['depends'])} | {pr} | "
                      f"{(unit.get('head') or '')[:7]} | {link} | {cell(unit.get('note'))} |")
     lines += ['', '## Verification ledger', '', '| PR | Head | Verdict | Scopes | Evidence | At |',
@@ -248,9 +250,25 @@ def cmd_init(args):
              'repo_url': args.repo_url or f'https://github.com/{args.repo}', 'limit': args.limit or pol['limit'],
              'policy': pol['roles'], 'standing': standing, 'units': {}, 'ledger': [], 'gates': [],
              'created': now()}
+    state['section'], note = make_section(args.title)
     url = gh(args.repo, 'issue', 'create', '--title', f'Program: {args.title}', '--label', PROGRAM_LABEL,
              '--body-file', body_file(render(state))).strip()
     print(url)
+    print(note)
+
+
+def make_section(title):
+    # Sidebar grouping is a convenience; a failure must not block the program.
+    try:
+        created = run_json('conductor', 'section', 'create', f'Program: {title}', '--json')
+        section = (created.get('section') or created)['id']
+    except (Refused, KeyError, TypeError, ValueError) as error:
+        return None, f'Sidebar section not created: {error}'
+    try:
+        run('conductor', 'workspace', 'move', '--section', section)
+        return section, 'Created a Conductor sidebar section and moved this coordinator workspace into it.'
+    except Refused as error:
+        return section, f'Created a sidebar section; this workspace was not moved: {error}'
 
 
 def cmd_list(args):
@@ -309,6 +327,7 @@ Report state changes from the repository root; each report is a comment the coor
   python3 {script} report --repo {repo} {number} {uid} --state running --note "started"
   python3 {script} report --repo {repo} {number} {uid} --state in-review --pr <number> --head <sha> --note "criteria results and evidence links"
   python3 {script} report --repo {repo} {number} {uid} --state blocked --question "decision you need"
+The owner may message you directly. Follow their feedback within this unit, and include it as an owner decision in the next report's --note so the coordinator can record it and relay it to other units. If it changes this unit's scope or affects other units, report --state blocked with a --question instead of expanding scope yourself.
 If a report says the program is on hold, stop at a safe boundary, push your work and report.
 """
 
@@ -375,6 +394,11 @@ def cmd_launch(args):
                  'session': session.get('id') or created.get('sessionId'),
                  'link': session.get('deepLink') or workspace.get('deepLink') or created.get('deepLink'),
                  'note': f'attempt {unit["attempts"] + 1}'})
+    if state.get('section') and unit['workspace']:
+        try:
+            run('conductor', 'workspace', 'move', unit['workspace'], '--section', state['section'])
+        except Refused as error:
+            unit['note'] += f'; not moved to sidebar section: {error}'
     save(args.repo, args.program, state)
     comment(args.repo, args.program, f"Launched `{args.unit}` on {role['agent']}/{role['model']}: {unit['link']}")
     print(f"Launched {args.unit}: {unit['link']}")

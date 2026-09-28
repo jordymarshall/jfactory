@@ -94,7 +94,7 @@ The coordinator agrees outcomes and open decisions with you, then opens one GitH
 
 A bundled tool, `coord.py`, enforces the mechanics. It refuses launches beyond the concurrency limit, with incomplete briefs, unmerged dependencies, open decisions or unavailable models. It refuses merges without a verified verdict at the current commit.
 
-Your role: agree outcomes up front, watch the issue, answer decisions in chat or on the issue, and add the `jfactory-hold` label to stop new launches and pause workers. The default model policy is Claude Opus for features, Claude Sonnet for small changes and prototypes, and Codex for independent review. Override it in `.jfactory/coordination.json`. See the [coordination procedure](skills/jfactory/references/coordination.md).
+Your role: agree outcomes up front, watch the issue, answer decisions in chat or on the issue, and add the `jfactory-hold` label to stop new launches and pause workers. The coordinator and its workers are grouped in one Conductor sidebar section. Open any worker to give it feedback directly; it reports that feedback so the coordinator can relay it to affected features. The default model policy is Claude Opus for features, Claude Sonnet for small changes and prototypes, and Codex for independent review. Override it in `.jfactory/coordination.json`. See the [coordination procedure](skills/jfactory/references/coordination.md).
 
 This runs only while an agent uses it. jfactory has no background supervisor, and parallel workspaces multiply cost, so it starts them only when you ask.
 

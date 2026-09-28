@@ -58,10 +58,14 @@ class CoordTest(unittest.TestCase):
 
     def test_launch_uses_policy_and_tells_worker_how_to_report(self):
         self.start(['a', '--objective', 'Save items'])
+        self.assertIn('| a | planned | implement: claude/opus-5-5-1m |', self.db()['issues']['1']['body'])
         self.coord('launch', '1', 'a', '--brief', str(self.brief))
         workspace = self.db()['workspaces'][0]
         self.assertEqual((workspace['agent'], workspace['model'], workspace['branch']), ('claude', 'opus-5-5-1m', 'main'))
         self.assertIn('report --repo o/r 1 a --state in-review', workspace['message'])
+        self.assertIn('owner decision', workspace['message'])
+        self.assertEqual(self.db()['section'], 'Program: Two features')
+        self.assertEqual(self.db()['moves'], [['sec1'], ['w1', 'sec1']])
         unit = self.program_state()['units']['a']
         self.assertEqual((unit['state'], unit['session'], unit['attempts']), ('running', 's1', 1))
 
