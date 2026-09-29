@@ -184,7 +184,12 @@ class SetupCheckTest(unittest.TestCase):
         (self.root / '.jfactory' / 'smoke.json').write_text(json.dumps({'local': receipt}))
         self.assertIn('(failed at doctor: `npm run doctor` exited 1)', self.check('--remote', '--repo', 'o/r', code=1))
         (self.root / '.jfactory' / 'smoke.json').write_text(json.dumps({'local': {'ok': True, 'fresh': False}}))
-        self.assertIn('WARN: Target local started only in an existing checkout', self.check('--remote', '--repo', 'o/r'))
+        self.assertIn('FAIL: Target local started only in an existing checkout',
+                      self.check('--remote', '--repo', 'o/r', code=1))
+        states = {**READY, 'Verification': ('configured but unverified', 'fresh workspace pending')}
+        (self.root / '.jfactory' / 'setup.md').write_text(record(states=states))
+        self.assertIn('WARN: Target local started only in an existing checkout', self.check('--remote', '--repo', 'o/r', code=3))
+        (self.root / '.jfactory' / 'setup.md').write_text(record())
         (self.root / '.jfactory' / 'smoke.json').write_text(json.dumps(
             {'local': {'ok': True, 'fresh': True, 'commit': 'abcdef1234', 'at': '2026-09-29T00:00:00Z'}}))
         self.assertIn('PASS: Target local started in a fresh workspace at abcdef1', self.check('--remote', '--repo', 'o/r'))

@@ -197,7 +197,7 @@ def check_targets(root, config, report, states):
                        + f'; run `verify_plan.py smoke --target {name} --fresh --record .jfactory/smoke.json` '
                          'in a new workspace')
         elif not receipt.get('fresh'):
-            report.add('WARN', f'Target {name} started only in an existing checkout; rerun smoke with --fresh in a new '
+            report.add(level, f'Target {name} started only in an existing checkout; rerun smoke with --fresh in a new '
                                'workspace so a verifier\'s workspace is known to work')
         else:
             report.add('PASS', f'Target {name} started in a fresh workspace at {receipt.get("commit", "")[:7]} '
