@@ -47,7 +47,7 @@ You stay in charge of three things: what gets built, product decisions the agent
 6. **PR and plan.** It opens a PR. `verify_plan.py` reads the changed files and decides:
    - **docs only:** static checks;
    - **low-risk areas:** CI only;
-   - **high-risk areas** (anything users see, data, auth, money, security, agent instructions): a second opinion;
+   - **high-risk areas** (anything users see, data, auth, money, security, tests, agent instructions): a second opinion;
    - **files the map doesn't cover:** CI fails until the PR maps them, so nothing falls back to checking every feature.
 
    Each PR runs only the suites and journeys of the areas it touched. 🔒 `verify_plan.py ci` runs exactly the planned suites.
@@ -239,14 +239,15 @@ Running `verify_plan.py plan` on a PR decides what it needs:
 | The PR changes | What's required |
 | --- | --- |
 | Only files marked static (such as `docs/**`) | Static checks only; no independent verifier |
-| Only low-risk features (`"verify": "ci"`) | Their CI suites; no independent verifier |
+| Only low-risk features (`"verify": "ci"`), with no screens, tests or agent instructions changed | Their CI suites; no independent verifier |
 | Any high-risk feature (`"verify": "independent"`, the default) | Its recipe and CI suites, plus a verdict from another model family |
 | Any file the map doesn't cover, or the gate itself (`.jfactory/`, `.github/workflows/`, `.github/rulesets/`) | Everything: full verification of every feature |
 
 **Verification by risk.** Each feature area in the map has a risk level, which you confirm at setup.
 
 - **High-risk areas get a second-model check:** anything users see (product and UX), stored data, sign-in and permissions, payments, migrations, security, agent instructions, and the scripts that enforce the rules.
-- **Low-risk areas need only passing CI:** internal refactors covered by tests, test helpers, and small internal tools.
+- **Low-risk areas need only passing CI:** internal refactors covered by tests and small internal tools.
+- **Always reviewed, whatever the map says:** areas with screens users see, and any change to tests or agent instructions. A PR can't weaken a screen, a test or an instruction with only CI watching.
 - **Mixed changes take the stricter level.**
 - **Nobody can quietly downgrade an area.** The level is read from the main branch, so a PR can't lower its own. Changing the map itself always needs full verification.
 - **When unsure, the level is high-risk.**

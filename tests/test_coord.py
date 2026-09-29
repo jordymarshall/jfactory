@@ -417,9 +417,9 @@ class CoordTest(unittest.TestCase):
                                                  'codex/gpt-6-luna', ok=False))
 
     def test_low_risk_unit_merges_on_ci_without_a_verdict(self):
-        self.start(['t', '--objective', 'Add tests'], ['a', '--objective', 'Feature'])
-        config = {'features': {'tests': {'paths': ['tests/**'], 'verify': 'ci'}, 'app': {'paths': ['src/**']}}}
-        for unit, number, files in (('t', '7', ['tests/test_x.py']), ('a', '8', ['src/x.py', 'tests/test_x.py'])):
+        self.start(['t', '--objective', 'Add lint rules'], ['a', '--objective', 'Feature'])
+        config = {'features': {'lint': {'paths': ['lint/**'], 'verify': 'ci'}, 'app': {'paths': ['src/**']}}}
+        for unit, number, files in (('t', '7', ['lint/x.py']), ('a', '8', ['src/x.py', 'lint/x.py'])):
             self.coord('launch', '1', unit, '--brief', str(self.brief))
             prs = self.db()['prs']
             prs[number] = {'state': 'OPEN', 'headRefOid': f'{unit}' * 7, 'headRefName': f'feat/{unit}', 'files': files}

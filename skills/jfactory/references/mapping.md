@@ -83,7 +83,7 @@ Then prove it in the place that matters: a new workspace (for Conductor, a new c
 
 ## 8. Set risk levels
 
-Give every feature `"verify": "independent"` or `"ci"` using the [verification contract](verification.md#change-aware-verification-and-the-merge-gate), and confirm them with the owner.
+Give every feature `"verify": "independent"` or `"ci"` using the [verification contract](verification.md#change-aware-verification-and-the-merge-gate), and confirm them with the owner. Screens users see, tests and agent instructions always get the independent verifier, so mark those features `independent`; `ci` is for code that has none of them. Mark a feature with screens but no journey suite yet `"screens": true`.
 
 There is no default time limit. Precision comes from the map plus recorded coverage, and speed from parallel jobs, so a PR runs what its change needs without trading away checks. The one structural rule, enforced by `audit`, is that journey suites never run on every PR: `always_suites` and `static_suites` contain no suite with a `target`. If the owner wants a cap anyway, show the measured numbers (each feature's plan, a shared-code change's plan and the parallel wait) and record their choice as `pr_budget_minutes`. `audit` then warns about changes over it; it never skips a required check.
 
