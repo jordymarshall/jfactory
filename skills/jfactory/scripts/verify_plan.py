@@ -113,11 +113,19 @@ def plan(files, config):
     else:
         level = 'static'
     needs = level == 'independent' or (level == 'static' and config.get('verify_static', False))
+    minutes, untimed = cost(suites, config)
     return {'files': len(files), 'features': sorted(features), 'unmapped': unmapped, 'full': full,
             'static_only': static_only, 'suites': sorted(suites), 'level': level,
             'independent_features': independent,
-            'needs_verifier': needs,
+            'needs_verifier': needs, 'minutes': minutes, 'untimed_suites': untimed,
+            'budget_minutes': config.get('pr_budget_minutes'),
             'recipes': {fid: all_features[fid].get('recipe', '') for fid in sorted(features)}}
+
+
+def cost(suites, config):
+    """Estimate CI minutes for suites from the measured `suite_minutes`; also return the suites with no timing."""
+    timings = config.get('suite_minutes', {})
+    return sum(timings.get(s, 0) for s in suites), sorted(s for s in suites if s not in timings)
 
 
 def required_features(result):
@@ -143,6 +151,12 @@ def render_plan(result):
     if result['unmapped']:
         lines += ['', 'Unmapped: ' + ', '.join(f'`{p}`' for p in result['unmapped'][:20])]
     lines += ['', 'CI suites: ' + (', '.join(result['suites']) or 'none')]
+    estimate = f"Estimated CI time: {result['minutes']} min"
+    if result['untimed_suites']:
+        estimate += f" plus untimed {', '.join(result['untimed_suites'])}"
+    if result['budget_minutes'] is not None:
+        estimate += f" (per-PR budget {result['budget_minutes']} min)"
+    lines.append(estimate)
     return '\n'.join(lines)
 
 

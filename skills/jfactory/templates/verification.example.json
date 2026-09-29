@@ -3,18 +3,20 @@
   "static": ["docs/**", "plan/**", "LICENSE", "CHANGELOG.md"],
   "static_suites": ["static"],
   "always_suites": ["unit"],
-  "full_suites": ["unit", "browser"],
+  "full_suites": ["unit"],
+  "suite_minutes": {"static": 1, "unit": 3, "browser-briefs": 4, "browser-sign-in": 3},
+  "pr_budget_minutes": 15,
   "features": {
     "save-brief": {
       "paths": ["app/src/app/briefs/**", "app/src/lib/briefs/**", "app/e2e/briefs.spec.ts"],
       "recipe": ".agents/skills/verify-app/features/save-brief.md",
-      "suites": ["unit", "browser"],
+      "suites": ["unit", "browser-briefs"],
       "verify": "independent"
     },
     "sign-in": {
-      "paths": ["app/src/lib/auth.ts", "app/src/app/(auth)/**"],
+      "paths": ["app/src/lib/auth.ts", "app/src/app/(auth)/**", "app/e2e/sign-in.spec.ts"],
       "recipe": ".agents/skills/verify-app/features/sign-in.md",
-      "suites": ["unit", "browser"],
+      "suites": ["unit", "browser-sign-in"],
       "verify": "independent"
     },
     "internal-tooling": {

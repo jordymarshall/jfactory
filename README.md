@@ -31,12 +31,12 @@ You stay in charge of three things: what gets built, product decisions the agent
 2. **Interview.** The agent asks you who the product is for, what hurts today, what success looks like, what's out of scope and what to build first. It offers a recommended answer for each, and records your answers in `.jfactory/setup.md`. 🔒 Enforced (`setup_check.py` won't report setup complete until you've answered)
 3. **Build the safety net.**
    - a **verifier** that drives your real app;
-   - a **map** from code areas to their checks, each area marked high-risk or low-risk;
+   - a **map** from code areas to their checks, each area marked high-risk or low-risk, with how long each check takes and a per-PR time budget you agree, so a PR runs only the checks for what it changed (a text fix doesn't trigger a 45-minute browser run);
    - the **`jfactory verified`** GitHub check;
    - a record of **what merging deploys** (staging or nothing);
    - when merges go to staging, a **release procedure**: how to see which commit each environment runs, how to promote to production, who approves and how to roll back.
 
-   🔒 `setup_check.py --remote` won't report setup complete while the map, the check workflow, the deploy record or (for staging) the release procedure is missing, or while GitHub doesn't require the checks. It only warns about unmapped files or unset risk levels, which default to the strictest verification anyway. 📋 Building the verifier itself is an instruction.
+   🔒 `setup_check.py --remote` won't report setup complete while the map, the check workflow, the deploy record or (for staging) the release procedure is missing, or while GitHub doesn't require the checks. It also fails when the checks every PR runs exceed your budget. It only warns about unmapped files or unset risk levels, which default to the strictest verification anyway, and about untimed suites or features over budget. 📋 Building the verifier itself is an instruction.
 
 **Every request after that,** for example *"Let users save items and find them later"*:
 

@@ -144,6 +144,24 @@ class SetupCheckTest(unittest.TestCase):
                                                            'verify': 'independent'}}}))
         self.assertIn('Risk levels set: 1 independent, 0 CI-only', self.check('--remote', '--repo', 'o/r'))
 
+    def test_per_pr_cost_must_fit_the_budget(self):
+        mapping = lambda **extra: (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(
+            {'static': ['README.md'], 'always_suites': ['unit'], **extra,
+             'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**', '.github/**'], 'verify': 'independent',
+                                  'suites': ['e2e-app']}}}))
+        out = self.check('--remote', '--repo', 'o/r')
+        self.assertIn('No "pr_budget_minutes"', out)
+        mapping(pr_budget_minutes=10, suite_minutes={'unit': 2, 'e2e-app': 5})
+        self.assertIn('PASS: Each feature\'s PR checks fit the 10 min budget', self.check('--remote', '--repo', 'o/r'))
+        mapping(pr_budget_minutes=10, suite_minutes={'unit': 2})
+        self.assertIn('No measured duration for suite(s) e2e-app', self.check('--remote', '--repo', 'o/r'))
+        mapping(pr_budget_minutes=10, suite_minutes={'unit': 2, 'e2e-app': 45})
+        self.assertIn('WARN: Changing these features exceeds the 10 min per-PR budget: app (47 min)',
+                      self.check('--remote', '--repo', 'o/r'))
+        # The whole browser suite on every PR is the misconfiguration this check exists for.
+        mapping(pr_budget_minutes=10, suite_minutes={'unit': 2, 'e2e': 45, 'e2e-app': 5}, always_suites=['unit', 'e2e'])
+        self.assertIn('FAIL: Suites that run on every PR take 47 min', self.check('--remote', '--repo', 'o/r', code=1))
+
     def test_pr_delivery_cannot_be_not_applicable(self):
         states = {**READY, 'PR delivery': ('not applicable', 'no PRs here')}
         (self.root / '.jfactory' / 'setup.md').write_text(record(states=states))

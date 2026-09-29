@@ -54,6 +54,13 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(gate['level'], 'independent')
         self.assertEqual(verify_plan.plan(['docs/a.md'], CONFIG)['level'], 'static')
 
+    def test_plan_estimates_minutes_from_suite_timings(self):
+        timed = {**CONFIG, 'suite_minutes': {'unit': 2, 'browser': 40}, 'pr_budget_minutes': 10}
+        result = verify_plan.plan(['tools/x.py', 'cli/run.py'], timed)
+        self.assertEqual((result['minutes'], result['untimed_suites'], result['budget_minutes']), (2, ['cli'], 10))
+        self.assertEqual(verify_plan.plan(['app/briefs/save.ts'], timed)['minutes'], 42)
+        self.assertIn('Estimated CI time: 2 min plus untimed cli (per-PR budget 10 min)', verify_plan.render_plan(result))
+
     def test_unknown_risk_level_is_refused(self):
         bad = {'features': {'x': {'paths': ['x/**'], 'verify': 'none'}}}
         (Path(tempfile.mkdtemp()) / '.jfactory').mkdir()

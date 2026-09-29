@@ -155,6 +155,8 @@ def check_verification(root, report, states):
         else:
             report.add('PASS', f'Risk levels set: {len(features) - len(low)} independent, {len(low)} CI-only'
                                + (f' ({", ".join(low)})' if low else ''))
+    if config is not None:
+        check_cost(config, report)
     if config is not None and tracked is not None:
         result = verify_plan.plan(tracked, config)
         unmapped = [p for p in result['unmapped'] if not verify_plan.matches(p, verify_plan.GATE_PATHS)]
@@ -171,6 +173,37 @@ def check_verification(root, report, states):
         report.add('PASS', f'The jfactory verified workflow is installed: {gate[0].relative_to(root)}')
     else:
         report.add('FAIL', 'No workflow runs `verify_plan.py ... check`; install templates/jfactory-verified.yml')
+
+
+def check_cost(config, report):
+    """Check that per-PR verification fits the owner's time budget, so slow suites run only when a change needs them."""
+    features = config.get('features', {})
+    named = set(config.get('always_suites', [])) | set(config.get('static_suites', [])) | \
+        set(config.get('full_suites', [])) | {s for f in features.values() for s in f.get('suites', [])}
+    untimed = sorted(named - set(config.get('suite_minutes', {})))
+    if untimed:
+        report.add('WARN', f'No measured duration for suite(s) {", ".join(untimed)}; time each one and record '
+                           '"suite_minutes" so plans show what a PR costs')
+    budget = config.get('pr_budget_minutes')
+    if not isinstance(budget, (int, float)) or isinstance(budget, bool):
+        report.add('WARN', 'No "pr_budget_minutes"; agree with the owner how long verification of one PR may take')
+        return
+    every = verify_plan.cost(set(config.get('always_suites', [])), config)[0]
+    docs = verify_plan.cost(set(config.get('always_suites', [])) | set(config.get('static_suites', [])), config)[0]
+    if max(every, docs) > budget:
+        report.add('FAIL', f'Suites that run on every PR take {max(every, docs)} min, over the {budget} min budget; '
+                           'keep slow suites such as browser journeys out of always_suites and static_suites')
+    over = []
+    for fid, feature in features.items():
+        minutes = verify_plan.cost(set(config.get('always_suites', [])) | set(feature.get('suites', [])), config)[0]
+        if minutes > feature.get('budget_minutes', budget):
+            over.append(f'{fid} ({minutes} min)')
+    if over:
+        report.add('WARN', f'Changing these features exceeds the {budget} min per-PR budget: {", ".join(over[:8])}. '
+                           'Split slow suites so a feature runs only its own journeys, or record the owner\'s '
+                           '"budget_minutes" for that feature')
+    elif not untimed:
+        report.add('PASS', f'Each feature\'s PR checks fit the {budget} min budget; always-run suites take {every} min')
 
 
 def check_delivery(root, report, states):
