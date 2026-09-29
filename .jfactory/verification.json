@@ -4,7 +4,12 @@
   "static_suites": ["checks"],
   "always_suites": ["checks"],
   "full_suites": ["checks"],
-  "suite_minutes": {"checks": 2},
+  "suites": {
+    "checks": {
+      "run": "python3 -m unittest discover -s tests && python3 skills/jfactory/scripts/check-upstream.py && python3 tests/browser_smoke.py && python3 tests/dashboard_smoke.py",
+      "minutes": 2
+    }
+  },
   "pr_budget_minutes": 10,
   "features": {
     "agent-instructions": {

@@ -155,55 +155,51 @@ def check_verification(root, report, states):
         else:
             report.add('PASS', f'Risk levels set: {len(features) - len(low)} independent, {len(low)} CI-only'
                                + (f' ({", ".join(low)})' if low else ''))
-    if config is not None:
-        check_cost(config, report)
     if config is not None and tracked is not None:
-        result = verify_plan.plan(tracked, config)
-        unmapped = [p for p in result['unmapped'] if not verify_plan.matches(p, verify_plan.GATE_PATHS)]
-        if unmapped:
-            report.add('WARN', f'{len(unmapped)} tracked file(s) match no feature or static pattern and will force '
-                               f'full verification: {", ".join(unmapped[:8])}')
-        else:
-            report.add('PASS', f'.jfactory/verification.json maps every tracked file '
-                               f'({len(config.get("features", {}))} features)')
+        for level, text in verify_plan.audit(tracked, config):
+            report.add(level, f'Map: {text}')
+    if config is not None:
+        check_targets(root, config, report, states)
     workflows = root / '.github' / 'workflows'
     gate = [p for p in workflows.glob('*.y*ml') if 'verify_plan.py' in p.read_text() and ' check ' in p.read_text()] \
         if workflows.is_dir() else []
+    if config is not None:
+        total = verify_plan.cost(set(config.get('suites', {})), config)[0]
+        budget = config.get('pr_budget_minutes')
+        planned = [p for p in workflows.glob('*.y*ml') if re.search(r'verify_plan\.py"?\s+(ci|plan)\b', p.read_text())] \
+            if workflows.is_dir() else []
+        if isinstance(budget, (int, float)) and total > budget and not planned:
+            report.add('FAIL', f'All suites together take {total} min, over the {budget} min budget, but no workflow '
+                               'runs `verify_plan.py ci`; install templates/jfactory-checks.yml so PRs run only the '
+                               'suites they need')
     if gate:
         report.add('PASS', f'The jfactory verified workflow is installed: {gate[0].relative_to(root)}')
     else:
         report.add('FAIL', 'No workflow runs `verify_plan.py ... check`; install templates/jfactory-verified.yml')
 
 
-def check_cost(config, report):
-    """Check that per-PR verification fits the owner's time budget, so slow suites run only when a change needs them."""
-    features = config.get('features', {})
-    named = set(config.get('always_suites', [])) | set(config.get('static_suites', [])) | \
-        set(config.get('full_suites', [])) | {s for f in features.values() for s in f.get('suites', [])}
-    untimed = sorted(named - set(config.get('suite_minutes', {})))
-    if untimed:
-        report.add('WARN', f'No measured duration for suite(s) {", ".join(untimed)}; time each one and record '
-                           '"suite_minutes" so plans show what a PR costs')
-    budget = config.get('pr_budget_minutes')
-    if not isinstance(budget, (int, float)) or isinstance(budget, bool):
-        report.add('WARN', 'No "pr_budget_minutes"; agree with the owner how long verification of one PR may take')
+def check_targets(root, config, report, states):
+    """Each target must have started and answered where verification runs, shown by a `smoke` receipt."""
+    targets = config.get('targets', {})
+    if not targets:
         return
-    every = verify_plan.cost(set(config.get('always_suites', [])), config)[0]
-    docs = verify_plan.cost(set(config.get('always_suites', [])) | set(config.get('static_suites', [])), config)[0]
-    if max(every, docs) > budget:
-        report.add('FAIL', f'Suites that run on every PR take {max(every, docs)} min, over the {budget} min budget; '
-                           'keep slow suites such as browser journeys out of always_suites and static_suites')
-    over = []
-    for fid, feature in features.items():
-        minutes = verify_plan.cost(set(config.get('always_suites', [])) | set(feature.get('suites', [])), config)[0]
-        if minutes > feature.get('budget_minutes', budget):
-            over.append(f'{fid} ({minutes} min)')
-    if over:
-        report.add('WARN', f'Changing these features exceeds the {budget} min per-PR budget: {", ".join(over[:8])}. '
-                           'Split slow suites so a feature runs only its own journeys, or record the owner\'s '
-                           '"budget_minutes" for that feature')
-    elif not untimed:
-        report.add('PASS', f'Each feature\'s PR checks fit the {budget} min budget; always-run suites take {every} min')
+    path = root / '.jfactory' / 'smoke.json'
+    receipts = json.loads(path.read_text()) if path.is_file() else {}
+    level = 'FAIL' if states.get('Verification') == 'verified' else 'WARN'
+    for name in targets:
+        receipt = receipts.get(name)
+        if not receipt or not receipt.get('ok'):
+            failed = next((s for s in (receipt or {}).get('steps', []) if not s.get('ok')), None)
+            report.add(level, f'Target {name} has no passing start-up receipt'
+                       + (f' (failed at {failed["step"]}: {failed["detail"]})' if failed else '')
+                       + f'; run `verify_plan.py smoke --target {name} --fresh --record .jfactory/smoke.json` '
+                         'in a new workspace')
+        elif not receipt.get('fresh'):
+            report.add('WARN', f'Target {name} started only in an existing checkout; rerun smoke with --fresh in a new '
+                               'workspace so a verifier\'s workspace is known to work')
+        else:
+            report.add('PASS', f'Target {name} started in a fresh workspace at {receipt.get("commit", "")[:7]} '
+                               f'on {receipt.get("at", "?")}')
 
 
 def check_delivery(root, report, states):

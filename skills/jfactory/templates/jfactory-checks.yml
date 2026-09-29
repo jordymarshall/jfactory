@@ -1,0 +1,32 @@
+# Copy to .github/workflows/jfactory-checks.yml during setup and set JFACTORY_DIR to the installed bundle path.
+# Add the project's runtime steps where marked (for example actions/setup-node and npm ci), then make the
+# "checks" job a required check. On a PR it fails when a tracked file is unmapped, then runs only the suites
+# the change needs. The nightly run executes every suite, including the whole browser suite.
+name: jfactory checks
+on:
+  pull_request:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  JFACTORY_DIR: .agents/skills/jfactory
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      # Project runtime and dependencies go here, matching the local target's "setup" command.
+      - name: Run the suites this change needs
+        if: github.event_name == 'pull_request'
+        run: python3 "$JFACTORY_DIR/scripts/verify_plan.py" ci --base "origin/${{ github.base_ref }}"
+      - name: Run every suite
+        if: github.event_name != 'pull_request'
+        run: python3 "$JFACTORY_DIR/scripts/verify_plan.py" ci --all
