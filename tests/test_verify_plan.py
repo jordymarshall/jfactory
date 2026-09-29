@@ -93,6 +93,50 @@ class PlanTest(unittest.TestCase):
         many = [f'app/briefs/{i}.ts' for i in range(30)] + files
         self.assertIn('WARN: Feature briefs covers 31 of', text(verify_plan.audit(many, config)))
 
+    def test_recorded_coverage_adds_the_journeys_that_execute_a_change(self):
+        config = {**CONFIG, 'suites': {s: {'minutes': m} for s, m in
+                                       [('unit', 1), ('browser', 20), ('cli', 2), ('static', 1)]}}
+        impact = {'browser': {'tools/x.py', 'app/briefs/save.ts'}, 'unknown-suite': {'tools/x.py'}}
+        result = verify_plan.plan(['tools/x.py'], config, impact)
+        self.assertEqual((result['suites'], result['impact']), (['browser', 'unit'], {'browser': ['tools/x.py']}))
+        self.assertIn('`browser` executes `tools/x.py`', verify_plan.render_plan(result))
+        # Coverage only adds: a mapped suite stays even when coverage never saw the file.
+        self.assertEqual(verify_plan.plan(['cli/run.py'], config, {'browser': set()})['suites'], ['cli', 'unit'])
+
+    def test_coverage_formats_are_read_as_repository_paths(self):
+        root = Path(tempfile.mkdtemp())
+        write = lambda name, data: (root / name).write_text(data if isinstance(data, str) else json.dumps(data))
+        write('istanbul.json', {str(root / 'app/a.ts'): {'path': str(root / 'app/a.ts'), 's': {'0': 3}, 'f': {'0': 1}},
+                                str(root / 'app/b.ts'): {'path': str(root / 'app/b.ts'), 's': {'0': 1}, 'f': {'0': 0}}})
+        ran = lambda count: [{'functionName': '', 'ranges': [{'count': 1}]}, {'functionName': 'load', 'ranges': [{'count': count}]}]
+        write('v8.json', {'result': [{'url': f'file://{root}/lib/db.js', 'functions': ran(2)},
+                                     {'url': f'file://{root}/lib/loaded-only.js', 'functions': ran(0)},
+                                     {'url': 'file:///elsewhere/x.js', 'functions': ran(1)}]})
+        write('coverage.json', {'files': {'svc/api.py': {'executed_lines': [1]}, 'svc/idle.py': {'executed_lines': []}}})
+        write('list.txt', 'app/c.ts\n\n')
+        read = lambda name: verify_plan.coverage_files(root / name, root)
+        self.assertEqual((read('istanbul.json'), read('v8.json'), read('coverage.json'), read('list.txt')),
+                         ({'app/a.ts'}, {'lib/db.js'}, {'svc/api.py'}, {'app/c.ts'}))
+        (root / 'impact').mkdir()
+        (root / 'impact' / '1.json').write_text(json.dumps({'suites': {'a': ['x'], 'b': ['y']}}))
+        (root / 'impact' / '2.json').write_text(json.dumps({'suites': {'a': ['z']}}))
+        self.assertEqual(verify_plan.load_impact(root / 'impact'), {'a': {'x', 'z'}, 'b': {'y'}})
+        self.assertEqual(verify_plan.load_impact(root / 'missing'), {})
+
+    def test_shards_balance_suites_by_minutes(self):
+        config = {'suites': {'a': {'minutes': 20}, 'b': {'minutes': 12}, 'c': {'minutes': 9}, 'd': {'minutes': 3}},
+                  'shards': 2}
+        self.assertEqual(verify_plan.binpack(['a', 'b', 'c', 'd'], config, 2), [['a', 'd'], ['b', 'c']])
+        result = verify_plan.plan(['x'], {**config, 'features': {'f': {'paths': ['x'], 'suites': ['a', 'b', 'c', 'd']}}})
+        self.assertEqual((result['minutes'], result['wall_minutes']), (44, 23))
+
+    def test_journeys_never_run_on_every_pr(self):
+        config = {'always_suites': ['unit', 'e2e'], 'features': {'f': {'paths': ['x'], 'suites': ['unit']}},
+                  'suites': {'unit': {'run': 'x', 'minutes': 1}, 'e2e': {'run': 'x', 'minutes': 45, 'target': 'local'}},
+                  'targets': {'local': {'start': 'x', 'ready': 'http://x', 'auth': 'none'}}}
+        self.assertIn(('FAIL', 'always_suites include journey suite(s) e2e, so every PR would drive the app; attach '
+                               'them to the features they check'), verify_plan.audit(['x'], config))
+
     def test_unknown_risk_level_is_refused(self):
         bad = {'features': {'x': {'paths': ['x/**'], 'verify': 'none'}}}
         (Path(tempfile.mkdtemp()) / '.jfactory').mkdir()
@@ -275,7 +319,7 @@ class RunTest(unittest.TestCase):
         self.git = git
         git('init', '-q', '-b', 'main')
         for path in ['app/briefs/a.py', 'cli/run.py', 'README.md']:
-            (self.root / '.gitignore').write_text('ran-*\n')
+            (self.root / '.gitignore').write_text('ran-*\nimpact/\n')
             (self.root / path).parent.mkdir(parents=True, exist_ok=True)
             (self.root / path).write_text('x\n')
         (self.root / '.jfactory').mkdir()
@@ -340,6 +384,44 @@ class RunTest(unittest.TestCase):
     def test_ci_all_runs_every_suite(self):
         self.run_script('ci', '--all')
         self.assertEqual(self.ran(), ['ran-browser', 'ran-cli', 'ran-unit'])
+
+    def test_ci_shard_runs_its_share_of_the_plan(self):
+        self.run_script('ci', '--all', '--shard', '1/2')
+        first = self.ran()
+        for marker in self.root.glob('ran-*'):
+            marker.unlink()
+        self.run_script('ci', '--all', '--shard', '2/2')
+        self.assertEqual(sorted(first + self.ran()), ['ran-browser', 'ran-cli', 'ran-unit'])
+        self.assertTrue(first and self.ran())
+
+    def test_recorded_coverage_selects_journeys_for_shared_code(self):
+        # The journey's app is a Node server; NODE_V8_COVERAGE records what it executed.
+        (self.root / 'lib').mkdir()
+        (self.root / 'lib' / 'db.js').write_text('exports.load = () => "Briefs";\n')
+        (self.root / 'server.js').write_text(
+            'const http = require("http"); const db = require("./lib/db");\n'
+            'process.on("SIGTERM", () => process.exit(0));\n'
+            'http.createServer((q, s) => s.end(db.load())).listen(+process.argv[2], "127.0.0.1");\n')
+        local = {**self.config['targets']['local'], 'start': 'node server.js $PORT'}
+        features = {**self.config['features'], 'shared': {'paths': ['lib/**', 'server.js'], 'suites': ['unit']}}
+        self.write_config(targets={'local': local}, features=features)
+        self.git('add', '-A')
+        self.git('commit', '-qm', 'node app')
+        self.run_script('ci', '--all', '--impact-out', 'impact/nightly.json')
+        recorded = json.loads((self.root / 'impact' / 'nightly.json').read_text())['suites']
+        self.assertEqual(recorded, {'browser-briefs': ['lib/db.js', 'server.js']})
+        for marker in self.root.glob('ran-*'):
+            marker.unlink()
+        (self.root / 'lib' / 'db.js').write_text('exports.load = () => "Saved briefs";\n')
+        self.git('commit', '-qam', 'shared change')
+        out = self.run_script('ci', '--base', 'HEAD~1', '--impact', 'impact')
+        self.assertIn('`browser-briefs` executes `lib/db.js`', out)
+        self.assertEqual(self.ran(), ['ran-browser', 'ran-unit'])
+        for marker in self.root.glob('ran-*'):
+            marker.unlink()
+        # Without coverage, the same change runs only the shared feature's own suites.
+        self.run_script('ci', '--base', 'HEAD~1', '--impact', 'nowhere')
+        self.assertEqual(self.ran(), ['ran-unit'])
 
     def test_smoke_records_a_receipt_and_reports_the_failed_step(self):
         out = self.run_script('smoke', '--target', 'local', '--fresh', '--record', '.jfactory/smoke.json')

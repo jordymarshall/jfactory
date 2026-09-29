@@ -4,7 +4,7 @@
   "static_suites": ["static"],
   "always_suites": ["unit"],
   "full_suites": ["unit", "smoke"],
-  "pr_budget_minutes": 15,
+  "shards": 4,
   "suites": {
     "static": {"run": "npm run lint", "minutes": 1},
     "unit": {"run": "npm test", "minutes": 3},
@@ -42,7 +42,7 @@
     },
     "shared-data": {
       "paths": ["app/src/lib/db/**", "app/src/lib/api-client.ts"],
-      "recipe": "Run the unit suite's data-layer tests; journeys run only when a feature's own code changes",
+      "recipe": "Run the unit suite's data-layer tests; recorded coverage adds the journeys that execute the changed file",
       "suites": ["unit", "smoke"],
       "verify": "independent"
     },

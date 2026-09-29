@@ -87,7 +87,8 @@ def load_config(ref=None, root=None):
     return config
 
 
-def plan(files, config):
+def plan(files, config, impact=None):
+    """Plan a change. `impact` maps suites to the files they executed (from `load_impact`); it only adds suites."""
     features, static, unmapped, gate = set(), [], [], []
     for path in files:
         if matches(path, GATE_PATHS):
@@ -114,6 +115,15 @@ def plan(files, config):
     static_only = bool(files) and not features and not full
     if static_only:
         suites |= set(config.get('static_suites', []))
+    # Coverage from earlier runs adds every suite that executed a changed file, so shared code runs the
+    # journeys that really use it. It never removes a suite the map requires.
+    because = {}
+    for suite, executed in (impact or {}).items():
+        if suite in config.get('suites', {}):
+            hits = sorted(p for p in files if p in executed)
+            if hits and suite not in suites:
+                because[suite] = hits
+                suites.add(suite)
     # A change needs an independent verdict unless every affected feature is low risk (`ci`).
     # Unmapped files and gate changes are `full`, which always needs one.
     independent = sorted(f for f in features if all_features[f].get('verify', 'independent') != 'ci')
@@ -125,11 +135,13 @@ def plan(files, config):
         level = 'static'
     needs = level == 'independent' or (level == 'static' and config.get('verify_static', False))
     minutes, untimed = cost(suites, config)
+    shards = shard_count(config)
     return {'files': len(files), 'features': sorted(features), 'unmapped': unmapped, 'gate': gate, 'full': full,
             'static_only': static_only, 'suites': sorted(suites), 'level': level,
             'independent_features': independent,
             'needs_verifier': needs, 'minutes': minutes, 'untimed_suites': untimed,
-            'budget_minutes': config.get('pr_budget_minutes'),
+            'budget_minutes': config.get('pr_budget_minutes'), 'impact': because, 'shards': shards,
+            'wall_minutes': max((cost(b, config)[0] for b in binpack(suites, config, shards)), default=0),
             'recipes': {fid: all_features[fid].get('recipe', '') for fid in sorted(features)}}
 
 
@@ -142,6 +154,82 @@ def cost(suites, config):
     """Estimate CI minutes from each suite's measured `minutes`; also return the suites with no timing."""
     known = {s: minutes_of(config, s) for s in suites}
     return sum(m for m in known.values() if m), sorted(s for s, m in known.items() if m is None)
+
+
+def shard_count(config):
+    value = config.get('shards', 1)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 1
+
+
+def binpack(suites, config, n):
+    """Split suites into n groups of similar total minutes, longest first, so parallel CI jobs finish together."""
+    bins = [[] for _ in range(n)]
+    totals = [0.0] * n
+    for suite in sorted(suites, key=lambda s: (-(minutes_of(config, s) or 0), s)):
+        i = totals.index(min(totals))
+        bins[i].append(suite)
+        totals[i] += minutes_of(config, suite) or 0
+    return bins
+
+
+def coverage_files(path, root):
+    """Repository files a coverage report says were executed. Reads Istanbul `coverage-final.json`, V8
+    (`NODE_V8_COVERAGE` or Playwright `page.coverage`), coverage.py `coverage json`, or a plain list of paths."""
+    root = Path(root).resolve()
+    found = set()
+
+    def add(name):
+        if not name:
+            return
+        if name.startswith('file://'):
+            name = urllib.request.url2pathname(name[7:])
+        candidate = Path(name)
+        if candidate.is_absolute():
+            try:
+                candidate = candidate.resolve().relative_to(root)
+            except ValueError:
+                return
+        found.add(candidate.as_posix())
+
+    text = Path(path).read_text(errors='replace')
+    try:
+        data = json.loads(text)
+    except ValueError:
+        for line in text.splitlines():
+            add(line.strip())
+        return found
+    entries = data.get('result') if isinstance(data, dict) and 'result' in data else data
+    # A file counts when one of its functions ran. Module top-level code runs whenever the file loads, often at
+    # startup for every journey, so it alone does not tie a file to a journey; the map still covers such files.
+    if isinstance(entries, list):  # V8: [{url, functions: [{functionName, ranges: [{count}]}]}], first is top level
+        for entry in entries:
+            if any(fn.get('ranges') and fn['ranges'][0].get('count', 0) > 0 for fn in entry.get('functions', [])[1:]):
+                add(entry.get('url'))
+    elif isinstance(data, dict) and isinstance(data.get('files'), dict):  # coverage.py
+        for name, info in data['files'].items():
+            if info.get('executed_lines'):
+                add(name)
+    elif isinstance(data, dict):  # Istanbul: {path: {s: {id: count}}}
+        for name, info in data.items():
+            counts = info.get('f') or info.get('s', {}) if isinstance(info, dict) else {}
+            if any(v > 0 for v in counts.values()):
+                add(info.get('path', name))
+    return found
+
+
+def load_impact(path):
+    """Read impact records (a file, or a directory of them) into {suite: set(files)}. Missing means none yet."""
+    target = Path(path)
+    records = sorted(target.rglob('*.json')) if target.is_dir() else [target] if target.is_file() else []
+    merged = {}
+    for record in records:
+        try:
+            data = json.loads(record.read_text())
+        except ValueError:
+            continue
+        for suite, files in data.get('suites', {}).items():
+            merged.setdefault(suite, set()).update(files)
+    return merged
 
 
 def required_features(result):
@@ -172,8 +260,13 @@ def render_plan(result):
         lines += ['', 'Unmapped: ' + ', '.join(f'`{p}`' for p in result['unmapped'][:20])]
     if result['gate']:
         lines += ['', 'Gate: ' + ', '.join(f'`{p}`' for p in result['gate'][:20])]
+    if result['impact']:
+        lines += ['', 'Added from recorded coverage:'] + [
+            f"- `{suite}` executes {', '.join(f'`{p}`' for p in files[:5])}" for suite, files in result['impact'].items()]
     lines += ['', 'CI suites: ' + (', '.join(result['suites']) or 'none')]
     estimate = f"Estimated CI time: {result['minutes']} min"
+    if result['shards'] > 1:
+        estimate += f", about {result['wall_minutes']} min across {result['shards']} parallel jobs"
     if result['untimed_suites']:
         estimate += f" plus untimed {', '.join(result['untimed_suites'])}"
     if result['budget_minutes'] is not None:
@@ -236,9 +329,16 @@ def audit(files, config):
     missing = sorted({d['target'] for d in defs.values() if d.get('target') and d['target'] not in targets})
     if missing:
         items.append(('FAIL', f'Suite target(s) {", ".join(missing)} are not defined under "targets"'))
+    # Journeys against a running app never run on every PR; each belongs to the features it checks.
+    for key in ('always_suites', 'static_suites'):
+        journeys = sorted(s for s in config.get(key, []) if defs.get(s, {}).get('target'))
+        if journeys:
+            items.append(('FAIL', f'{key} include journey suite(s) {", ".join(journeys)}, so every PR would drive the '
+                                  'app; attach them to the features they check'))
     budget = config.get('pr_budget_minutes')
     if not isinstance(budget, (int, float)) or isinstance(budget, bool):
-        items.append(('WARN', 'No "pr_budget_minutes"; agree with the owner how long verification of one PR may take'))
+        if not untimed and not undefined:
+            items.append(('PASS', 'No journey suite runs on every PR; no per-PR time limit is set'))
         return items
     always = set(config.get('always_suites', []))
     every = max(cost(always, config)[0], cost(always | set(config.get('static_suites', [])), config)[0])
@@ -258,7 +358,7 @@ def audit(files, config):
         seen.add(hit)
         suites = always | {s for fid in hit for s in features[fid].get('suites', [])}
         limit = max(features[fid].get('budget_minutes', budget) for fid in hit)
-        minutes = cost(suites, config)[0]
+        minutes = max(cost(b, config)[0] for b in binpack(suites, config, shard_count(config)))
         if minutes > limit:
             over.append(f'{path} -> {", ".join(sorted(hit))} ({minutes} min)')
     if over:
@@ -318,10 +418,10 @@ def probe_url(url):
 
 
 @contextmanager
-def started(name, target, timeout, url=None, log=None):
+def started(name, target, timeout, url=None, log=None, extra=None):
     """Start a target (or use its deployed URL), wait until its ready URL answers, and stop it afterwards."""
     port = str(free_port())
-    env = {**os.environ, 'PORT': port}
+    env = {**os.environ, **(extra or {}), 'PORT': port}
     env['BASE_URL'] = url or expand(target.get('url') or f'http://127.0.0.1:{port}', env)
     ready = url or expand(target['ready'], env)
     proc = None
@@ -517,7 +617,7 @@ def body_file(text):
 def cmd_plan(args):
     config = load_config(args.config_ref)
     files = args.files or git_files(args.base)
-    result = plan(files, config)
+    result = plan(files, config, load_impact(args.impact) if args.impact else None)
     print(json.dumps(result, indent=1) if args.json else render_plan(result))
 
 
@@ -566,9 +666,19 @@ def cmd_ci(args):
     elif args.all:
         suites = sorted(defs)
     else:
-        result = plan(git_files(args.base), config)
+        impact = load_impact(args.impact) if args.impact else None
+        if args.impact and not impact:
+            print(f'No recorded coverage at {args.impact}; planning from the map only')
+        result = plan(git_files(args.base), config, impact)
         print(render_plan(result) + '\n')
         suites = result['suites']
+    if args.shard:
+        index, count = args.shard
+        suites = binpack(suites, config, count)[index - 1]
+        print(f"Shard {index}/{count}: {', '.join(suites) or 'nothing to run'}")
+    record = tempfile.mkdtemp(prefix='jfactory-coverage-') if args.impact_out else None
+    tracked = set(tracked_files()) if record else set()
+    executed = {}
     failed, report = [], []
     for suite in suites:
         definition = defs.get(suite, {})
@@ -576,24 +686,45 @@ def cmd_ci(args):
             failed.append(suite)
             report.append(f'{suite}: no "run" command in {CONFIG}')
             continue
+        extra = {}
+        if record:
+            # The suite (and its target) write coverage here; Node processes do so automatically.
+            folder = Path(record) / re.sub(r'[^\w.-]', '_', suite)
+            folder.mkdir()
+            extra = {'JFACTORY_COVERAGE_DIR': str(folder), 'NODE_V8_COVERAGE': str(folder)}
         print(f'::group::{suite}: {definition["run"]}', flush=True)
         try:
             if definition.get('target'):
                 name = definition['target']
-                with started(name, targets[name], args.timeout) as env:
+                with started(name, targets[name], args.timeout, extra=extra) as env:
                     code, minutes = shell(expand(definition['run'], env), env)
             else:
-                code, minutes = shell(definition['run'])
+                code, minutes = shell(definition['run'], {**os.environ, **extra})
         except Refused as error:
             code, minutes = 1, 0
             print(error)
         print('::endgroup::', flush=True)
+        if record:
+            files = set()
+            for report_file in Path(extra['JFACTORY_COVERAGE_DIR']).rglob('*'):
+                if report_file.is_file():
+                    files |= coverage_files(report_file, '.')
+            executed[suite] = sorted(files & tracked)
         expected = minutes_of(config, suite)
         note = f' (recorded {expected} min; update "minutes")' if expected and minutes > expected * 1.5 + 1 else ''
         report.append(f"{suite}: {'passed' if code == 0 else f'failed ({code})'} in {minutes} min{note}")
         if code:
             failed.append(suite)
     print('\n'.join(report) or 'No suites to run')
+    if record:
+        head = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
+        Path(args.impact_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.impact_out).write_text(json.dumps(
+            {'version': 1, 'commit': head, 'at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+             'suites': {k: v for k, v in executed.items() if v}}, indent=1) + '\n')
+        empty = sorted(k for k, v in executed.items() if not v)
+        print(f'Recorded coverage for {len(executed) - len(empty)} suite(s) in {args.impact_out}'
+              + (f"; no coverage from {', '.join(empty)} (see references/mapping.md)" if empty else ''))
     return 1 if failed else 0
 
 
@@ -666,6 +797,13 @@ def cmd_verdict(args):
     print(f'Posted {args.verdict} verdict for #{args.pr} at {args.head[:7]}')
 
 
+def shard_arg(value):
+    match = re.fullmatch(r'(\d+)/(\d+)', value)
+    if not match or not 1 <= int(match.group(1)) <= int(match.group(2)):
+        raise argparse.ArgumentTypeError('use I/N, for example 2/4')
+    return int(match.group(1)), int(match.group(2))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--repo', help='OWNER/NAME; defaults to the current repository')
@@ -677,6 +815,7 @@ def main(argv=None):
     p.add_argument('--base', default='origin/main')
     p.add_argument('--files', type=listing, help='Comma-separated paths instead of git diff')
     p.add_argument('--json', action='store_true')
+    p.add_argument('--impact', help='Recorded coverage (file or directory) that adds suites executing changed files')
     p.set_defaults(func=cmd_plan)
     p = sub.add_parser('audit', help='Check the map covers every tracked file, defines its suites and fits the budget')
     p.set_defaults(func=cmd_audit)
@@ -688,6 +827,9 @@ def main(argv=None):
     p.add_argument('--all', action='store_true', help='Run every defined suite, for scheduled or pre-release runs')
     p.add_argument('--suites', type=listing, help='Run only these suites, for example to time one')
     p.add_argument('--timeout', type=int, default=300, help='Seconds to wait for a target to answer')
+    p.add_argument('--shard', type=shard_arg, help='Run group I of N (I/N), balanced by recorded minutes')
+    p.add_argument('--impact', help='Recorded coverage (file or directory) that adds suites executing changed files')
+    p.add_argument('--impact-out', help='Record which tracked files each suite executed, for later --impact')
     p.set_defaults(func=cmd_ci)
     p = sub.add_parser('smoke', help='Prove a target starts and answers where verification runs')
     p.add_argument('--target', required=True)

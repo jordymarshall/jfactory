@@ -1,6 +1,6 @@
 # Map the repository for verification
 
-`.jfactory/verification.json` decides what every PR runs. An accurate map means a PR verifies the areas it touched and nothing else. A gap makes a change verify every feature, and a vague map makes agents guess. Follow these steps in order during setup, and again when the product changes shape. Each step ends with a command whose output you can check. The [example mapping](../templates/verification.example.json) shows the finished result.
+`.jfactory/verification.json` decides what every PR runs, together with the coverage the nightly run records. An accurate map means a PR verifies the areas it touched and nothing else. A gap makes a change verify every feature, and a vague map makes agents guess. Follow these steps in order during setup, and again when the product changes shape. Each step ends with a command whose output you can check. The [example mapping](../templates/verification.example.json) shows the finished result.
 
 Commands below use `VP` for the installed script: `VP="python3 <bundle>/scripts/verify_plan.py"`.
 
@@ -29,13 +29,13 @@ Code that many features use gets its own feature, with checks proportionate to i
 | Design system components | `design-system`: component and visual tests, not every journey |
 | Package manifests, lockfiles, build and framework config, the smoke spec | `build-and-dependencies`: build, unit and smoke |
 
-When the relationship is less direct, use the most precise tool the project has, rather than mapping a file to every journey that might touch it:
+Most files don't belong to exactly one screen, and you don't have to guess which journeys they affect. The paths you map are the floor, and recorded coverage finds the rest:
 
-- **Test-impact selection:** a suite command that picks tests from the changed files, such as `jest --findRelatedTests`, `vitest related`, `nx affected` or `pytest --testmon`, gives exact unit coverage for shared code.
-- **Coverage-derived paths:** collect coverage for each journey in the nightly run, and add the files a journey actually executes to that feature's paths when they are specific to it.
-- **Several features:** list a file under each feature it directly serves; the plan runs each of their journeys.
+- **Recorded coverage.** The nightly `ci --all --impact-out` run records which tracked files each suite actually executed. On a PR, `ci --impact` adds every suite that executed a changed file. A change to `lib/db.ts` then runs exactly the journeys that use it, whether that is two or twelve. Coverage only adds suites, never removes one the map requires. A new file that coverage hasn't seen yet falls back to its mapped feature until the next nightly run. See [step 6](#6-define-suites-that-can-run-alone) for recording it.
+- **Test-impact selection inside a suite.** A command that picks tests from the changed files, such as `jest --findRelatedTests`, `vitest related`, `nx affected` or `pytest --testmon`, narrows unit and integration suites the same way.
+- **Several features.** List a file under each feature it directly serves; the plan runs each of their journeys.
 
-The nightly `ci --all` run covers every journey, so a shared change is still exercised in full. It just doesn't hold a PR for 45 minutes. When a shared change is risky for one specific journey, the objective names that journey and the implementer runs it.
+So shared code needs only its own fast checks in the map. Recorded coverage supplies the journeys, and the nightly run covers anything coverage cannot see, such as config read at build time.
 
 ## 5. Mark what cannot change behavior as static
 
@@ -49,7 +49,17 @@ Every suite a feature names is defined under `suites` with its command, its meas
 "browser-briefs": {"run": "npx playwright test e2e/briefs.spec.ts", "minutes": 4, "target": "local"}
 ```
 
-Give each feature its own journey suite: one spec file, a tag (`--grep @briefs`) or a Playwright project. Add a `smoke` suite of one or two minutes that loads the app and signs in. Keep `always_suites` and `full_suites` to fast whole-repository checks such as lint, types and unit tests. Time each suite with `$VP ci --suites <name>` and record the minutes it reports.
+Give each feature its own journey suite: one spec file, a tag (`--grep @briefs`) or a Playwright project. Small suites let coverage select precisely and parallel jobs balance evenly. Add a `smoke` suite of one or two minutes that loads the app and signs in. Keep `always_suites` and `full_suites` to fast whole-repository checks such as lint, types and unit tests. Time each suite with `$VP ci --suites <name>` and record the minutes it reports.
+
+For recorded coverage, each suite writes a coverage report into `$JFACTORY_COVERAGE_DIR` while it runs. `ci` reads Istanbul `coverage-final.json`, V8 coverage, coverage.py `coverage json` output or a plain list of paths:
+
+- **Node server code:** `ci` sets `NODE_V8_COVERAGE` for the suite and its target, so Node writes coverage automatically when it exits. The server must exit cleanly on SIGTERM.
+- **Browser code:** collect Playwright's `page.coverage` or an Istanbul-instrumented build (for example `monocart-reporter`), with source maps resolved to repository paths, and write it to that directory.
+- **Python services:** run them under `coverage run` and write `coverage json` there.
+
+Check the nightly output: `ci` names suites that recorded no coverage.
+
+Set `shards` to the number of parallel CI jobs. `ci --shard I/N` runs its share of the planned suites, balanced by recorded minutes, so a 40-minute plan across four jobs takes about 10 minutes of waiting. It still uses 40 minutes of compute.
 
 ## 7. Define where the app runs, and prove it starts
 
@@ -66,25 +76,21 @@ Suites with a `target` get `$PORT` and `$BASE_URL`, and `ci` starts and stops th
 
 Then prove it in the place that matters: a new workspace (for Conductor, a new cloud workspace, as a verifier gets) and the CI runner. Run `$VP smoke --target local --fresh --record .jfactory/smoke.json`. It runs setup, doctor, start, the readiness URL and the probe, then stops the app and records which step failed and why. Fix what it reports, usually a missing secret, service, browser binary or sign-in. Rerun until it passes, and commit the receipt. A target that needs a human sign-in with no stored session or test account stays `blocked` with that owner step. `setup_check.py` will not accept `Verification: verified` until every target has a passing receipt.
 
-## 8. Set risk levels and the budget
+## 8. Set risk levels
 
-Give every feature `"verify": "independent"` or `"ci"` using the [verification contract](verification.md#change-aware-verification-and-the-merge-gate), and confirm them with the owner. Then set the per-PR budget. Do not pick a number by default. The budget does not skip required checks. It decides how much of the journey suite a PR runs before merge, and what waits for the nightly run. Show the owner the measured numbers: the whole suite's minutes, each feature's plan, and what a shared-code change would run. Then explain the tradeoff:
+Give every feature `"verify": "independent"` or `"ci"` using the [verification contract](verification.md#change-aware-verification-and-the-merge-gate), and confirm them with the owner.
 
-- **A tighter budget** means faster merges and agent iterations (an agent waits on CI in every fix loop), less compute and fewer flaky failures. The cost is that a shared-code change can break a journey it didn't run. That shows up in the nightly run, leaving the base branch and staging broken for up to a day, fixed forward. Production is still protected, because a release reruns the affected recipes on staging first.
-- **A looser budget** catches more before merge, at the price of slower PRs, more compute and more flake retries.
-- **What tips it:** whether merging deploys anywhere customers see, how many agents branch from the base at once (a broken base blocks them all), how flaky the journeys are, CI cost, and how often shared code has broken journeys before.
-
-Offer two or three options with their numbers and recommend one, for example "12 min: every feature fits except checkout; shared-code changes run smoke only" against "30 min: shared-code changes also run the three most-used journeys". Record the owner's choice in `pr_budget_minutes`, and the reason in the setup record. A feature that truly cannot fit, such as checkout with payment journeys, gets an owner-approved `budget_minutes`. Revisit the budget when nightly failures show shared changes regularly breaking journeys that PRs didn't run.
+There is no default time limit. Precision comes from the map plus recorded coverage, and speed from parallel jobs, so a PR runs what its change needs without trading away checks. The one structural rule, enforced by `audit`, is that journey suites never run on every PR: `always_suites` and `static_suites` contain no suite with a `target`. If the owner wants a cap anyway, show the measured numbers (each feature's plan, a shared-code change's plan and the parallel wait) and record their choice as `pr_budget_minutes`. `audit` then warns about changes over it; it never skips a required check.
 
 ## 9. Audit until clean and show the owner
 
-Run `$VP audit` and fix every FAIL, then the warnings. Then run `$VP plan --files <path>` for one typical file per feature, a shared file, the lockfile and a doc. Put a table of those plans (suites and minutes) in the adoption PR, so the owner sees what a typical PR will run.
+Run `$VP audit` and fix every FAIL, then the warnings. Then run `$VP plan --files <path>` for one typical file per feature, a shared file, the lockfile and a doc. Put a table of those plans (suites, total minutes and parallel wait) in the adoption PR, so the owner sees what a typical PR will run.
 
-Install [the change-aware CI job](../templates/jfactory-checks.yml): it runs `audit`, then only the planned suites on PRs, and every suite nightly. Add the project's runtime steps, matching the local target's `setup`, and make its `checks` job required.
+Install [the change-aware CI job](../templates/jfactory-checks.yml). On PRs it runs `audit`, then the planned suites plus those that recorded coverage selects, across parallel jobs. Nightly it runs every suite and records coverage. Add the project's runtime steps, matching the local target's `setup`, and make its `checks` job required.
 
 ## Keep the map current as the product changes
 
 - **Every PR.** `ci` fails when a tracked file matches no feature, or a feature matches no file. So a new area or a deleted one is mapped in the same PR that creates it. A mapping change is a gate change, so the independent verifier reviews it: the new paths, suites and level must fit what the code does.
 - **Timings.** `ci` reports when a suite ran over 1.5 times its recorded minutes; update `minutes` then.
-- **Nightly.** `ci --all` runs every suite, catching regressions in journeys that PRs didn't touch. A nightly failure becomes a fix objective.
+- **Nightly.** `ci --all` runs every suite, catching anything coverage could not see, and refreshes the recorded coverage, so journey selection follows the code as it changes without anyone editing the map. A nightly failure becomes a fix objective.
 - **Larger product changes.** After a redesign, a new product area or a reorganised codebase, rerun steps 1 to 9 for the affected areas and rerun `smoke`. Re-running setup does this.

@@ -153,7 +153,7 @@ class SetupCheckTest(unittest.TestCase):
     def test_per_pr_cost_must_fit_the_budget(self):
         timed = lambda **minutes: {name: {'run': 'true', 'minutes': m} for name, m in minutes.items()}
         self.mapping(suites=timed(unit=2, **{'e2e-app': 5}))
-        self.assertIn('No "pr_budget_minutes"', self.check('--remote', '--repo', 'o/r'))
+        self.assertIn('No journey suite runs on every PR; no per-PR time limit is set', self.check('--remote', '--repo', 'o/r'))
         self.mapping(pr_budget_minutes=10, suites=timed(unit=2, **{'e2e-app': 5}))
         self.assertIn('PASS: Map: Every single-area change fits the 10 min budget', self.check('--remote', '--repo', 'o/r'))
         self.mapping(pr_budget_minutes=10, suites=timed(unit=2))
@@ -175,7 +175,11 @@ class SetupCheckTest(unittest.TestCase):
         self.mapping(pr_budget_minutes=10, suites={'unit': {'run': 'true', 'minutes': 1},
                                                    'e2e-app': {'run': 'true', 'minutes': 2, 'target': 'local'}},
                      targets=target)
-        self.assertIn('FAIL: Target local has no passing start-up receipt', self.check('--remote', '--repo', 'o/r', code=1))
+        out = self.check('--remote', '--repo', 'o/r', code=1)
+        self.assertIn('FAIL: Target local has no passing start-up receipt', out)
+        self.assertIn('The map has journey suites (e2e-app) but no workflow runs `verify_plan.py ci`', out)
+        shutil.copy(ROOT / 'skills' / 'jfactory' / 'templates' / 'jfactory-checks.yml',
+                    self.root / '.github' / 'workflows' / 'jfactory-checks.yml')
         receipt = {'ok': False, 'steps': [{'step': 'doctor', 'ok': False, 'detail': '`npm run doctor` exited 1'}]}
         (self.root / '.jfactory' / 'smoke.json').write_text(json.dumps({'local': receipt}))
         self.assertIn('(failed at doctor: `npm run doctor` exited 1)', self.check('--remote', '--repo', 'o/r', code=1))

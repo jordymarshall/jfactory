@@ -1,7 +1,10 @@
-# Copy to .github/workflows/jfactory-checks.yml during setup and set JFACTORY_DIR to the installed bundle path.
-# Add the project's runtime steps where marked (for example actions/setup-node and npm ci), then make the
-# "checks" job a required check. On a PR it fails when a tracked file is unmapped, then runs only the suites
-# the change needs. The nightly run executes every suite, including the whole browser suite.
+# Copy to .github/workflows/jfactory-checks.yml during setup, set JFACTORY_DIR to the installed bundle path and
+# SHARDS to the mapping's "shards". Add the project's runtime steps where marked (for example actions/setup-node
+# and npm ci), then make the "checks" job a required check.
+#
+# On a PR it fails when a tracked file is unmapped, then runs only the suites the change needs: the map's, plus
+# every suite whose recorded coverage executed a changed file. The suites are split across parallel jobs by their
+# recorded minutes. The nightly run executes every suite and records the coverage the next PRs use.
 name: jfactory checks
 on:
   pull_request:
@@ -10,12 +13,17 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 env:
   JFACTORY_DIR: .agents/skills/jfactory
 jobs:
-  checks:
+  suites:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,9 +32,34 @@ jobs:
         with:
           python-version: '3.11'
       # Project runtime and dependencies go here, matching the local target's "setup" command.
-      - name: Run the suites this change needs
+      - name: Fetch the latest recorded coverage
         if: github.event_name == 'pull_request'
-        run: python3 "$JFACTORY_DIR/scripts/verify_plan.py" ci --base "origin/${{ github.base_ref }}"
-      - name: Run every suite
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run=$(gh run list --workflow jfactory-checks.yml --branch "${{ github.base_ref }}" --event schedule \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$run" ]; then gh run download "$run" --pattern 'jfactory-impact-*' --dir .jfactory-impact || true; fi
+      - name: Run this job's share of the suites the change needs
+        if: github.event_name == 'pull_request'
+        run: >-
+          python3 "$JFACTORY_DIR/scripts/verify_plan.py" ci --base "origin/${{ github.base_ref }}"
+          --impact .jfactory-impact --shard "${{ matrix.shard }}/${{ strategy.job-total }}"
+      - name: Run this job's share of every suite and record coverage
         if: github.event_name != 'pull_request'
-        run: python3 "$JFACTORY_DIR/scripts/verify_plan.py" ci --all
+        run: >-
+          python3 "$JFACTORY_DIR/scripts/verify_plan.py" ci --all
+          --shard "${{ matrix.shard }}/${{ strategy.job-total }}" --impact-out "impact/${{ matrix.shard }}.json"
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request' && always()
+        with:
+          name: jfactory-impact-${{ matrix.shard }}
+          path: impact/
+          if-no-files-found: ignore
+  checks:
+    needs: suites
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every parallel job to pass
+        run: test "${{ needs.suites.result }}" = success

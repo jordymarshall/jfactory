@@ -164,14 +164,16 @@ def check_verification(root, report, states):
     gate = [p for p in workflows.glob('*.y*ml') if 'verify_plan.py' in p.read_text() and ' check ' in p.read_text()] \
         if workflows.is_dir() else []
     if config is not None:
+        journeys = sorted(n for n, d in config.get('suites', {}).items() if d.get('target'))
         total = verify_plan.cost(set(config.get('suites', {})), config)[0]
         budget = config.get('pr_budget_minutes')
         planned = [p for p in workflows.glob('*.y*ml') if re.search(r'verify_plan\.py"?\s+(ci|plan)\b', p.read_text())] \
             if workflows.is_dir() else []
-        if isinstance(budget, (int, float)) and total > budget and not planned:
-            report.add('FAIL', f'All suites together take {total} min, over the {budget} min budget, but no workflow '
-                               'runs `verify_plan.py ci`; install templates/jfactory-checks.yml so PRs run only the '
-                               'suites they need')
+        over = isinstance(budget, (int, float)) and total > budget
+        if (journeys or over) and not planned:
+            reason = f'journey suites ({", ".join(journeys[:4])})' if journeys else f'{total} min of suites'
+            report.add('FAIL', f'The map has {reason} but no workflow runs `verify_plan.py ci`, so CI would run '
+                               'everything on every PR; install templates/jfactory-checks.yml')
     if gate:
         report.add('PASS', f'The jfactory verified workflow is installed: {gate[0].relative_to(root)}')
     else:
