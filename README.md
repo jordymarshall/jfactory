@@ -33,9 +33,10 @@ You stay in charge of three things: what gets built, product decisions the agent
    - a **verifier** that drives your real app;
    - a **map** from code areas to their checks, each area marked high-risk or low-risk;
    - the **`jfactory verified`** GitHub check;
-   - a record of **what merging deploys** (staging or nothing).
+   - a record of **what merging deploys** (staging or nothing);
+   - when merges go to staging, a **release procedure**: how to see which commit each environment runs, how to promote to production, who approves and how to roll back.
 
-   🔒 `setup_check.py --remote` won't report setup complete while the map, the check workflow or the deploy record is missing, or while GitHub doesn't require the checks. It only warns about unmapped files or unset risk levels, which default to the strictest verification anyway. 📋 Building the verifier itself is an instruction.
+   🔒 `setup_check.py --remote` won't report setup complete while the map, the check workflow, the deploy record or (for staging) the release procedure is missing, or while GitHub doesn't require the checks. It only warns about unmapped files or unset risk levels, which default to the strictest verification anyway. 📋 Building the verifier itself is an instruction.
 
 **Every request after that,** for example *"Let users save items and find them later"*:
 
@@ -51,10 +52,14 @@ You stay in charge of three things: what gets built, product decisions the agent
 8. **Auto-merge.** GitHub merges once the required checks pass. Merging deploys to staging at most; production is only ever your call. 🔒 GitHub enforces the checks once your ruleset requires CI and `jfactory verified` (setup checks this). The staging-only rule is 🔒 enforced by `coord.py merge`, and `setup_check.py` refuses to mark delivery verified when merging releases production. For a single agent's own PR it's 📋 an instruction.
 9. **Handoff.** You get what changed, the actual checks and results, what's unproven, and the PR link. You try it; your feedback starts the next loop. 📋 Instructed
 
+**When you say "release":**
+
+10. **Release.** The agent follows the recorded procedure: it confirms which commit staging runs and lists the PRs since production, rechecks that commit on staging, names anything a rollback can't undo, promotes that same commit, and checks production read-only. If the check fails and nothing irreversible shipped, it rolls back. 📋 Instructed. 🔒 Your approval is enforced when production sits behind a protected environment, such as the [release workflow template](skills/jfactory/templates/release-production.yml) with required reviewers.
+
 **Always on:**
 
-10. **Learning.** When you correct the agent twice, it moves the fix to the strongest place it fits: code that makes the mistake impossible, then a lint or CI check, then instructions or a skill. 📋 Instructed
-11. **Parallel work.** Say *"deliver A, B and C in parallel"*. One coordinator agent runs one isolated workspace per feature, with a GitHub issue as the dashboard. 🔒 `coord.py` refuses unsafe launches and merges, and launches nothing while the issue has the `jfactory-hold` label. 📋 Merging overlapping PRs one at a time is an instruction.
+11. **Learning.** When you correct the agent twice, it moves the fix to the strongest place it fits: code that makes the mistake impossible, then a lint or CI check, then instructions or a skill. 📋 Instructed
+12. **Parallel work.** Say *"deliver A, B and C in parallel"*. One coordinator agent runs one isolated workspace per feature, with a GitHub issue as the dashboard. 🔒 `coord.py` refuses unsafe launches and merges, and launches nothing while the issue has the `jfactory-hold` label. 📋 Merging overlapping PRs one at a time is an instruction.
 
 ![How one change flows through jfactory](docs/diagrams/change-flow.png)
 
@@ -258,7 +263,7 @@ jfactory's default policy, which you can change:
 
 - **Verified work merges itself.** Once every acceptance criterion passes at its required scope on the PR's latest commit, the agent queues GitHub's protected squash auto-merge, pinned to that commit. It doesn't ask again each time.
 - **Merging deploys at most to staging.** If merging your main branch releases to production today, auto-merge stays off until that's changed with your authorization.
-- **Production is always your call.** Green CI, a verified verdict or a merged PR is never a request to release.
+- **Production is always your call.** Green CI, a verified verdict or a merged PR is never a request to release. When you ask, the agent follows the release procedure setup recorded. See [production releases](skills/jfactory/references/release.md) for the host patterns (Vercel promotion, GitHub environments, tags) and the steps.
 
 This relies on real GitHub settings, not just instructions:
 
@@ -375,7 +380,7 @@ A verifier always comes from a different family than the implementer, so Codex-w
 | Managed block in `AGENTS.md` or `CLAUDE.md` | A short pointer telling the agent to use jfactory. Your surrounding text is preserved. |
 | `.jfactory/setup.md` | The setup record: readiness per area, owner interview answers, open decisions and the task location. |
 | `.jfactory/verification.json` | The verification map: paths to features, recipes and CI suites. |
-| `.jfactory/coordination.json` | What merging deploys (`staging`, `none` or `production`) and any model-policy overrides. |
+| `.jfactory/coordination.json` | What merging deploys (`staging`, `none` or `production`), the release procedure and any model-policy overrides. |
 | `.github/workflows/jfactory-verified.yml` | The workflow behind the `jfactory verified` check. |
 | Your project verifier skill | The CLI and feature map for driving your app. It lives outside the jfactory bundle because it's yours. |
 | `.context/jfactory/`, `.context/ux/` | Local evidence and browser studies. Keep them out of Git; they can contain private data. |

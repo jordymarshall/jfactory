@@ -44,7 +44,7 @@ For a `judgment` criterion, write the rubric before building. Give each point so
 ## Review and stop
 - **Checkpoint:** <when the owner reviews>
 - **Stop conditions:** <when to stop, e.g. the criteria pass>
-- **Merge and release policy:** <what merging does; production needs an owner request>
+- **Merge and release policy:** <what merging does; production needs an owner request and follows the `release` procedure in .jfactory/coordination.json>
 
 ## Status
 | Criterion | Result | Evidence and commit |
