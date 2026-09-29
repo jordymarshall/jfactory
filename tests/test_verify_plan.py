@@ -402,7 +402,9 @@ class RunTest(unittest.TestCase):
             'const http = require("http"); const db = require("./lib/db");\n'
             'process.on("SIGTERM", () => process.exit(0));\n'
             'http.createServer((q, s) => s.end(db.load())).listen(+process.argv[2], "127.0.0.1");\n')
-        local = {**self.config['targets']['local'], 'start': 'node server.js $PORT'}
+        # `; true` keeps the shell alive as Node's parent, as dash does on Ubuntu runners, so stopping must wait
+        # for the whole process group before reading coverage.
+        local = {**self.config['targets']['local'], 'start': 'node server.js $PORT; true'}
         features = {**self.config['features'], 'shared': {'paths': ['lib/**', 'server.js'], 'suites': ['unit']}}
         self.write_config(targets={'local': local}, features=features)
         self.git('add', '-A')

@@ -444,12 +444,36 @@ def started(name, target, timeout, url=None, log=None, extra=None):
             time.sleep(1)
         yield env
     finally:
-        if proc and proc.poll() is None:
-            os.killpg(proc.pid, signal.SIGTERM)
-            try:
-                proc.wait(10)
-            except subprocess.TimeoutExpired:
-                os.killpg(proc.pid, signal.SIGKILL)
+        if proc:
+            stop_group(proc)
+
+
+def stop_group(proc, grace=10):
+    """Stop the target's whole process group and wait for every member to exit, not just the shell that
+    started it (dash does not exec its last command), so coverage and logs are fully written."""
+    def alive():
+        try:
+            os.killpg(proc.pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        proc.poll()
+        if not alive():
+            return
+        time.sleep(0.1)
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    proc.wait()
 
 
 def shell(command, env=None):
