@@ -638,7 +638,11 @@ GATE_JOBS = {'status'}
 def ci_refusal(repo, head):
     """Why CI at `head` cannot be relied on (missing, running or failed), or None when every check passed.
     A verifier reuses these results instead of re-running the suites, so they must be complete and green."""
-    data = json.loads(run('gh', 'api', f'repos/{repo}/commits/{head}/check-runs?per_page=100'))
+    try:
+        data = json.loads(run('gh', 'api', f'repos/{repo}/commits/{head}/check-runs?per_page=100'))
+    except (Refused, ValueError) as error:
+        return (f'Cannot read CI results at {head[:7]} ({str(error)[:60]}); the jfactory verified workflow needs '
+                '`checks: read`')
     runs = [r for r in data.get('check_runs', []) if r.get('name') not in GATE_JOBS]
     if not runs:
         return f'No CI check has run at {head[:7]}; the verifier relies on CI results at the head it verifies'
@@ -651,8 +655,9 @@ def ci_refusal(repo, head):
     return None
 
 
-def evaluate(pr, config):
-    """Return (state, description) for the jfactory verified status at the PR head."""
+def evaluate(pr, config, ci_check=None):
+    """Return (state, description) for the jfactory verified status at the PR head. `ci_check(head)` returns why
+    CI at the head can't be relied on, or None; a verified verdict counts only while CI there is green."""
     result = plan(pr['files'], config)
     if result['level'] != 'static' and config.get('require_objective', True) and not states_objective(pr.get('body')):
         return 'failure', 'PR description must start with its objective: an Objective heading (such as "## Objective") or "Objective:" line'
@@ -681,6 +686,9 @@ def evaluate(pr, config):
                                   config.get('allow_same_family', False))
     if refusal:
         return 'failure', refusal
+    problem = ci_check(head) if ci_check else None
+    if problem:
+        return 'failure', problem
     return 'success', f"Verified at {head[:7]} by {verdict.get('verifier')}"
 
 
@@ -703,7 +711,7 @@ def cmd_plan(args):
 def cmd_check(args):
     pr = pr_info(args.repo, args.pr)
     config = load_config(args.config_ref or f"origin/{pr['baseRefName']}")
-    state, description = evaluate(pr, config)
+    state, description = evaluate(pr, config, lambda head: ci_refusal(args.repo, head))
     print(f'{state}: {description}')
     if args.set_status:
         run('gh', 'api', '-X', 'POST', f"repos/{args.repo}/statuses/{pr['headRefOid']}",

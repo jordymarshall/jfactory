@@ -108,6 +108,11 @@ class SetupCheckTest(unittest.TestCase):
         self.assertIn('No workflow runs `verify_plan.py ... check`', out)
         self.assertIn('FAIL: Map: 1 tracked file(s) match no feature', out)
 
+    def test_gate_workflow_must_read_ci_results(self):
+        workflow = self.root / '.github' / 'workflows' / 'jfactory-verified.yml'
+        workflow.write_text(workflow.read_text().replace('  checks: read\n', ''))
+        self.assertIn('lacks `checks: read`', self.check('--remote', '--repo', 'o/r', code=1))
+
     def test_verified_delivery_needs_enforced_remote_gates(self):
         self.state.write_text(json.dumps({'repo': {'default_branch': 'main', 'allow_auto_merge': True},
                                           'rules': [{'type': 'pull_request'}, {'type': 'required_status_checks',

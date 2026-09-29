@@ -242,6 +242,17 @@ class GateTest(unittest.TestCase):
         self.verdict()
         self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
 
+    def test_status_counts_a_verdict_only_while_ci_is_green(self):
+        self.verdict()
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+        # A later CI failure at the same head (or a verdict comment written by hand) no longer passes.
+        self.set_ci(('checks', 'completed', 'failure'))
+        self.assertIn('failure: CI did not pass at aaaaaaa', self.run_script('check', '--pr', '5', code=1))
+        db = json.loads(self.state.read_text())
+        db['check_runs'] = 'not json'
+        self.state.write_text(json.dumps(db))
+        self.assertIn('needs `checks: read`', self.run_script('check', '--pr', '5', code=1))
+
     def test_reverification_after_a_fix_checks_only_the_changes_since(self):
         self.run_script('verdict', '--pr', '5', '--head', HEAD, '--verdict', 'failed', '--verifier', 'codex/gpt-6-sol',
                         '--implementer', 'claude/opus-5-5-1m', '--evidence', 'x')
