@@ -1,0 +1,41 @@
+# Copy to .github/workflows/release-production.yml when the repository releases through GitHub Actions,
+# then replace both REPLACE_WITH steps. See references/release.md in the jfactory bundle.
+# In Settings > Environments, create "production" with required reviewers (the owner), deployment
+# limited to the base branch, and "Allow administrators to bypass configured protection rules" off.
+# The job then waits for the owner's approval, so a release happens only when they approve it.
+name: Release to production
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit to release; use the one staging runs
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: release-production
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Refuse commits that are not on the base branch
+        env:
+          SHA: ${{ inputs.sha }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          git cat-file -e "$SHA^{commit}"
+          git merge-base --is-ancestor "$SHA" "origin/$BASE"
+          git checkout --detach "$SHA"
+      - name: Deploy the commit
+        # Promote the build staging already runs where the host supports it, instead of rebuilding.
+        run: echo "REPLACE_WITH_YOUR_DEPLOY_COMMAND" && exit 1
+      - name: Check production runs the commit
+        # Read the deployed revision and run read-only checks; never mutate production data here.
+        env:
+          SHA: ${{ inputs.sha }}
+        run: echo "REPLACE_WITH_YOUR_PRODUCTION_CHECK for $SHA" && exit 1

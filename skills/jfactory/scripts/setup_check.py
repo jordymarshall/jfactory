@@ -3,7 +3,8 @@
 
 Run from the repository root after setup, after an update and whenever setup is re-run. It checks the
 artifacts setup must leave behind and rejects readiness claims the evidence does not support, such as
-product direction marked verified while owner interview questions are unanswered. With --remote it also
+product direction marked verified while owner interview questions are unanswered, or merges that
+deploy to staging with no recorded way to release production. With --remote it also
 reads the GitHub settings that protected auto-merge depends on.
 
 Exit status: 0 complete, 1 something must be fixed, 3 consistent but blocked on named owner steps.
@@ -24,6 +25,8 @@ DONE = {'verified', 'not applicable'}
 ENTRY_SECTIONS = {'product brief': 'Product brief', 'system map': 'System map',
                   'feature/status map': 'Feature/status map', 'agent instructions': 'Agent instructions'}
 MERGE_TARGETS = {'staging', 'none', 'production'}
+# The release record in coordination.json; references/release.md explains each field.
+RELEASE_FIELDS = ['production', 'revision', 'promote', 'rollback']
 UNANSWERED = {'', 'unanswered', 'tbd', 'todo', '?'}
 # The interview must cover each topic in templates/setup-record.md, not just any one question.
 INTERVIEW_TOPICS = {'who it is for': r'\bwho\b', 'what they do today': r'\btoday\b|instead|workaround',
@@ -172,7 +175,8 @@ def check_verification(root, report, states):
 
 def check_delivery(root, report, states):
     path = root / '.jfactory' / 'coordination.json'
-    target = json.loads(path.read_text()).get('merge_deploys') if path.is_file() else None
+    config = json.loads(path.read_text()) if path.is_file() else {}
+    target = config.get('merge_deploys')
     if target not in MERGE_TARGETS:
         report.add('FAIL', 'Record what merging deploys as "merge_deploys" (staging, none or production) in '
                            '.jfactory/coordination.json')
@@ -182,6 +186,27 @@ def check_delivery(root, report, states):
                           'nowhere; PR delivery cannot be verified')
     else:
         report.add('PASS', f'Merging deploys to: {target}')
+        check_release(config, target, report, states)
+
+
+def check_release(config, target, report, states):
+    """Check that the path from staging to production is recorded, so a release request has steps to follow."""
+    release = config.get('release')
+    if release is None and target == 'none':
+        return  # nothing deploys on merge; a release record is optional
+    fields = RELEASE_FIELDS + (['staging'] if target == 'staging' else [])
+    release = release if isinstance(release, dict) else {}
+    missing = [f for f in fields if not isinstance(release.get(f), str) or not release[f].strip()
+               or release[f].strip().startswith('<')]
+    if missing:
+        level = 'FAIL' if states.get('PR delivery') == 'verified' else 'WARN'
+        report.add(level, 'The release procedure is incomplete: record ' + ', '.join(f'"{f}"' for f in missing) +
+                          ' under "release" in .jfactory/coordination.json (see references/release.md)')
+        return
+    report.add('PASS', 'Release procedure recorded: ' + ', '.join(fields))
+    if not str(release.get('approval') or '').strip():
+        report.add('WARN', 'No "approval" gate is recorded for production, so only instructions stop an early '
+                           'release; protect the production environment where the host allows it')
 
 
 def check_remote(repo, branch, report, states):

@@ -15,6 +15,9 @@ FAKE = ROOT / 'tests' / 'fakes' / 'fake_cli.py'
 AGENTS = '# App\n\n## Product brief\nx\n\n## System map\nx\n\n## Feature/status map\nx\n\n## Agent instructions\nx\n'
 READY = {area: ('verified', 'checked') for area in
          ['Documentation', 'Product direction', 'Workspace tools', 'Verification', 'Environments', 'PR delivery']}
+RELEASE = {'staging': 'https://staging.example.com', 'production': 'https://example.com',
+           'revision': 'curl -s https://example.com/api/version', 'promote': 'gh workflow run release-production.yml',
+           'approval': 'GitHub environment production requires the owner', 'rollback': 'vercel rollback'}
 PROTECTED = {'repo': {'default_branch': 'main', 'allow_auto_merge': True},
              'rules': [{'type': 'pull_request'},
                        {'type': 'required_status_checks', 'parameters': {'required_status_checks': [
@@ -42,7 +45,8 @@ class SetupCheckTest(unittest.TestCase):
         (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(
             {'static': ['README.md'], 'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**',
                                                                     '.github/**']}}}))
-        (self.root / '.jfactory' / 'coordination.json').write_text('{"merge_deploys": "staging"}')
+        (self.root / '.jfactory' / 'coordination.json').write_text(json.dumps(
+            {'merge_deploys': 'staging', 'release': RELEASE}))
         (self.root / '.github' / 'workflows').mkdir(parents=True)
         shutil.copy(WORKFLOW, self.root / '.github' / 'workflows' / 'jfactory-verified.yml')
         (self.root / 'src').mkdir()
@@ -157,6 +161,52 @@ class SetupCheckTest(unittest.TestCase):
     def test_production_merges_cannot_be_verified_delivery(self):
         (self.root / '.jfactory' / 'coordination.json').write_text('{"merge_deploys": "production"}')
         self.assertIn('Merging releases production', self.check(code=1))
+
+    def write_coordination(self, **config):
+        (self.root / '.jfactory' / 'coordination.json').write_text(json.dumps(config))
+
+    def test_staging_merges_need_a_release_procedure(self):
+        self.assertIn('Release procedure recorded: production, revision, promote, rollback, staging',
+                      self.check('--remote', '--repo', 'o/r'))
+        self.write_coordination(merge_deploys='staging')
+        out = self.check('--remote', '--repo', 'o/r', code=1)
+        self.assertIn('FAIL: The release procedure is incomplete: record "production", "revision", "promote", '
+                      '"rollback", "staging"', out)
+        states = {**READY, 'PR delivery': ('blocked', 'owner must create the production environment')}
+        (self.root / '.jfactory' / 'setup.md').write_text(record(states=states))
+        self.assertIn('WARN: The release procedure is incomplete', self.check('--remote', '--repo', 'o/r', code=3))
+
+    def test_placeholder_or_blank_release_fields_do_not_count(self):
+        self.write_coordination(merge_deploys='staging', release={**RELEASE, 'rollback': '  ', 'revision': '<how>'})
+        out = self.check('--remote', '--repo', 'o/r', code=1)
+        self.assertIn('record "revision", "rollback" under "release"', out)
+        self.write_coordination(merge_deploys='staging', release='vercel promote')
+        self.assertIn('The release procedure is incomplete', self.check('--remote', '--repo', 'o/r', code=1))
+
+    def test_release_without_an_enforced_approval_warns(self):
+        self.write_coordination(merge_deploys='staging', release={k: v for k, v in RELEASE.items() if k != 'approval'})
+        self.assertIn('WARN: No "approval" gate is recorded', self.check('--remote', '--repo', 'o/r'))
+
+    def test_release_record_is_optional_when_merging_deploys_nothing(self):
+        self.write_coordination(merge_deploys='none')
+        out = self.check('--remote', '--repo', 'o/r')
+        self.assertNotIn('release', out.lower())
+        release = {k: v for k, v in RELEASE.items() if k != 'staging'}
+        self.write_coordination(merge_deploys='none', release={**release, 'promote': ''})
+        self.assertIn('record "promote"', self.check('--remote', '--repo', 'o/r', code=1))
+        self.write_coordination(merge_deploys='none', release=release)
+        self.assertIn('Release procedure recorded: production, revision, promote, rollback\n',
+                      self.check('--remote', '--repo', 'o/r'))
+
+    def test_release_template_waits_for_a_protected_environment(self):
+        text = (ROOT / 'skills' / 'jfactory' / 'templates' / 'release-production.yml').read_text()
+        triggers = text.split('\non:\n', 1)[1].split('\npermissions:', 1)[0]
+        self.assertIn('workflow_dispatch:', triggers)
+        for trigger in ['push:', 'pull_request', 'schedule:', 'workflow_run:']:
+            self.assertNotIn(trigger, triggers)
+        self.assertIn('    environment: production\n', text)
+        self.assertIn('git merge-base --is-ancestor "$SHA" "origin/$BASE"', text)
+        self.assertEqual(text.count('&& exit 1'), 2, 'unfilled placeholder steps must fail, not skip')
 
 
 if __name__ == '__main__':
