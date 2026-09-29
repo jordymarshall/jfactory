@@ -106,7 +106,7 @@ class SetupCheckTest(unittest.TestCase):
         subprocess.run(['git', '-C', str(self.root), 'add', 'lib.py'], check=True)
         out = self.check(code=1)
         self.assertIn('No workflow runs `verify_plan.py ... check`', out)
-        self.assertIn('WARN: 1 tracked file(s) match no feature', out)
+        self.assertIn('FAIL: Map: 1 tracked file(s) match no feature', out)
 
     def test_verified_delivery_needs_enforced_remote_gates(self):
         self.state.write_text(json.dumps({'repo': {'default_branch': 'main', 'allow_auto_merge': True},
@@ -143,6 +143,56 @@ class SetupCheckTest(unittest.TestCase):
             {'static': ['README.md'], 'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**', '.github/**'],
                                                            'verify': 'independent'}}}))
         self.assertIn('Risk levels set: 1 independent, 0 CI-only', self.check('--remote', '--repo', 'o/r'))
+
+    def mapping(self, **extra):
+        (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(
+            {'static': ['README.md'], 'always_suites': ['unit'], **extra,
+             'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**', '.github/**'], 'verify': 'independent',
+                                  'suites': ['e2e-app']}}}))
+
+    def test_per_pr_cost_must_fit_the_budget(self):
+        timed = lambda **minutes: {name: {'run': 'true', 'minutes': m} for name, m in minutes.items()}
+        self.mapping(suites=timed(unit=2, **{'e2e-app': 5}))
+        self.assertIn('No journey suite runs on every PR; no per-PR time limit is set', self.check('--remote', '--repo', 'o/r'))
+        self.mapping(pr_budget_minutes=10, suites=timed(unit=2, **{'e2e-app': 5}))
+        self.assertIn('PASS: Map: Every single-area change fits the 10 min budget', self.check('--remote', '--repo', 'o/r'))
+        self.mapping(pr_budget_minutes=10, suites=timed(unit=2))
+        self.assertIn('Suite(s) e2e-app are used but not defined', self.check('--remote', '--repo', 'o/r', code=1))
+        self.mapping(pr_budget_minutes=10, suites=timed(unit=2, **{'e2e-app': 45}))
+        out = self.check('--remote', '--repo', 'o/r', code=1)
+        self.assertIn('WARN: Map: These changes exceed the 10 min per-PR budget: AGENTS.md -> app (47 min)', out)
+        # Suites that together exceed the budget need the change-aware CI job.
+        self.assertIn('no workflow runs `verify_plan.py ci`', out)
+        shutil.copy(ROOT / 'skills' / 'jfactory' / 'templates' / 'jfactory-checks.yml',
+                    self.root / '.github' / 'workflows' / 'jfactory-checks.yml')
+        self.assertNotIn('no workflow runs', self.check('--remote', '--repo', 'o/r'))
+        # The whole browser suite on every PR is the misconfiguration this check exists for.
+        self.mapping(pr_budget_minutes=10, suites=timed(unit=2, e2e=45, **{'e2e-app': 5}), always_suites=['unit', 'e2e'])
+        self.assertIn('FAIL: Map: Suites that run on every PR take 47 min', self.check('--remote', '--repo', 'o/r', code=1))
+
+    def test_targets_need_a_fresh_start_up_receipt(self):
+        target = {'local': {'start': 'npm start', 'ready': 'http://127.0.0.1:$PORT/', 'auth': 'none'}}
+        self.mapping(pr_budget_minutes=10, suites={'unit': {'run': 'true', 'minutes': 1},
+                                                   'e2e-app': {'run': 'true', 'minutes': 2, 'target': 'local'}},
+                     targets=target)
+        out = self.check('--remote', '--repo', 'o/r', code=1)
+        self.assertIn('FAIL: Target local has no passing start-up receipt', out)
+        self.assertIn('The map has journey suites (e2e-app) but no workflow runs `verify_plan.py ci`', out)
+        shutil.copy(ROOT / 'skills' / 'jfactory' / 'templates' / 'jfactory-checks.yml',
+                    self.root / '.github' / 'workflows' / 'jfactory-checks.yml')
+        receipt = {'ok': False, 'steps': [{'step': 'doctor', 'ok': False, 'detail': '`npm run doctor` exited 1'}]}
+        (self.root / '.jfactory' / 'smoke.json').write_text(json.dumps({'local': receipt}))
+        self.assertIn('(failed at doctor: `npm run doctor` exited 1)', self.check('--remote', '--repo', 'o/r', code=1))
+        (self.root / '.jfactory' / 'smoke.json').write_text(json.dumps({'local': {'ok': True, 'fresh': False}}))
+        self.assertIn('FAIL: Target local started only in an existing checkout',
+                      self.check('--remote', '--repo', 'o/r', code=1))
+        states = {**READY, 'Verification': ('configured but unverified', 'fresh workspace pending')}
+        (self.root / '.jfactory' / 'setup.md').write_text(record(states=states))
+        self.assertIn('WARN: Target local started only in an existing checkout', self.check('--remote', '--repo', 'o/r', code=3))
+        (self.root / '.jfactory' / 'setup.md').write_text(record())
+        (self.root / '.jfactory' / 'smoke.json').write_text(json.dumps(
+            {'local': {'ok': True, 'fresh': True, 'commit': 'abcdef1234', 'at': '2026-09-29T00:00:00Z'}}))
+        self.assertIn('PASS: Target local started in a fresh workspace at abcdef1', self.check('--remote', '--repo', 'o/r'))
 
     def test_pr_delivery_cannot_be_not_applicable(self):
         states = {**READY, 'PR delivery': ('not applicable', 'no PRs here')}

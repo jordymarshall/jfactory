@@ -10,7 +10,7 @@ Read the selected original and its relevant references. The compatibility mappin
 | Fix a bug with a cheap local reproduction | [tdd](../vendor/pstack/skills/tdd/SKILL.md) |
 | Verify completed work | [prove-it-works](../vendor/pstack/skills/principle-prove-it-works/SKILL.md) and the target repository’s generated verifier |
 | Create missing project verification instructions | [create-verification-skill](../vendor/pstack/skills/create-verification-skill/SKILL.md) |
-| Audit/update the verification map | [maintain-verification-skill](../vendor/pstack/skills/maintain-verification-skill/SKILL.md) |
+| Audit/update the verification map | [maintain-verification-skill](../vendor/pstack/skills/maintain-verification-skill/SKILL.md), with [guided mapping](mapping.md) and `verify_plan.py audit` for `.jfactory/verification.json` |
 | Adversarial code review | [interrogate](../vendor/pstack/skills/interrogate/SKILL.md); report available reviewer/model limits |
 | Evaluate a skill or prompt change | [eval playbook](../vendor/pstack/skills/poteto-mode/playbooks/eval.md), [arena](../vendor/pstack/skills/arena/SKILL.md) phases B/C and its referenced principles |
 | Settle a design or empirical question before building | [prototype](../vendor/pstack/skills/poteto-mode/playbooks/prototype.md); the result is throwaway evidence for a decision |

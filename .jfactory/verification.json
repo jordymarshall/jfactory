@@ -4,6 +4,12 @@
   "static_suites": ["checks"],
   "always_suites": ["checks"],
   "full_suites": ["checks"],
+  "suites": {
+    "checks": {
+      "run": "python3 -m unittest discover -s tests && python3 skills/jfactory/scripts/check-upstream.py && python3 tests/browser_smoke.py && python3 tests/dashboard_smoke.py",
+      "minutes": 2
+    }
+  },
   "features": {
     "agent-instructions": {
       "paths": ["AGENTS.md", "skills/jfactory/SKILL.md", "skills/jfactory/references/**", "skills/jfactory/skills/*/SKILL.md", "skills/jfactory/skills/*/references/**"],

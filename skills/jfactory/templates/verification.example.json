@@ -3,18 +3,53 @@
   "static": ["docs/**", "plan/**", "LICENSE", "CHANGELOG.md"],
   "static_suites": ["static"],
   "always_suites": ["unit"],
-  "full_suites": ["unit", "browser"],
+  "full_suites": ["unit", "smoke"],
+  "shards": 4,
+  "suites": {
+    "static": {"run": "npm run lint", "minutes": 1},
+    "unit": {"run": "npm test", "minutes": 3},
+    "smoke": {"run": "npx playwright test e2e/smoke.spec.ts", "minutes": 1, "target": "local"},
+    "browser-briefs": {"run": "npx playwright test e2e/briefs.spec.ts", "minutes": 4, "target": "local"},
+    "browser-sign-in": {"run": "npx playwright test e2e/sign-in.spec.ts", "minutes": 3, "target": "local"}
+  },
+  "targets": {
+    "local": {
+      "setup": "npm ci && npx playwright install chromium",
+      "doctor": "npm run doctor",
+      "start": "npm run build && npm run start -- --port $PORT",
+      "ready": "http://127.0.0.1:$PORT/api/health",
+      "probe": "npx playwright test e2e/smoke.spec.ts",
+      "auth": "Seeded test account from npm run seed:test-user; no human sign-in"
+    },
+    "preview": {
+      "url": "Pass the PR preview with smoke --url",
+      "ready": "$BASE_URL/api/health",
+      "auth": "Vercel protection bypass token in VERCEL_AUTOMATION_BYPASS_SECRET; seeded test account"
+    }
+  },
   "features": {
     "save-brief": {
       "paths": ["app/src/app/briefs/**", "app/src/lib/briefs/**", "app/e2e/briefs.spec.ts"],
       "recipe": ".agents/skills/verify-app/features/save-brief.md",
-      "suites": ["unit", "browser"],
+      "suites": ["unit", "browser-briefs"],
       "verify": "independent"
     },
     "sign-in": {
-      "paths": ["app/src/lib/auth.ts", "app/src/app/(auth)/**"],
+      "paths": ["app/src/lib/auth.ts", "app/src/app/(auth)/**", "app/e2e/sign-in.spec.ts"],
       "recipe": ".agents/skills/verify-app/features/sign-in.md",
-      "suites": ["unit", "browser"],
+      "suites": ["unit", "browser-sign-in"],
+      "verify": "independent"
+    },
+    "shared-data": {
+      "paths": ["app/src/lib/db/**", "app/src/lib/api-client.ts"],
+      "recipe": "Run the unit suite's data-layer tests; recorded coverage adds the journeys that execute the changed file",
+      "suites": ["unit", "smoke"],
+      "verify": "independent"
+    },
+    "build-and-dependencies": {
+      "paths": ["package.json", "package-lock.json", "app/next.config.*", "app/tsconfig.json", "app/e2e/smoke.spec.ts", "app/playwright.config.ts"],
+      "recipe": "Build, run the unit suite and the smoke journey; the nightly run covers every journey",
+      "suites": ["unit", "smoke"],
       "verify": "independent"
     },
     "internal-tooling": {

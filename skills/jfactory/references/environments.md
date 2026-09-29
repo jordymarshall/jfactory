@@ -4,7 +4,7 @@ Use during adoption and when a task needs a new execution target. Keep the resul
 
 ## Map what the test actually reaches
 
-For each relevant local, preview, staging or production target, record the launch command/URL, source or deployed revision, auth tenant/test account, database, storage, workers/queues and real or mocked providers. Record isolation and cleanup ownership, required secret names without values, allowed side effects and any cost limits. Mark unknown connections explicitly. Do not assume a URL containing "preview" or "staging" makes data disposable.
+Record each place verification starts or reaches the app as a `targets` entry in `.jfactory/verification.json` ([guided mapping](mapping.md#7-define-where-the-app-runs-and-prove-it-starts)), and prove it with `verify_plan.py smoke` in a fresh workspace. For each relevant local, preview, staging or production target, record the launch command/URL, source or deployed revision, auth tenant/test account, database, storage, workers/queues and real or mocked providers. Record isolation and cleanup ownership, required secret names without values, allowed side effects and any cost limits. Mark unknown connections explicitly. Do not assume a URL containing "preview" or "staging" makes data disposable.
 
 | Target | What it means |
 | --- | --- |

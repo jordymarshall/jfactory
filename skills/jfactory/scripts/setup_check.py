@@ -156,21 +156,52 @@ def check_verification(root, report, states):
             report.add('PASS', f'Risk levels set: {len(features) - len(low)} independent, {len(low)} CI-only'
                                + (f' ({", ".join(low)})' if low else ''))
     if config is not None and tracked is not None:
-        result = verify_plan.plan(tracked, config)
-        unmapped = [p for p in result['unmapped'] if not verify_plan.matches(p, verify_plan.GATE_PATHS)]
-        if unmapped:
-            report.add('WARN', f'{len(unmapped)} tracked file(s) match no feature or static pattern and will force '
-                               f'full verification: {", ".join(unmapped[:8])}')
-        else:
-            report.add('PASS', f'.jfactory/verification.json maps every tracked file '
-                               f'({len(config.get("features", {}))} features)')
+        for level, text in verify_plan.audit(tracked, config):
+            report.add(level, f'Map: {text}')
+    if config is not None:
+        check_targets(root, config, report, states)
     workflows = root / '.github' / 'workflows'
     gate = [p for p in workflows.glob('*.y*ml') if 'verify_plan.py' in p.read_text() and ' check ' in p.read_text()] \
         if workflows.is_dir() else []
+    if config is not None:
+        journeys = sorted(n for n, d in config.get('suites', {}).items() if d.get('target'))
+        total = verify_plan.cost(set(config.get('suites', {})), config)[0]
+        budget = config.get('pr_budget_minutes')
+        planned = [p for p in workflows.glob('*.y*ml') if re.search(r'verify_plan\.py"?\s+(ci|plan)\b', p.read_text())] \
+            if workflows.is_dir() else []
+        over = isinstance(budget, (int, float)) and total > budget
+        if (journeys or over) and not planned:
+            reason = f'journey suites ({", ".join(journeys[:4])})' if journeys else f'{total} min of suites'
+            report.add('FAIL', f'The map has {reason} but no workflow runs `verify_plan.py ci`, so CI would run '
+                               'everything on every PR; install templates/jfactory-checks.yml')
     if gate:
         report.add('PASS', f'The jfactory verified workflow is installed: {gate[0].relative_to(root)}')
     else:
         report.add('FAIL', 'No workflow runs `verify_plan.py ... check`; install templates/jfactory-verified.yml')
+
+
+def check_targets(root, config, report, states):
+    """Each target must have started and answered where verification runs, shown by a `smoke` receipt."""
+    targets = config.get('targets', {})
+    if not targets:
+        return
+    path = root / '.jfactory' / 'smoke.json'
+    receipts = json.loads(path.read_text()) if path.is_file() else {}
+    level = 'FAIL' if states.get('Verification') == 'verified' else 'WARN'
+    for name in targets:
+        receipt = receipts.get(name)
+        if not receipt or not receipt.get('ok'):
+            failed = next((s for s in (receipt or {}).get('steps', []) if not s.get('ok')), None)
+            report.add(level, f'Target {name} has no passing start-up receipt'
+                       + (f' (failed at {failed["step"]}: {failed["detail"]})' if failed else '')
+                       + f'; run `verify_plan.py smoke --target {name} --fresh --record .jfactory/smoke.json` '
+                         'in a new workspace')
+        elif not receipt.get('fresh'):
+            report.add(level, f'Target {name} started only in an existing checkout; rerun smoke with --fresh in a new '
+                               'workspace so a verifier\'s workspace is known to work')
+        else:
+            report.add('PASS', f'Target {name} started in a fresh workspace at {receipt.get("commit", "")[:7]} '
+                               f'on {receipt.get("at", "?")}')
 
 
 def check_delivery(root, report, states):
