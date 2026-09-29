@@ -29,6 +29,12 @@ Code that many features use gets its own feature, with checks proportionate to i
 | Design system components | `design-system`: component and visual tests, not every journey |
 | Package manifests, lockfiles, build and framework config, the smoke spec | `build-and-dependencies`: build, unit and smoke |
 
+When the relationship is less direct, use the most precise tool the project has, rather than mapping a file to every journey that might touch it:
+
+- **Test-impact selection:** a suite command that picks tests from the changed files, such as `jest --findRelatedTests`, `vitest related`, `nx affected` or `pytest --testmon`, gives exact unit coverage for shared code.
+- **Coverage-derived paths:** collect coverage for each journey in the nightly run, and add the files a journey actually executes to that feature's paths when they are specific to it.
+- **Several features:** list a file under each feature it directly serves; the plan runs each of their journeys.
+
 The nightly `ci --all` run covers every journey, so a shared change is still exercised in full. It just doesn't hold a PR for 45 minutes. When a shared change is risky for one specific journey, the objective names that journey and the implementer runs it.
 
 ## 5. Mark what cannot change behavior as static
@@ -62,7 +68,13 @@ Then prove it in the place that matters: a new workspace (for Conductor, a new c
 
 ## 8. Set risk levels and the budget
 
-Give every feature `"verify": "independent"` or `"ci"` using the [verification contract](verification.md#change-aware-verification-and-the-merge-gate), and confirm them with the owner. Propose a per-PR budget, usually 10 to 15 minutes, confirm it and record `pr_budget_minutes`. A feature that truly cannot fit, such as checkout with payment journeys, gets an owner-approved `budget_minutes`.
+Give every feature `"verify": "independent"` or `"ci"` using the [verification contract](verification.md#change-aware-verification-and-the-merge-gate), and confirm them with the owner. Then set the per-PR budget. Do not pick a number by default. The budget does not skip required checks. It decides how much of the journey suite a PR runs before merge, and what waits for the nightly run. Show the owner the measured numbers: the whole suite's minutes, each feature's plan, and what a shared-code change would run. Then explain the tradeoff:
+
+- **A tighter budget** means faster merges and agent iterations (an agent waits on CI in every fix loop), less compute and fewer flaky failures. The cost is that a shared-code change can break a journey it didn't run. That shows up in the nightly run, leaving the base branch and staging broken for up to a day, fixed forward. Production is still protected, because a release reruns the affected recipes on staging first.
+- **A looser budget** catches more before merge, at the price of slower PRs, more compute and more flake retries.
+- **What tips it:** whether merging deploys anywhere customers see, how many agents branch from the base at once (a broken base blocks them all), how flaky the journeys are, CI cost, and how often shared code has broken journeys before.
+
+Offer two or three options with their numbers and recommend one, for example "12 min: every feature fits except checkout; shared-code changes run smoke only" against "30 min: shared-code changes also run the three most-used journeys". Record the owner's choice in `pr_budget_minutes`, and the reason in the setup record. A feature that truly cannot fit, such as checkout with payment journeys, gets an owner-approved `budget_minutes`. Revisit the budget when nightly failures show shared changes regularly breaking journeys that PRs didn't run.
 
 ## 9. Audit until clean and show the owner
 
