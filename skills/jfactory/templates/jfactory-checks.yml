@@ -24,6 +24,9 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
+    env:
+      # Names each job's own test data; the targets' seed and cleanup commands use it.
+      JFACTORY_RUN_ID: gh-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
     steps:
       - uses: actions/checkout@v4
         with:

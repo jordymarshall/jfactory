@@ -71,6 +71,8 @@ if tool == 'git' and args[:2] == ['diff', '--name-only']:
 if tool == 'gh' and args[:1] == ['api'] and args[1].endswith('/files'):
     number = args[1].split('/')[-2]
     done('\n'.join(db['prs'][number].get('files', ['src/x.py'])))
+if tool == 'gh' and args[:1] == ['api'] and '/check-runs' in args[1]:
+    done(db.get('check_runs', {'check_runs': [{'name': 'checks', 'status': 'completed', 'conclusion': 'success'}]}))
 if tool == 'gh' and args[:1] == ['api'] and len(args) == 2:
     # Repository settings for setup_check.py: repos/<o>/<r>, its rules and classic protection.
     if args[1].endswith('/protection'):

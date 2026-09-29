@@ -632,6 +632,7 @@ def cmd_verdict(args):
                              '--verdict', args.verdict, '--verifier', args.verifier,
                              '--implementer', f"{unit.get('agent')}/{unit.get('model')}",
                              '--evidence', args.evidence, *(['--full'] if args.full else []),
+                             *(['--since', args.since] if args.since else []),
                              *(['--features', ','.join(args.features)] if args.features else [])])
     if code:
         raise Refused('PR verdict was not posted; see the message above')
@@ -794,6 +795,7 @@ def main(argv=None):
     p.add_argument('--verifier', help='agent/model that verified, e.g. codex/gpt-6-luna')
     p.add_argument('--features', type=listing, default=[])
     p.add_argument('--full', action='store_true')
+    p.add_argument('--since', help='Head of the earlier verdict on this PR; this one re-checked only the changes since')
     p.set_defaults(func=cmd_verdict)
     p = sub.add_parser('merge', help='Queue protected auto-merge for a verified unit')
     p.add_argument('program', type=int)

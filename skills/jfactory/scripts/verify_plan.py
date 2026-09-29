@@ -323,6 +323,13 @@ def audit(files, config):
         if placeholder(target.get('ready')) or (placeholder(target.get('start')) and placeholder(target.get('url'))):
             items.append(('FAIL', f'Target {name} needs "ready" (a URL that answers once the app is up) and either '
                                   '"start" (a command) or "url" (a deployed app)'))
+        journeys = any(d.get('target') == name for d in defs.values())
+        if journeys and (placeholder(target.get('seed')) or placeholder(target.get('cleanup'))):
+            items.append(('WARN', f'Target {name} has no "seed" and "cleanup", so journeys share one account\'s data '
+                                  'and it piles up run after run, slowing pages and scans. Seed per-run data under '
+                                  '$JFACTORY_RUN_ID and remove it afterwards (references/mapping.md step 7)'))
+        if journeys and placeholder(target.get('prune')):
+            items.append(('WARN', f'Target {name} has no "prune" to remove test data that interrupted runs left behind'))
         if placeholder(target.get('auth')):
             items.append(('WARN', f'Target {name} does not say how verification signs in ("auth"); write "none" '
                                   'if the app has no sign-in'))
@@ -401,7 +408,28 @@ def free_port():
 
 
 def expand(text, env):
-    return re.sub(r'\$\{?(PORT|BASE_URL)\}?', lambda m: env.get(m.group(1), m.group(0)), text or '')
+    return re.sub(r'\$\{?(PORT|BASE_URL|JFACTORY_RUN_ID)\}?', lambda m: env.get(m.group(1), m.group(0)), text or '')
+
+
+def run_id():
+    """A unique name for one run's test data, so parallel and repeated runs never share records."""
+    return os.environ.get('JFACTORY_RUN_ID') or f'jf-{int(time.time())}-{os.getpid()}'
+
+
+@contextmanager
+def test_data(name, target, env):
+    """Create this run's own test data with the target's `seed`, and always remove it with `cleanup`."""
+    if not placeholder(target.get('seed')):
+        code = subprocess.run(expand(target['seed'], env), shell=True, env=env).returncode
+        if code:
+            raise Refused(f'Target {name}: seed command exited with {code}')
+    try:
+        yield
+    finally:
+        if not placeholder(target.get('cleanup')):
+            code = subprocess.run(expand(target['cleanup'], env), shell=True, env=env).returncode
+            if code:
+                print(f'WARN: target {name}: cleanup exited with {code}; `prune` removes leftovers')
 
 
 def probe_url(url):
@@ -421,7 +449,7 @@ def probe_url(url):
 def started(name, target, timeout, url=None, log=None, extra=None):
     """Start a target (or use its deployed URL), wait until its ready URL answers, and stop it afterwards."""
     port = str(free_port())
-    env = {**os.environ, **(extra or {}), 'PORT': port}
+    env = {'JFACTORY_RUN_ID': run_id(), **os.environ, **(extra or {}), 'PORT': port}
     env['BASE_URL'] = url or expand(target.get('url') or f'http://127.0.0.1:{port}', env)
     ready = url or expand(target['ready'], env)
     proc = None
@@ -588,19 +616,10 @@ def states_objective(body):
     return len(re.sub(r'\s+', ' ', text).strip()) >= 10
 
 
-def evaluate(pr, config):
-    """Return (state, description) for the jfactory verified status at the PR head."""
-    result = plan(pr['files'], config)
-    if result['level'] != 'static' and config.get('require_objective', True) and not states_objective(pr.get('body')):
-        return 'failure', 'PR description must start with its objective: an Objective heading (such as "## Objective") or "Objective:" line'
-    if not result['needs_verifier']:
-        if result['level'] == 'ci':
-            return 'success', 'Low-risk change (verify: ci); required CI checks apply'
-        return 'success', 'Static-only change; CI static checks apply'
-    head = pr['headRefOid']
+def trusted_verdicts(pr):
+    """Verdict records from PR comments by accounts with write access, oldest first."""
     verdicts = []
     for item in pr.get('comments', []):
-        # Only accounts with write access to the repository can record a verdict.
         if item.get('authorAssociation') not in TRUSTED:
             continue
         match = VERDICT_RE.search(item.get('body') or '')
@@ -609,6 +628,45 @@ def evaluate(pr, config):
                 verdicts.append(json.loads(match.group(1)))
             except ValueError:
                 continue
+    return verdicts
+
+
+# The jfactory verified workflow's own job; its result is the verdict being posted, not CI evidence.
+GATE_JOBS = {'status'}
+
+
+def ci_refusal(repo, head):
+    """Why CI at `head` cannot be relied on (missing, running or failed), or None when every check passed.
+    A verifier reuses these results instead of re-running the suites, so they must be complete and green."""
+    try:
+        data = json.loads(run('gh', 'api', f'repos/{repo}/commits/{head}/check-runs?per_page=100'))
+    except (Refused, ValueError) as error:
+        return (f'Cannot read CI results at {head[:7]} ({str(error)[:60]}); the jfactory verified workflow needs '
+                '`checks: read`')
+    runs = [r for r in data.get('check_runs', []) if r.get('name') not in GATE_JOBS]
+    if not runs:
+        return f'No CI check has run at {head[:7]}; the verifier relies on CI results at the head it verifies'
+    pending = sorted(r['name'] for r in runs if r.get('status') != 'completed')
+    if pending:
+        return f"CI is still running at {head[:7]} ({', '.join(pending[:5])}); wait for it before posting verified"
+    bad = sorted(r['name'] for r in runs if r.get('conclusion') not in ('success', 'skipped', 'neutral'))
+    if bad:
+        return f"CI did not pass at {head[:7]} ({', '.join(bad[:5])}); a verified verdict needs green CI"
+    return None
+
+
+def evaluate(pr, config, ci_check=None):
+    """Return (state, description) for the jfactory verified status at the PR head. `ci_check(head)` returns why
+    CI at the head can't be relied on, or None; a verified verdict counts only while CI there is green."""
+    result = plan(pr['files'], config)
+    if result['level'] != 'static' and config.get('require_objective', True) and not states_objective(pr.get('body')):
+        return 'failure', 'PR description must start with its objective: an Objective heading (such as "## Objective") or "Objective:" line'
+    if not result['needs_verifier']:
+        if result['level'] == 'ci':
+            return 'success', 'Low-risk change (verify: ci); required CI checks apply'
+        return 'success', 'Static-only change; CI static checks apply'
+    head = pr['headRefOid']
+    verdicts = trusted_verdicts(pr)
     current = [v for v in verdicts if v.get('head') == head]
     if not current:
         return 'failure', f'No verdict for head {head[:7]}'
@@ -622,10 +680,15 @@ def evaluate(pr, config):
         return 'failure', 'Verdict misses features: ' + ', '.join(missing)[:100]
     if not verdict.get('evidence'):
         return 'failure', 'Verdict has no evidence links'
+    if verdict.get('since') and not any(v.get('head') == verdict['since'] for v in verdicts):
+        return 'failure', f"Verdict re-checks changes since {verdict['since'][:7]}, which has no earlier verdict"
     refusal = same_family_refusal(verdict.get('verifier'), verdict.get('implementer'),
                                   config.get('allow_same_family', False))
     if refusal:
         return 'failure', refusal
+    problem = ci_check(head) if ci_check else None
+    if problem:
+        return 'failure', problem
     return 'success', f"Verified at {head[:7]} by {verdict.get('verifier')}"
 
 
@@ -648,7 +711,7 @@ def cmd_plan(args):
 def cmd_check(args):
     pr = pr_info(args.repo, args.pr)
     config = load_config(args.config_ref or f"origin/{pr['baseRefName']}")
-    state, description = evaluate(pr, config)
+    state, description = evaluate(pr, config, lambda head: ci_refusal(args.repo, head))
     print(f'{state}: {description}')
     if args.set_status:
         run('gh', 'api', '-X', 'POST', f"repos/{args.repo}/statuses/{pr['headRefOid']}",
@@ -704,6 +767,14 @@ def cmd_ci(args):
     tracked = set(tracked_files()) if record else set()
     executed = {}
     failed, report = [], []
+    if args.all:
+        # First remove test data that interrupted runs left behind, so every journey starts from clean records.
+        for name in sorted({defs[s]['target'] for s in suites if defs.get(s, {}).get('target')}):
+            if not placeholder(targets.get(name, {}).get('prune')):
+                code = subprocess.run(targets[name]['prune'], shell=True).returncode
+                report.append(f'prune {name}: ' + ('done' if code == 0 else f'exited with {code}'))
+                if code:
+                    failed.append(f'prune {name}')
     for suite in suites:
         definition = defs.get(suite, {})
         if placeholder(definition.get('run')):
@@ -720,7 +791,8 @@ def cmd_ci(args):
         try:
             if definition.get('target'):
                 name = definition['target']
-                with started(name, targets[name], args.timeout, extra=extra) as env:
+                with started(name, targets[name], args.timeout, extra=extra) as env, \
+                        test_data(name, targets[name], env):
                     code, minutes = shell(expand(definition['run'], env), env)
             else:
                 code, minutes = shell(definition['run'], {**os.environ, **extra})
@@ -777,7 +849,13 @@ def cmd_smoke(args):
         try:
             with started(args.target, target, args.timeout, url=args.url, log=log) as env:
                 steps.append({'step': 'ready', 'ok': True, 'detail': f"{env['BASE_URL']} answered"})
+                step('seed', target.get('seed'), env)
                 step('probe', target.get('probe'), env)
+                if not placeholder(target.get('seed')) or not placeholder(target.get('cleanup')):
+                    passed = ok
+                    ok = True
+                    step('cleanup', target.get('cleanup'), env)
+                    ok = ok and passed
         except Refused as error:
             steps.append({'step': 'ready', 'ok': False, 'detail': str(error)})
             ok = False
@@ -810,11 +888,20 @@ def cmd_verdict(args):
     if args.verdict == 'verified' and (missing or (result['full'] and not args.full)):
         raise Refused('A verified verdict must cover ' + (
             'the full feature map (--full)' if result['full'] else 'features: ' + ', '.join(missing)))
+    if args.since and not any(v.get('head') == args.since for v in trusted_verdicts(pr)):
+        raise Refused(f'No earlier verdict at {args.since[:7]} on PR #{args.pr}; --since must name the head of one')
+    if args.verdict == 'verified':
+        refusal = ci_refusal(args.repo, args.head)
+        if refusal:
+            raise Refused(refusal)
     record = {'head': args.head, 'verdict': args.verdict, 'features': sorted(features), 'full': args.full,
               'verifier': args.verifier, 'implementer': args.implementer, 'evidence': args.evidence,
-              'at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}
+              'at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+              **({'since': args.since} if args.since else {})}
     text = (f"<!-- jfactory-verdict {json.dumps(record)} -->\n**Verification {args.verdict}** at `{args.head[:7]}` "
-            f"by {args.verifier} (implementer {args.implementer}).\n\nFeatures: "
+            f"by {args.verifier} (implementer {args.implementer})."
+            + (f" Re-checked the changes since the verdict at `{args.since[:7]}`." if args.since else '')
+            + "\n\nFeatures: "
             f"{'full feature map' if args.full else ', '.join(features) or 'none'}\n\nEvidence:\n"
             + '\n'.join(f'- {e}' for e in args.evidence) + (f'\n\n{args.note}' if args.note else ''))
     run('gh', 'pr', 'comment', str(args.pr), '--repo', args.repo, '--body-file', body_file(text))
@@ -877,6 +964,7 @@ def main(argv=None):
     p.add_argument('--features', type=listing, default=[])
     p.add_argument('--full', action='store_true')
     p.add_argument('--evidence', action='append', default=[], required=True)
+    p.add_argument('--since', help='Head of this PR\'s earlier verdict; this one re-checked only the changes since')
     p.add_argument('--note')
     p.set_defaults(func=cmd_verdict)
 

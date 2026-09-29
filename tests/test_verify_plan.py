@@ -222,6 +222,53 @@ class GateTest(unittest.TestCase):
         status = json.loads(self.state.read_text())['statuses'][-1]
         self.assertEqual((status['state'], status['context']), ('failure', 'jfactory verified'))
 
+    def set_ci(self, *runs):
+        db = json.loads(self.state.read_text())
+        db['check_runs'] = {'check_runs': [dict(zip(('name', 'status', 'conclusion'), r)) for r in runs]}
+        self.state.write_text(json.dumps(db))
+
+    def test_verified_verdict_relies_on_green_ci_at_the_head(self):
+        # The verifier reuses CI results instead of re-running suites, so they must be complete and passing.
+        self.set_ci()
+        self.assertIn('No CI check has run', self.verdict(code=2))
+        self.set_ci(('checks', 'in_progress', None))
+        self.assertIn('CI is still running', self.verdict(code=2))
+        self.set_ci(('checks', 'completed', 'failure'), ('status', 'completed', 'success'))
+        self.assertIn('CI did not pass at aaaaaaa (checks)', self.verdict(code=2))
+        # A failed verdict can always be posted; the gate's own job is not CI evidence.
+        self.run_script('verdict', '--pr', '5', '--head', HEAD, '--verdict', 'failed', '--verifier', 'codex/gpt-6-sol',
+                        '--implementer', 'claude/opus-5-5-1m', '--evidence', 'x')
+        self.set_ci(('checks', 'completed', 'success'), ('lint', 'completed', 'skipped'), ('status', 'in_progress', None))
+        self.verdict()
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+
+    def test_status_counts_a_verdict_only_while_ci_is_green(self):
+        self.verdict()
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+        # A later CI failure at the same head (or a verdict comment written by hand) no longer passes.
+        self.set_ci(('checks', 'completed', 'failure'))
+        self.assertIn('failure: CI did not pass at aaaaaaa', self.run_script('check', '--pr', '5', code=1))
+        db = json.loads(self.state.read_text())
+        db['check_runs'] = 'not json'
+        self.state.write_text(json.dumps(db))
+        self.assertIn('needs `checks: read`', self.run_script('check', '--pr', '5', code=1))
+
+    def test_reverification_after_a_fix_checks_only_the_changes_since(self):
+        self.run_script('verdict', '--pr', '5', '--head', HEAD, '--verdict', 'failed', '--verifier', 'codex/gpt-6-sol',
+                        '--implementer', 'claude/opus-5-5-1m', '--evidence', 'x')
+        fixed = 'c' * 40
+        self.write(files=['app/briefs/save.ts'], head=fixed)
+        self.assertIn('No earlier verdict at bbbbbbb', self.verdict('--since', 'b' * 40, head=fixed, code=2))
+        out = self.verdict('--since', HEAD, head=fixed)
+        body = json.loads(self.state.read_text())['prs']['5']['comments'][-1]['body']
+        self.assertIn('Re-checked the changes since the verdict at `aaaaaaa`', body)
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+        # A forged `since` pointing at a head with no verdict does not count.
+        db = json.loads(self.state.read_text())
+        db['prs']['5']['comments'] = [c for c in db['prs']['5']['comments'] if '"failed"' not in c['body']]
+        self.state.write_text(json.dumps(db))
+        self.assertIn('which has no earlier verdict', self.run_script('check', '--pr', '5', code=1))
+
     def test_verdict_refuses_stale_head_same_family_and_missing_coverage(self):
         self.assertIn('not bbbbbbb', self.verdict(head='b' * 40, code=2))
         self.assertIn('same model family', self.run_script(
@@ -424,6 +471,41 @@ class RunTest(unittest.TestCase):
         # Without coverage, the same change runs only the shared feature's own suites.
         self.run_script('ci', '--base', 'HEAD~1', '--impact', 'nowhere')
         self.assertEqual(self.ran(), ['ran-unit'])
+
+    def test_each_run_gets_its_own_test_data_and_removes_it(self):
+        data = self.root / 'data'
+        local = {**self.config['targets']['local'],
+                 'seed': 'mkdir -p data && echo brief > data/$JFACTORY_RUN_ID',
+                 'cleanup': 'rm -f data/$JFACTORY_RUN_ID', 'prune': 'rm -rf data && touch pruned'}
+        suites = {**self.config['suites'], 'browser-briefs': {
+            'run': 'test "$(ls data)" = "$JFACTORY_RUN_ID" && touch ran-browser', 'minutes': 2, 'target': 'local'}}
+        self.write_config(targets={'local': local}, suites=suites)
+        (self.root / '.gitignore').write_text('ran-*\nimpact/\ndata/\npruned\n')
+        self.change('app/briefs/a.py')
+        # The journey sees only its own record, and the record is gone afterwards.
+        self.run_script('ci', '--base', 'HEAD~1')
+        self.assertEqual((self.ran(), list(data.iterdir())), (['ran-browser', 'ran-unit'], []))
+        # Cleanup still runs when the journey fails.
+        failing = {**suites, 'browser-briefs': {**suites['browser-briefs'], 'run': 'exit 4'}}
+        self.write_config(targets={'local': local}, suites=failing)
+        (self.root / 'app/briefs/a.py').write_text('changed again\n')
+        self.git('add', '-A')
+        self.git('commit', '-qm', 'second change')
+        self.run_script('ci', '--base', 'HEAD~1', code=1)
+        self.assertEqual(list(data.iterdir()), [])
+        # A leftover from an interrupted run is removed by the nightly prune.
+        (data / 'jf-old').write_text('brief')
+        for marker in self.root.glob('ran-*'):
+            marker.unlink()
+        self.write_config(targets={'local': local}, suites=suites)
+        self.assertIn('prune local: done', self.run_script('ci', '--all'))
+        self.assertTrue((self.root / 'pruned').exists())
+        self.assertEqual(self.ran(), ['ran-browser', 'ran-cli', 'ran-unit'])
+        self.assertEqual(list(data.iterdir()), [])
+
+    def test_audit_warns_when_journeys_share_one_accounts_data(self):
+        items = verify_plan.audit(['app/briefs/a.py', 'cli/run.py', 'README.md', '.gitignore'], self.config)
+        self.assertTrue(any(level == 'WARN' and 'no "seed" and "cleanup"' in text for level, text in items), items)
 
     def test_smoke_records_a_receipt_and_reports_the_failed_step(self):
         out = self.run_script('smoke', '--target', 'local', '--fresh', '--record', '.jfactory/smoke.json')
