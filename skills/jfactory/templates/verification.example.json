@@ -19,7 +19,10 @@
       "start": "npm run build && npm run start -- --port $PORT",
       "ready": "http://127.0.0.1:$PORT/api/health",
       "probe": "npx playwright test e2e/smoke.spec.ts",
-      "auth": "Seeded test account from npm run seed:test-user; no human sign-in"
+      "auth": "Per-run test account created by seed; no human sign-in",
+      "seed": "npm run test-data -- create --run $JFACTORY_RUN_ID",
+      "cleanup": "npm run test-data -- delete --run $JFACTORY_RUN_ID",
+      "prune": "npm run test-data -- delete --older-than 6h"
     },
     "preview": {
       "url": "Pass the PR preview with smoke --url",

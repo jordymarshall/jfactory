@@ -5,7 +5,7 @@ Use this procedure when the owner asks one agent to deliver several objectives t
 There are three roles:
 
 - **Owner.** Decides outcomes and product questions, supervises through the program issue and the coordinator's chat, and can stop everything with one label.
-- **Coordinator.** The agent the owner asked. It frames the program, writes task contracts, launches and monitors workers, verifies results, merges and reports. It does not edit a worker's files; code changes and conflict resolution are worker tasks.
+- **Coordinator.** The agent the owner asked. It frames the program, writes task contracts, launches and monitors workers and verifiers, merges verified results and reports. It does not edit a worker's files; code changes and conflict resolution are worker tasks.
 - **Worker.** One agent per unit in its own workspace and branch. It follows the normal jfactory loop for its unit and reports to the program issue.
 
 Read the pinned originals this adapts: [orchestrate](../vendor/pstack/skills/poteto-mode/playbooks/orchestrate.md), [multi-PR plan](../vendor/pstack/skills/poteto-mode/playbooks/multi-phase-plan.md), [prototype](../vendor/pstack/skills/poteto-mode/playbooks/prototype.md), [session pickup](../vendor/pstack/skills/poteto-mode/playbooks/session-pickup.md), [pause safely](../vendor/pstack/skills/poteto-mode/playbooks/pause-safely.md) and [sequence verifiable units](../vendor/pstack/skills/principle-sequence-verifiable-units/SKILL.md). Their Cursor-specific tools are translated in [host compatibility](compatibility.md#coordination-translations). Repository policy, owner decisions and this procedure take precedence.
@@ -23,7 +23,7 @@ Read the pinned originals this adapts: [orchestrate](../vendor/pstack/skills/pot
 | `launch <issue> <unit> --brief FILE [--dry-run] [--stack-on UNIT] [--fallback --reason] [--agent/--model/--effort]` | Coordinator | Creates the unit's Conductor workspace with the policy's agent and model, moves it into the program's sidebar section, after checking hold, concurrency limit, dependencies, open decisions, brief completeness, attempt limit, model availability and reviewer model family |
 | `report <issue> <unit> --state ...` | Worker | Posts a structured comment with its state, PR, head SHA, note or question |
 | `sync <issue> [--dry-run]` | Coordinator | Folds worker reports, PR state and session status into the issue, voids verdicts on new heads and lists units ready to launch, including verifiers whose target has a PR (with the `--stack-on` to use) |
-| `verdict <issue> <unit> --head --verdict --scopes --evidence --verifier [--full] [--features]` | Coordinator | Records verification only at the PR's current head, requires every declared scope, and posts the PR verdict that the `jfactory verified` status reads. The implementer is the unit's launched model, so units launched outside the tool cannot be verified through it |
+| `verdict <issue> <unit> --head --verdict --scopes --evidence --verifier [--full] [--features] [--since]` | Verifier | Records verification only at the PR's current head, requires every declared scope, and posts the PR verdict that the `jfactory verified` status reads. The implementer is the unit's launched model, so units launched outside the tool cannot be verified through it |
 | `merge <issue> <unit>` | Coordinator | Queues protected auto-merge pinned to the unit's current head. It needs a `verified` verdict at that head, unless the base branch's mapping marks every affected feature `verify: ci`; then GitHub's required CI is the gate. It also needs no open decisions, and a recorded `merge_deploys` of `staging` or `none` |
 | `gate add` / `gate resolve` | Coordinator | Records an owner decision and its answer; open decisions block launch and merge for their units |
 | `set <issue> <unit> --state` | Coordinator | Marks a unit blocked, failed or abandoned with a note |
@@ -138,9 +138,15 @@ A worker question becomes an open decision at `sync`. Answer it from recorded de
 
 ## 7. Verify each result independently
 
-A worker's report is a claim. At the PR's current head SHA, inspect the criteria, the checks that ran, the application evidence and whether the assertions prove the claim. Record the result with `verdict`. CI status is an input, not a verdict. For a unit whose changes are all `verify: ci`, still check the claim against the PR, but no verdict is needed: `merge` relies on GitHub's required CI. A new head voids the previous verdict at the next `sync`.
+A worker's report is a claim; the verify unit checks it at the PR's current head and records the result with `verdict`. CI status is an input to that verdict, not a substitute for it. For a unit whose changes are all `verify: ci`, still check the claim against the PR, but no verdict is needed: `merge` relies on GitHub's required CI. A new head voids the previous verdict at the next `sync`.
 
-Every unit whose PR touches an `independent` (high-risk), unmapped or gate path gets a `verify` unit that depends on it (a unit whose changes are all `verify: ci` needs none). The verify unit is launched with `--stack-on` so it checks out the PR branch once the worker reports `in-review`. Its contract asks it to run `verify_plan.py smoke` for the target first and report a failed step as `blocked`, then re-run the acceptance checks at their required scopes, including the application journey only where a criterion needs it, review the diff and any mapping change, and follow the PR through CI and review comments. It runs `verify_plan.py plan` for the PR, reports a recommended verdict with evidence and does not change product code; defects become a fix task for the original worker. Choose its effort by risk. The coordinator inspects that evidence and records the `verdict`.
+Every unit whose PR touches an `independent` (high-risk), unmapped or gate path gets one `verify` unit that depends on it (a unit whose changes are all `verify: ci` needs none). The verify unit is launched with `--stack-on` so it checks out the PR branch once the worker reports `in-review`. Its contract asks it to:
+
+- run `verify_plan.py smoke` for the target first and report a failed step as `blocked`;
+- check the PR as the [verification contract](verification.md#change-aware-verification-and-the-merge-gate) describes: reuse green CI, drive the changed journeys when users see the change, score judgment criteria, and review the diff and any mapping change;
+- post the verdict itself with `coord.py verdict`, and follow the PR through CI and review comments.
+
+It does not change product code; defects become a fix task for the original worker, and after the fix the same verifier re-checks only the changes with `--since`. The coordinator does not re-inspect a posted verdict; it merges verified units. Choose the verifier's effort by risk.
 It runs on GPT Luna 6 in fast mode, or Opus 5.5 at low effort when the implementer ran on Codex; see the verify tier in [model selection](models.md). Archive the verifier's workspace once its verdict is recorded.
 
 ## 8. Integrate continuously

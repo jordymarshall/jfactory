@@ -71,10 +71,15 @@ Under `targets`, record each place verification runs the app:
 - `ready`: a URL that answers once the app is up.
 - `probe`: an optional short check, such as the smoke spec.
 - `auth`: how verification signs in: a seeded test account, a stored session, a bypass token for a protected preview, or `none`.
+- `seed`: creates this run's own test data, named by `$JFACTORY_RUN_ID`, such as a fresh test account or workspace with a few records.
+- `cleanup`: removes this run's data. It runs after every suite, including failed ones.
+- `prune`: removes data that interrupted runs left behind, and only data older than a few hours, since parallel jobs may still be using newer records. The nightly run calls it before its journeys.
 
-Suites with a `target` get `$PORT` and `$BASE_URL`, and `ci` starts and stops the app around them.
+Suites with a `target` get `$PORT`, `$BASE_URL` and `$JFACTORY_RUN_ID`, and `ci` starts the app, seeds, runs the suite, cleans up and stops the app.
 
-Then prove it in the place that matters: a new workspace (for Conductor, a new cloud workspace, as a verifier gets) and the CI runner. Run `$VP smoke --target local --fresh --record .jfactory/smoke.json`. It runs setup, doctor, start, the readiness URL and the probe, then stops the app and records which step failed and why. Fix what it reports, usually a missing secret, service, browser binary or sign-in. Rerun until it passes, and commit the receipt. A target that needs a human sign-in with no stored session or test account stays `blocked` with that owner step. `setup_check.py` will not accept `Verification: verified` until every target has a passing receipt.
+Never point journeys at one shared, long-lived test account. Every run adds records, nothing removes them, and pages slow down until checks time out for reasons unrelated to the change. In one real case, a shared account piled up about 1,700 briefs from many tests. The Briefs page showed them all at once, and an accessibility scan of that one page took 21 of a 45-second timeout. Per-run data keeps each journey's starting state small and known, and parallel jobs can't see each other's records. `audit` warns about a target with journeys but no `seed`, `cleanup` or `prune`. When a journey needs a large dataset, for example to test paging, seed that size deliberately in that journey. A symptom like that one is also a product finding: real users with many records hit the same page. Raise it as an objective rather than hiding it with test data.
+
+Then prove it in the place that matters: a new workspace (for Conductor, a new cloud workspace, as a verifier gets) and the CI runner. Run `$VP smoke --target local --fresh --record .jfactory/smoke.json`. It runs setup, doctor, start, the readiness URL, seed, the probe and cleanup, then stops the app and records which step failed and why. Fix what it reports, usually a missing secret, service, browser binary or sign-in. Rerun until it passes, and commit the receipt. A target that needs a human sign-in with no stored session or test account stays `blocked` with that owner step. `setup_check.py` will not accept `Verification: verified` until every target has a passing receipt.
 
 ## 8. Set risk levels
 
@@ -90,7 +95,7 @@ Install [the change-aware CI job](../templates/jfactory-checks.yml). On PRs it r
 
 ## Keep the map current as the product changes
 
-- **Every PR.** `ci` fails when a tracked file matches no feature, or a feature matches no file. So a new area or a deleted one is mapped in the same PR that creates it. A mapping change is a gate change, so the independent verifier reviews it: the new paths, suites and level must fit what the code does.
+- **Every PR.** `ci` fails when a tracked file matches no feature, or a feature matches no file. A change to a feature's files always runs that feature's own suites, whatever coverage says, so UI changes keep their journeys. So a new area or a deleted one is mapped in the same PR that creates it. A mapping change is a gate change, so the independent verifier reviews it: the new paths, suites and level must fit what the code does.
 - **Timings.** `ci` reports when a suite ran over 1.5 times its recorded minutes; update `minutes` then.
 - **Nightly.** `ci --all` runs every suite, catching anything coverage could not see, and refreshes the recorded coverage, so journey selection follows the code as it changes without anyone editing the map. A nightly failure becomes a fix objective.
 - **Larger product changes.** After a redesign, a new product area or a reorganised codebase, rerun steps 1 to 9 for the affected areas and rerun `smoke`. Re-running setup does this.
