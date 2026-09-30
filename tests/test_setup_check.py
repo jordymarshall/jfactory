@@ -154,6 +154,12 @@ class SetupCheckTest(unittest.TestCase):
             f'      - run: |\n          cat <<EOF\n          python3 {script}\n          EOF\n': False,
             f"      - run: |\n          echo 'unclosed\n          python3 {script}\n": False,
             f'      - run: echo a\\;python3 {script}\n': False,
+            # A here-document ends only at a line that is exactly its delimiter (<<- strips leading tabs only).
+            f'      - run: |\n          cat <<EOF\n           EOF\n          python3 {script}\n          EOF\n': False,
+            f'      - run: |\n          cat <<EOF\n          EOF \n          python3 {script}\n          EOF\n': False,
+            f'      - run: |\n          cat <<-EOF\n           EOF\n          python3 {script}\n          EOF\n': False,
+            f'      - run: |\n          cat <<EOF\n          text\n          EOF\n          python3 {script}\n': True,
+            f'      - run: |\n          cat <<-EOF\n          text\n          \t\tEOF\n          python3 {script}\n': True,
             # Real invocations, however they are written.
             f'      - run: python3 {script}\n': True,
             f"      - run: 'python3 {script}'\n": True,
@@ -164,6 +170,12 @@ class SetupCheckTest(unittest.TestCase):
         }
         for run, expected in runs.items():
             self.assertEqual(setup_check.runs_method_audit(head + run), expected, run)
+        # End to end: a false closing delimiter cannot make setup report an executing audit.
+        audit = self.root / '.github' / 'workflows' / 'jfactory-method-audit.yml'
+        for false_end in (' EOF', 'EOF '):
+            audit.write_text(head + f'      - run: |\n          cat <<EOF\n          {false_end}\n          python3 {script}\n'
+                                    '          EOF\n')
+            self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
 
     def test_complete_setup_passes_with_remote_protection(self):
         out = self.check('--remote', '--repo', 'o/r')

@@ -234,11 +234,15 @@ def run_blocks(text):
                     value = value[1:-1]
             blocks.append(value)
             continue
-        block = []
+        block, margin = [], None
         for follow in lines[i + 1:]:
             if follow.strip() and len(follow) - len(follow.lstrip()) <= indent:
                 break
-            block.append(follow.strip())
+            if margin is None and follow.strip():
+                margin = len(follow) - len(follow.lstrip(' '))
+            block.append(follow)
+        # Remove only the YAML block indentation: other leading and trailing space is part of the script.
+        block = [line[margin or 0:] for line in block]
         blocks.append((' ' if value.startswith('>') else '\n').join(block))
     return blocks
 
@@ -291,17 +295,18 @@ def shell_commands(script):
             match = re.compile(r'<<(-?)[ \t]*([\'"]?)([^\s\'";&|()<>]+)\2').match(script, i)
             if not match:
                 return []
-            heredocs.append(match.group(3))
+            heredocs.append((match.group(3), bool(match.group(1))))
             i = match.end()
         elif c == '\n':
             finish_command()
             i += 1
-            for delimiter in heredocs:
+            # A here-document ends only at a line that is exactly its delimiter; <<- also strips leading tabs.
+            for delimiter, tabs in heredocs:
                 while i < n:
                     end = script.find('\n', i)
                     line = script[i:n if end < 0 else end]
                     i = n if end < 0 else end + 1
-                    if line.strip() == delimiter:
+                    if (line.lstrip('\t') if tabs else line) == delimiter:
                         break
             heredocs = []
         elif c in ' \t':
