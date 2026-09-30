@@ -39,18 +39,25 @@ ALWAYS_REVIEW = {
     'agent instructions': ['**/AGENTS.md', '**/CLAUDE.md', '**/GEMINI.md', '**/SKILL.md', 'skills/**/*.md',
                            '**/.agents/**', '**/.claude/**', '**/.cursor/**', '**/.codex/**', '**/.cursorrules',
                            '**/.windsurfrules', '**/.clinerules', '**/.clinerules/**', '**/.github/copilot-instructions.md'],
-    'tests': ['**/e2e/**', '**/tests/**', '**/test/**', '**/__tests__/**', '**/cypress/**', '**/*.test.*',
-              '**/*.spec.*', '**/*.cy.*', '**/*_test.*', '**/test_*.py', '**/conftest.py', '**/pytest.ini',
-              '**/*_spec.rb', '**/spec/spec_helper.rb', '**/spec/rails_helper.rb', '**/spec/support/**', '**/.rspec',
-              '**/playwright.config.*', '**/vitest.config.*', '**/jest.config.*', '**/cypress.config.*',
-              '**/karma.conf.*', '**/.mocharc.js', '**/.mocharc.cjs', '**/.mocharc.json', '**/.mocharc.jsonc',
-              '**/.mocharc.yml', '**/.mocharc.yaml'],
+    # Everything inside a test folder counts, fixtures and helpers included: an extra review costs less than
+    # a gap. Prose that the map marks static is the one exception (see `plan`).
+    'tests': ['**/e2e/**', '**/tests/**', '**/test/**', '**/__tests__/**', '**/spec/**', '**/cypress/**',
+              '**/testdata/**', '**/*.test.*', '**/*.spec.*', '**/*.cy.*', '**/*_test.*', '**/*_spec.rb',
+              '**/test_*.py', '**/conftest.py', '**/pytest.ini', '**/.rspec', '**/playwright.config.*',
+              '**/vitest.config.*', '**/jest.config.*', '**/cypress.config.*', '**/karma.conf.*', '**/.mocharc.js',
+              '**/.mocharc.cjs', '**/.mocharc.json', '**/.mocharc.jsonc', '**/.mocharc.yml', '**/.mocharc.yaml'],
 }
 
 
 def review_reason(path):
     """Why a changed file always needs the independent verifier, or None."""
     return next((kind for kind, patterns in ALWAYS_REVIEW.items() if matches(path, patterns)), None)
+
+
+def static_allowed(path, reason):
+    """Agent instructions and test code are never static. The map may mark prose inside a test folder static,
+    such as docs/spec/architecture.md."""
+    return reason is None or (reason == 'tests' and path.lower().endswith(('.md', '.mdx', '.txt', '.rst', '.adoc')))
 
 
 def has_screens(feature, config):
@@ -126,8 +133,7 @@ def plan(files, config, impact=None):
             if reason:
                 for fid in hit:
                     reviewed.setdefault(fid, reason)
-        # Tests and agent instructions are never static, even when they are Markdown.
-        elif matches(path, config.get('static', [])) and not reason:
+        elif matches(path, config.get('static', [])) and static_allowed(path, reason):
             static.append(path)
         else:
             unmapped.append(path)
