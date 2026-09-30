@@ -66,6 +66,33 @@ ALWAYS_REVIEW = {
 }
 
 
+def table_cells(line):
+    """Cells of a Markdown table row, splitting only on unescaped pipes."""
+    body = line.strip()
+    if body.startswith('|'):
+        body = body[1:]
+    if body.endswith('|') and not body.endswith('\\|'):
+        body = body[:-1]
+    return [c.strip().replace('\\|', '|') for c in re.split(r'(?<!\\)\|', body)]
+
+
+def source_path(value):
+    """A repository-relative source path in canonical form (no `./`, no anchor), or None when it leaves the
+    repository."""
+    path = value.split('#')[0].strip()
+    if not path or path.startswith('/') or re.match(r'^[a-z]+://', path):
+        return None
+    trailing = path.endswith('/')
+    parts = []
+    for part in path.split('/'):
+        if part in ('', '.'):
+            continue
+        if part == '..':
+            return None
+        parts.append(part)
+    return '/'.join(parts) + ('/' if trailing and parts else '') if parts else None
+
+
 def review_reason(path, standards=()):
     """Why a changed file always needs the independent verifier, or None."""
     if path in standards or any(path.startswith(s.rstrip('/') + '/') for s in standards if s.endswith('/')):
@@ -78,14 +105,16 @@ def parse_standards(text):
     a backticked repository path (an optional `#anchor` is dropped); `none` must say why."""
     rows = {}
     for line in text.splitlines():
-        cells = [c.strip() for c in line.strip().strip('|').split('|')] if line.strip().startswith('|') else []
-        if len(cells) < 2 or set(cells[0]) <= set('-: ') or cells[0].lower() == 'dimension':
+        cells = table_cells(line) if line.strip().startswith('|') else []
+        name = re.sub(r'[*_`]', '', cells[0]).strip() if cells else ''
+        if len(cells) < 2 or set(name) <= set('-: ') or name.lower() == 'dimension':
             continue
-        # A source looks like a path (has a slash or an extension); other backticked words are just code.
-        paths = [p.split('#')[0] for p in re.findall(r'`([^`\s]+)`', cells[1]) if re.search(r'[/.]', p.split('#')[0])]
         none = re.match(r'\s*none\b[\s:,.-]*(.*)', cells[1], re.I)
-        rows[cells[0]] = {'paths': paths, 'none': (none.group(1).strip() if none and not paths else None),
-                          'check': cells[2] if len(cells) > 2 else ''}
+        # Every backticked token in the source column is a repository path, unless the row says none (whose reason
+        # may quote code). Paths are canonicalised so `./README.md` and `README.md` are the same source.
+        paths = [] if none else [source_path(p) or ('!' + p) for p in re.findall(r'`([^`\s]+)`', cells[1])]
+        rows[name] = {'paths': paths, 'none': none.group(1).strip() if none else None,
+                      'check': cells[2] if len(cells) > 2 else ''}
     return rows
 
 
@@ -95,12 +124,19 @@ def load_standards(ref=None, root=None):
         text = run('git', 'show', f'{ref}:{STANDARDS}') if ref else (Path(root or '.') / STANDARDS).read_text()
     except (Refused, OSError):
         return None
-    return sorted({p for row in parse_standards(text).values() for p in row['paths']})
+    return sorted({p for row in parse_standards(text).values() for p in row['paths'] if not p.startswith('!')})
+
+
+def outcome_docs(feature):
+    """The job-to-be-done documents a feature serves: `"outcome"` (a path or a list; `"journey"` is accepted too)."""
+    value = feature.get('outcome') or feature.get('journey') or []
+    return [source_path(v) or v for v in ([value] if isinstance(value, str) else value)]
 
 
 def outcome_doc(feature):
-    """The job-to-be-done document a feature names (`"outcome"`; `"journey"` is accepted too), or None."""
-    return feature.get('outcome') or feature.get('journey')
+    """The first job document a feature names, or None."""
+    docs = outcome_docs(feature)
+    return docs[0] if docs else None
 
 
 def journey_proofs(text):
@@ -111,7 +147,7 @@ def journey_proofs(text):
         if not line.strip().startswith('|'):
             proof_col = None
             continue
-        cells = [c.strip() for c in line.strip().strip('|').split('|')]
+        cells = table_cells(line)
         if proof_col is None:
             proof_col = next((i for i, c in enumerate(cells) if re.search(r'proven|proof', c, re.I)), None)
             continue
@@ -239,7 +275,7 @@ def load_config(ref=None, root=None):
         if feature.get('verify', 'independent') not in LEVELS:
             raise Refused(f'Feature {fid} in {CONFIG} has verify "{feature["verify"]}"; use independent or ci')
     standards = load_standards(ref, root)
-    journeys = sorted({outcome_doc(f) for f in config.get('features', {}).values() if outcome_doc(f)})
+    journeys = sorted({doc for f in config.get('features', {}).values() for doc in outcome_docs(f)})
     if standards is not None or journeys:
         # Outcome (job-to-be-done) documents are each feature's source of truth: reviewed and cited like standards.
         config['_standards'] = sorted(set(standards or []) | set(journeys))
@@ -472,25 +508,26 @@ def audit(files, config, root='.'):
     else:
         items.append(('PASS', f'Every tracked file maps to a feature, the gate or static ({len(features)} features)'))
     for fid, f in features.items():
-        journey = outcome_doc(f)
-        if not journey:
+        docs = outcome_docs(f)
+        if not docs:
             if has_screens(f, config):
                 items.append(('WARN', f'Feature {fid} has screens but no "outcome" document (outcomes/<job>.md) saying '
                                       'what the user is trying to do, what success looks like and how each part is '
                                       'proven (templates/outcome.md)'))
             continue
-        if journey not in files:
-            items.append(('FAIL', f'Feature {fid} names outcome {journey}, which is not a tracked file'))
-            continue
-        try:
-            rows = journey_proofs((Path(root) / journey).read_text())
-        except OSError:
-            continue
-        if not rows:
-            items.append(('WARN', f'Outcome {journey} has no goal table with a "How it\'s proven" column'))
-        unproven = [goal for goal, proof in rows if not proof.strip()]
-        if unproven:
-            items.append(('WARN', f'Outcome {journey} does not say how these are proven: ' + '; '.join(unproven[:6])))
+        for journey in docs:
+            if journey not in files:
+                items.append(('FAIL', f'Feature {fid} names outcome {journey}, which is not a tracked file'))
+                continue
+            try:
+                rows = journey_proofs((Path(root) / journey).read_text())
+            except OSError:
+                continue
+            if not rows:
+                items.append(('WARN', f'Outcome {journey} has no goal table with a "How it\'s proven" column'))
+            unproven = [goal for goal, proof in rows if not proof.strip()]
+            if unproven:
+                items.append(('WARN', f'Outcome {journey} does not say how these are proven: ' + '; '.join(unproven[:6])))
     unstatic = [p for p in unmapped if matches(p, config.get('static', []))]
     if unstatic:
         items.append(('FAIL', f'Static patterns cover tests, agent instructions or standards documents, which always '
@@ -892,6 +929,10 @@ def evaluate(pr, config, ci_check=None):
     result = plan(pr['files'], config)
     if result['level'] != 'static' and config.get('require_objective', True) and not states_objective(pr.get('body')):
         return 'failure', 'PR description must start with its objective: an Objective heading (such as "## Objective") or "Objective:" line'
+    current_verdicts = [v for v in trusted_verdicts(pr) if v.get('head') == pr['headRefOid']]
+    if current_verdicts and current_verdicts[-1].get('verdict') in ('failed', 'blocked'):
+        # Done means right: a reviewer who found this change wrong vetoes it, even where no verdict was required.
+        return 'failure', f"Latest verdict at {pr['headRefOid'][:7]} is {current_verdicts[-1]['verdict']}"
     if not result['needs_verifier']:
         if result['level'] == 'ci':
             return 'success', 'Low-risk change (verify: ci); required CI checks apply'
@@ -911,8 +952,13 @@ def evaluate(pr, config, ci_check=None):
         return 'failure', 'Verdict misses features: ' + ', '.join(missing)[:100]
     if not verdict.get('evidence'):
         return 'failure', 'Verdict has no evidence links'
-    if needs_standards(result, config) and not verdict.get('standards'):
-        return 'failure', f'Verdict does not name the standards it checked the change against ({STANDARDS})'
+    if needs_standards(result, config):
+        cited = verdict.get('standards')
+        valid = set(config.get('_standards', []))
+        named = [source_path(c) for c in cited] if isinstance(cited, list) and all(isinstance(c, str) for c in cited) else []
+        if not named or any(n is None or not (n in valid or any(n.startswith(v) for v in valid if v.endswith('/')))
+                            for n in named):
+            return 'failure', f'Verdict does not name the standards it checked the change against ({STANDARDS})'
     if needs_screenshots(result, config) and not verdict.get('screenshots'):
         return 'failure', ('Verdict has no screenshots of the changed screens (' + ', '.join(result['screen_features'])[:80]
                            + ')')
@@ -1144,7 +1190,9 @@ def cmd_verdict(args):
     if args.verdict == 'verified' and needs_standards(result, config) and not args.standards:
         raise Refused(f'Check the change against the relevant documents in {STANDARDS} (product goals, brand and copy, '
                       'visual design, UX principles and the rest that apply) and name each with --standards')
-    unknown = [s for s in args.standards if s.split('#')[0] not in config.get('_standards', [])]
+    valid = set(config.get('_standards', []))
+    unknown = [s for s in args.standards if not (source_path(s) and (source_path(s) in valid or any(
+        source_path(s).startswith(v) for v in valid if v.endswith('/'))))]
     if unknown:
         raise Refused(f'--standards {", ".join(unknown)} is not a source in {STANDARDS}')
     if args.verdict == 'verified' and needs_screenshots(result, config) and not args.screenshots:

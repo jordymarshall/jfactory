@@ -398,7 +398,7 @@ The tools inside the bundle:
 
 | Tool | Purpose |
 | --- | --- |
-| `setup_check.py` | Checks that setup is complete and that the setup record's claims match the evidence; `--remote` also checks the GitHub gates |
+| `setup_check.py` | Checks that setup's records exist and agree with the evidence (map, standards, outcomes, gates, receipts); `--remote` also checks the GitHub gates. Whether the outcomes, job goals and standards are right is for the owner and verifiers to judge |
 | `verify_plan.py` | Works out what a PR must verify, posts verdicts and computes the `jfactory verified` status |
 | `coord.py` | Runs parallel programs: issue dashboard, launches, reports, verdicts, merges and clean-up |
 | `usage.py` | Reads remaining Claude and Codex usage and picks the model for each tier |
