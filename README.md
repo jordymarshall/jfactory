@@ -31,9 +31,9 @@ You stay in charge of three things: what gets built, product decisions the agent
 2. **Interview.** The agent asks you who the product is for, what hurts today, what success looks like, what's out of scope and what to build first. It offers a recommended answer for each, and records your answers in `.jfactory/setup.md`. 🔒 Enforced (`setup_check.py` won't report setup complete until you've answered)
 3. **Build the safety net.**
    - a **verifier** that drives your real app;
-   - a **map** from code areas to their checks, built step by step with the [guided mapping procedure](skills/jfactory/references/mapping.md). Each area is marked high-risk or low-risk. A PR runs only the checks for what it changed: a text fix doesn't trigger a 45-minute browser run, and a shared-code change runs exactly the browser journeys that execute it, as recorded by nightly coverage. The checks are split across parallel CI jobs;
+   - a **map** from code areas to their checks, built step by step with the [guided mapping procedure](skills/jfactory/references/mapping.md). Each area is marked high-risk or low-risk. A PR runs only the checks for what it changed: a text fix doesn't trigger a 45-minute browser run, and a shared-code change runs exactly the browser journeys that execute it, as recorded by the last whole-suite run. The checks are split across parallel CI jobs;
    - a **start-up test** proving the app starts, answers and signs in from a fresh workspace, so verifiers don't fail on a missing secret or login;
-   - a **CI job** that runs only the planned suites on PRs and every suite nightly;
+   - a **CI job** that runs only the planned suites on PRs, and every suite when you decide: on request (for example the final PR of a major feature), nightly, on every merge or on every PR;
    - the **`jfactory verified`** GitHub check;
    - a record of **what merging deploys** (staging or nothing);
    - when merges go to staging, a **release procedure**: how to see which commit each environment runs, how to promote to production, who approves and how to roll back.
@@ -74,7 +74,7 @@ The sections below explain each step in depth.
 
 - **No more "keep going".** Give the agent a bounded outcome and it works through implementation, testing and fixing on its own, stopping only for decisions that genuinely need you.
 - **Proof, not claims.** Every result says what was checked, how, on which commit, and what is still unproven. "It works" without evidence doesn't count as done.
-- **Checks sized to the change.** A PR runs the checks for what it touched, including every browser journey that executes changed shared code, split across parallel jobs. The full browser suite runs nightly and records what each journey executes.
+- **Checks sized to the change.** A PR runs the checks for what it touched, including every browser journey that executes changed shared code, split across parallel jobs. The full browser suite runs when you chose at setup, for example only on the final PR of a major feature, and records what each journey executes.
 - **A second opinion from a different AI.** A verifier from a different model family (for example GPT checking Claude's work) re-checks each high-risk change before it can merge. Low-risk changes need only passing CI.
 - **Safe automatic merging.** Verified PRs merge themselves through GitHub's protected auto-merge. Missing proof keeps the PR open. Merging deploys to staging at most; production only when you ask.
 - **A record you can trust.** jfactory keeps five things apart: what you decided, what the agent assumed, what exists, what was verified, and what you accepted.

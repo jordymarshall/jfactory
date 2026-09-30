@@ -113,6 +113,32 @@ class PlanTest(unittest.TestCase):
         self.assertIn('WARN: Feature tooling is marked ci, but changes to its tests always get', text)
         self.assertIn('FAIL: Static patterns cover tests or agent instructions, which always need review: AGENTS.md', text)
 
+    def test_owner_chooses_when_the_whole_suite_runs(self):
+        mode = verify_plan.full_suite_mode
+        # Unset keeps the earlier behaviour: nightly, plus the label and manual runs.
+        self.assertEqual([mode({}, e) for e in ('pull_request', 'schedule', 'push', 'workflow_dispatch')],
+                         ['planned', 'full', 'skip', 'full'])
+        request = {'full_suite': 'on-request'}
+        self.assertEqual([mode(request, e) for e in ('pull_request', 'schedule', 'push', 'workflow_dispatch')],
+                         ['planned', 'skip', 'skip', 'full'])
+        self.assertEqual(mode(request, 'pull_request', ['bug', 'full-suite']), 'full')
+        self.assertEqual(mode({**request, 'full_suite_label': 'release'}, 'pull_request', ['full-suite']), 'planned')
+        self.assertEqual(mode({'full_suite': 'merge'}, 'push'), 'full')
+        self.assertEqual(mode({'full_suite': 'merge'}, 'schedule'), 'skip')
+        self.assertEqual(mode({'full_suite': 'every-pr'}, 'pull_request'), 'full')
+        journeys = {**CONFIG, 'suites': {'unit': {'run': 'true', 'minutes': 2}, 'browser': {'run': 'true', 'minutes': 40,
+                                                                                        'target': 'app'},
+                                         'static': {'run': 'true', 'minutes': 1}, 'cli': {'run': 'true', 'minutes': 1}},
+                    'targets': {'app': {'url': 'http://x', 'ready': 'http://x', 'auth': 'none'}}}
+        files = ['app/briefs/a.ts', 'app/auth.ts', 'cli/run.py', 'lint/rules.py', 'tools/x.py', 'docs/a.md']
+        text = lambda config: '\n'.join(f'{level}: {t}' for level, t in verify_plan.audit(files, config))
+        self.assertIn('WARN: The owner has not chosen when the whole suite (about 44 min) runs', text(journeys))
+        self.assertIn('PASS: The whole suite (about 44 min) runs only when asked for',
+                      text({**journeys, 'full_suite': 'on-request'}))
+        self.assertIn('FAIL: "full_suite" is "weekly"', text({**journeys, 'full_suite': 'weekly'}))
+        # A map without journeys has nothing to schedule.
+        self.assertNotIn('whole suite', text(CONFIG))
+
     def test_plan_estimates_minutes_from_suite_timings(self):
         timed = {**CONFIG, 'suites': {'unit': {'minutes': 2}, 'browser': {'minutes': 40}}, 'pr_budget_minutes': 10}
         result = verify_plan.plan(['tools/x.py', 'cli/run.py'], timed)
@@ -463,6 +489,14 @@ class RunTest(unittest.TestCase):
 
     def ran(self):
         return sorted(p.name for p in self.root.glob('ran-*'))
+
+    def test_full_suite_command_reads_the_owners_choice(self):
+        self.assertEqual(self.run_script('full-suite', '--event', 'schedule').strip(), 'mode=full')
+        self.write_config(full_suite='on-request')
+        self.assertEqual(self.run_script('full-suite', '--event', 'schedule').strip(), 'mode=skip')
+        self.assertEqual(self.run_script('full-suite', '--event', 'pull_request', '--labels', 'bug').strip(), 'mode=planned')
+        self.assertEqual(self.run_script('full-suite', '--event', 'pull_request', '--labels', 'bug,full-suite').strip(),
+                         'mode=full')
 
     def test_ci_runs_only_the_changed_features_suites(self):
         self.change('cli/run.py')

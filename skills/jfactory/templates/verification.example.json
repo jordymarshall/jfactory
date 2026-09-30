@@ -4,6 +4,7 @@
   "static_suites": ["static"],
   "always_suites": ["unit"],
   "full_suites": ["unit", "smoke"],
+  "full_suite": "on-request",
   "shards": 4,
   "suites": {
     "static": {"run": "npm run lint", "minutes": 1},

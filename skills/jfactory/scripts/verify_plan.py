@@ -41,6 +41,15 @@ TEST_FILES = ['**/*.test.*', '**/*.spec.*', '**/*.cy.*', '**/*_test.*', '**/*_sp
               '**/conftest.py', '**/pytest.ini', '**/.rspec', '**/playwright.config.*', '**/vitest.config.*',
               '**/jest.config.*', '**/cypress.config.*', '**/karma.conf.*', '**/.mocharc.js', '**/.mocharc.cjs',
               '**/.mocharc.mjs', '**/.mocharc.json', '**/.mocharc.jsonc', '**/.mocharc.yml', '**/.mocharc.yaml']
+# When the whole suite runs, chosen with the owner at setup (`full_suite`). Every other run executes only the
+# suites the change needs. Unset keeps the earlier default, nightly, and audit asks for a choice.
+FULL_SUITE = {
+    'on-request': 'only when asked for: the full-suite PR label (for example on the final PR of a major feature) '
+                  'or a manual run',
+    'nightly': 'nightly, plus the full-suite PR label or a manual run',
+    'merge': 'on every merge to the base branch, plus the full-suite PR label or a manual run',
+    'every-pr': 'on every PR',
+}
 # Files that decide what agents do and what the checks prove. A change to one always needs the independent
 # verifier, whatever its feature's level: a PR must not be able to weaken a test or an instruction with only
 # those same tests watching.
@@ -55,6 +64,22 @@ ALWAYS_REVIEW = {
 def review_reason(path):
     """Why a changed file always needs the independent verifier, or None."""
     return next((kind for kind, patterns in ALWAYS_REVIEW.items() if matches(path, patterns)), None)
+
+
+def full_suite_mode(config, event, labels=()):
+    """What a CI run executes under the owner's `full_suite` choice: `full` (every suite), `planned` (the suites
+    this change needs) or `skip` (nothing; for example a nightly schedule when the owner chose on-request)."""
+    policy = config.get('full_suite', 'nightly')
+    label = config.get('full_suite_label', 'full-suite')
+    if event == 'workflow_dispatch':
+        return 'full'
+    if event == 'pull_request':
+        return 'full' if policy == 'every-pr' or label in labels else 'planned'
+    if event == 'schedule':
+        return 'full' if policy == 'nightly' else 'skip'
+    if event == 'push':
+        return 'full' if policy == 'merge' else 'skip'
+    return 'planned'
 
 
 def static_allowed(path, reason):
@@ -405,6 +430,17 @@ def audit(files, config):
         if journeys:
             items.append(('FAIL', f'{key} include journey suite(s) {", ".join(journeys)}, so every PR would drive the '
                                   'app; attach them to the features they check'))
+    policy = config.get('full_suite')
+    if any(d.get('target') for d in defs.values()):
+        whole = cost(set(defs), config)[0]
+        if policy is None:
+            items.append(('WARN', f'The owner has not chosen when the whole suite (about {whole} min) runs, so it '
+                                  'runs nightly. Ask them and record "full_suite": on-request, nightly, merge or '
+                                  'every-pr (references/mapping.md step 8)'))
+        elif policy in FULL_SUITE:
+            items.append(('PASS', f'The whole suite (about {whole} min) runs {FULL_SUITE[policy]}'))
+    if policy is not None and policy not in FULL_SUITE:
+        items.append(('FAIL', f'"full_suite" is "{policy}"; use one of {", ".join(FULL_SUITE)}'))
     budget = config.get('pr_budget_minutes')
     if not isinstance(budget, (int, float)) or isinstance(budget, bool):
         if not untimed and not undefined:
@@ -791,6 +827,12 @@ def cmd_audit(args):
     return 1 if any(level == 'FAIL' for level, _ in items) else 0
 
 
+def cmd_full_suite(args):
+    mode = full_suite_mode(load_config(args.config_ref), args.event, args.labels)
+    print(f'mode={mode}')
+    return 0
+
+
 def cmd_inventory(args):
     config = load_config(root='.') if Path(CONFIG).is_file() else {'features': {}}
     groups = inventory(tracked_files(), config, args.depth)
@@ -996,6 +1038,10 @@ def main(argv=None):
     p = sub.add_parser('inventory', help='Show tracked files by directory and how each is mapped')
     p.add_argument('--depth', type=int, default=2)
     p.set_defaults(func=cmd_inventory)
+    p = sub.add_parser('full-suite', help='Print mode=full|planned|skip for a CI run under the owner\'s full_suite choice')
+    p.add_argument('--event', required=True, help='The GitHub event: pull_request, push, schedule or workflow_dispatch')
+    p.add_argument('--labels', type=listing, default=[], help='Comma-separated PR labels')
+    p.set_defaults(func=cmd_full_suite)
     p = sub.add_parser('ci', help='Run the suites this change needs, after checking the map')
     p.add_argument('--base', default='origin/main')
     p.add_argument('--all', action='store_true', help='Run every defined suite, for scheduled or pre-release runs')
