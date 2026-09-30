@@ -147,7 +147,7 @@ Every unit whose PR touches an `independent` (high-risk), unmapped or gate path 
 - post the verdict itself with `coord.py verdict`, and follow the PR through CI and review comments.
 
 It does not change product code; defects become a fix task for the original worker, and after the fix the same verifier re-checks only the changes with `--since`. The coordinator does not re-inspect a posted verdict; it merges verified units. Choose the verifier's effort by risk.
-It runs on GPT Luna 6 in fast mode, or Opus 5.5 at low effort when the implementer ran on Codex; see the verify tier in [model selection](models.md). Archive the verifier's workspace once its verdict is recorded.
+It runs on GPT Sol 6.1 at high effort, or Opus 5.5 at high effort when the implementer ran on Codex; see the verify tier in [model selection](models.md). Archive the verifier's workspace once its verdict is recorded.
 
 ## 8. Integrate continuously
 

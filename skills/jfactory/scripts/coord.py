@@ -39,7 +39,8 @@ BRIEF_FIELDS = ['OBJECTIVE', 'DECISIONS', 'SCOPE', 'CONTEXT', 'ACCEPTANCE', 'VER
 # exists once: `implement` is the frontier tier for features and fixes, `fast` and `trivial` cover routine and
 # very simple work, and `verify` checks another unit. `fallback` is used only when the primary has no usage
 # left. A verifier always comes from another family than the unit's actual implementer, so `alternate` covers
-# Codex-implemented units. `pin_efforts` fixes the effort per agent: Opus fallbacks run at low effort only.
+# Codex-implemented units. `pin_efforts` fixes the effort per agent: Opus runs the fast and trivial fallbacks at
+# low effort only, and verifies at high effort only.
 EFFORTS = ['low', 'medium', 'high']
 ROLE_TIERS = {'implement': 'frontier', 'fast': 'fast', 'trivial': 'trivial', 'verify': 'verify'}
 
@@ -794,7 +795,7 @@ def main(argv=None):
     p.add_argument('--verdict', required=True, choices=sorted(VERDICTS))
     p.add_argument('--scopes', type=listing, required=True)
     p.add_argument('--evidence', required=True)
-    p.add_argument('--verifier', help='agent/model that verified, e.g. codex/gpt-6-luna')
+    p.add_argument('--verifier', help='agent/model that verified, e.g. codex/gpt-6.1-sol')
     p.add_argument('--features', type=listing, default=[])
     p.add_argument('--full', action='store_true')
     p.add_argument('--since', help='Head of the earlier verdict on this PR; this one re-checked only the changes since')
