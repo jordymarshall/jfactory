@@ -168,7 +168,7 @@ jfactory-launched workspaces are archived automatically, the next time any of `s
 - its whole name is exactly `<role>-<repo name>-<PR number>`: a lowercase role of `verify`, `build` or `fix`, the repository's name (in any letter case, as GitHub treats it), and a PR number without leading zeros. Nothing may come before or after it, not even a space or a newline;
 - its repository URL, as an HTTPS, SSH or `git@host:owner/name` remote, is exactly this repository on GitHub: same host, owner and name, with nothing extra in the path;
 - GitHub reports that PR as merged or closed;
-- every session in it, read across every page of Conductor's session list, reports `idle`, the only status Conductor gives a stopped session. A session that is `working`, or whose status is missing or unrecognised, keeps the workspace; so does a session list jfactory cannot read completely;
+- every session in it, read across every page of Conductor's session list, reports `idle`, the only status Conductor gives a stopped session. A session that is `working`, or whose status is missing or unrecognised, keeps the workspace; so does a session list jfactory cannot read completely, including a page that is not the one asked for or that repeats sessions;
 - it is not the workspace the command runs in.
 
 It reports what it archived and each finished workspace it kept, with the reason; a later run archives those once they are idle. Anything else is left alone, so the owner's workspaces, other people's and other repositories' are never touched.

@@ -72,6 +72,10 @@ if tool == 'conductor':
         if ids is None:
             ids = [args[2].replace('w', 's', 1)] if args[2].startswith('w') else []
         offset = int(opt('--offset', '0'))
+        # `session_replies` gives literal replies per workspace and requested offset, to simulate a broken server.
+        literal = db.get('session_replies', {}).get(args[2], {}).get(str(offset))
+        if literal is not None:
+            done(literal)
         limit = min(int(opt('--limit', '100')), db.get('page_size', 100))  # the server may cap a page
         done({'data': [{'id': i} for i in ids[offset:offset + limit]], 'offset': offset,
               'hasMore': offset + limit < len(ids)})

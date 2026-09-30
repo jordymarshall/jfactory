@@ -596,6 +596,23 @@ class CoordTest(unittest.TestCase):
         offsets = [c[c.index('--offset') + 1] for c in self.db()['calls'] if c[1:3] == ['workspace', 'session']]
         self.assertEqual(offsets, ['0', '2', '0', '2'])
 
+    def test_a_replayed_or_misnumbered_page_keeps_the_workspace(self):
+        # The verifier's case: offset 1 returns page 0 again, then claims the list is complete.
+        replayed = {'0': {'offset': 0, 'data': [{'id': 's-a'}], 'hasMore': True},
+                    '1': {'offset': 0, 'data': [{'id': 's-a'}], 'hasMore': False}}
+        repeated = {'0': {'offset': 0, 'data': [{'id': 's-b'}], 'hasMore': True},
+                    '1': {'offset': 1, 'data': [{'id': 's-b'}], 'hasMore': False}}
+        no_offset = {'0': {'data': [{'id': 's-c'}], 'hasMore': False}}
+        self.set_db(prs={'7': {'state': 'MERGED'}, '8': {'state': 'MERGED'}, '9': {'state': 'MERGED'}},
+                    listed=[self.pr_workspace('w-a', 'verify-r-7'), self.pr_workspace('w-b', 'verify-r-8'),
+                            self.pr_workspace('w-c', 'verify-r-9')],
+                    session_replies={'w-a': replayed, 'w-b': repeated, 'w-c': no_offset},
+                    sessions={'s-a': 'idle', 's-b': 'idle', 's-c': 'idle'})
+        out = self.coord('tidy')
+        self.assertEqual(self.db().get('archived', []), [])
+        self.assertIn('offset 0 for 1', out)
+        self.assertIn('repeated items across pages', out)
+
     def test_repository_identity_is_exact_host_owner_and_name(self):
         wrong = ['https://gitlab.com/o/r', 'https://gitlab.com/github.com/o/r', 'https://github.com/x/o/r',
                  'https://github.com.evil.test/o/r', 'https://github.com/o/r/extra', 'git@gitlab.com:o/r.git',

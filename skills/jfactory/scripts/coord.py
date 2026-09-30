@@ -422,13 +422,20 @@ def pr_states(repo, numbers, timeout):
 
 def pages(*command, timeout):
     """Every item of a paginated `conductor ... --json` list; raises Uncertain when the set cannot be established."""
-    items, offset = [], 0
+    items, seen, offset = [], set(), 0
     for _ in range(MAX_PAGES):
         page = run_json('conductor', *command, '--limit', '100', '--offset', str(offset), '--json', timeout=timeout())
         data = page.get('data') if isinstance(page, dict) else None
         if not isinstance(data, list) or not isinstance(page.get('hasMore'), bool) \
                 or not all(isinstance(item, dict) and isinstance(item.get('id'), str) and item['id'] for item in data):
             raise Uncertain(f'`conductor {" ".join(command[:2])}` returned a list jfactory does not recognise')
+        # A page must be the one asked for, and no item may repeat: a replayed page proves nothing about the rest.
+        if type(page.get('offset')) is not int or page['offset'] != offset:
+            raise Uncertain(f'`conductor {" ".join(command[:2])}` returned offset {page.get("offset")!r} for {offset}')
+        ids = [item['id'] for item in data]
+        if len(set(ids)) != len(ids) or seen.intersection(ids):
+            raise Uncertain(f'`conductor {" ".join(command[:2])}` repeated items across pages')
+        seen.update(ids)
         items += data
         if not page['hasMore']:
             return items
