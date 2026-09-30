@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "static": ["README.md", "LICENSE", "evals/**", ".gitignore", "docs/**"],
+  "static": ["LICENSE", "evals/**", ".gitignore", "docs/**"],
   "static_suites": ["checks"],
   "always_suites": ["checks"],
   "full_suites": ["checks"],
@@ -12,7 +12,7 @@
   },
   "features": {
     "agent-instructions": {
-      "paths": ["AGENTS.md", "skills/jfactory/SKILL.md", "skills/jfactory/references/**", "skills/jfactory/skills/*/SKILL.md", "skills/jfactory/skills/*/references/**"],
+      "paths": ["AGENTS.md", "README.md", "skills/jfactory/SKILL.md", "skills/jfactory/references/**", "skills/jfactory/skills/*/SKILL.md", "skills/jfactory/skills/*/references/**"],
       "recipe": "Read the changed instructions for contradictions with the other references; run tests/test_links.py; behavior changes need a scenario from evals/scenarios.md",
       "suites": ["checks"],
       "verify": "independent"

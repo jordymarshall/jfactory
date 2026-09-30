@@ -111,7 +111,7 @@ class PlanTest(unittest.TestCase):
         self.assertIn('WARN: Feature shell is marked ci but has screens users see', text)
         self.assertIn('WARN: Feature copy is marked ci but has screens users see', text)
         self.assertIn('WARN: Feature tooling is marked ci, but changes to its tests always get', text)
-        self.assertIn('FAIL: Static patterns cover tests or agent instructions, which always need review: AGENTS.md', text)
+        self.assertIn('FAIL: Static patterns cover tests, agent instructions or standards documents, which always need review: AGENTS.md', text)
 
     def test_owner_chooses_when_the_whole_suite_runs(self):
         mode = verify_plan.full_suite_mode
@@ -365,6 +365,58 @@ class GateTest(unittest.TestCase):
         self.write(files=['app/briefs/save.ts'], head='d' * 40, config={**screens, 'require_screenshots': False})
         self.verdict(head='d' * 40)
         self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+
+    def test_verdicts_name_the_standards_and_journeys_they_checked(self):
+        standards = ('| Dimension | Source of truth | How changes are checked |\n| --- | --- | --- |\n'
+                     '| Brand, voice and copy | `docs/brand.md` | Rubric |\n')
+        config = {**CONFIG, 'features': {**CONFIG['features'], 'briefs': {**CONFIG['features']['briefs'],
+                                                                           'journey': 'docs/journeys/briefs.md'}}}
+        self.write(files=['app/briefs/save.ts'], config=config)
+        db = json.loads(self.state.read_text())
+        db['standards'] = standards
+        self.state.write_text(json.dumps(db))
+        self.assertIn('name each with --standards', self.verdict(code=2))
+        self.assertIn('is not a source', self.verdict('--standards', 'docs/other.md', code=2))
+        self.verdict('--standards', 'docs/brand.md#voice', '--standards', 'docs/journeys/briefs.md')
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+        self.assertIn('Checked against standards:', json.loads(self.state.read_text())['prs']['5']['comments'][-1]['body'])
+        # A verdict posted without them does not count.
+        db = json.loads(self.state.read_text())
+        db['prs']['5']['comments'].append({'authorAssociation': 'OWNER', 'body': '<!-- jfactory-verdict ' + json.dumps(
+            {'head': HEAD, 'verdict': 'verified', 'features': ['auth', 'briefs'], 'full': False,
+             'verifier': 'codex/gpt-6-sol', 'implementer': 'claude/opus-5-5-1m', 'evidence': ['x']}) + ' -->'})
+        self.state.write_text(json.dumps(db))
+        self.assertIn('does not name the standards', self.run_script('check', '--pr', '5', code=1))
+        # Docs-only changes need none.
+        self.write(files=['docs/a.md'], head='c' * 40, config=config)
+        self.assertIn('success: Static-only', self.run_script('check', '--pr', '5'))
+
+    def test_standards_and_journey_documents_are_always_reviewed(self):
+        config = {**CONFIG, '_standards': ['docs/brand.md', 'docs/journeys/briefs.md'],
+                  'features': {**CONFIG['features'], 'docs': {'paths': ['docs/journeys/**'], 'verify': 'ci'}}}
+        # The brand guide is only covered by the Markdown static pattern, so it is unmapped: full verification.
+        brand = verify_plan.plan(['docs/brand.md'], config)
+        self.assertEqual((brand['unmapped'], brand['full'], brand['static_only']), (['docs/brand.md'], True, False))
+        journey = verify_plan.plan(['docs/journeys/briefs.md'], config)
+        self.assertEqual((journey['level'], journey['overridden']), ('independent', {'docs': 'standards'}))
+        self.assertTrue(verify_plan.plan(['docs/guide.md'], config)['static_only'])
+
+    def test_audit_asks_each_screen_feature_for_a_proven_journey(self):
+        root = Path(tempfile.mkdtemp())
+        (root / 'docs').mkdir()
+        (root / 'docs/briefs.md').write_text('| Goal | How it\'s proven |\n| --- | --- |\n| Saves survive reload | `e2e/a.spec.ts` |\n'
+                                             '| Empty state explains next step | |\n')
+        config = {'static': ['docs/**'], 'suites': {'e2e': {'run': 'true', 'minutes': 1, 'target': 'app'}},
+                  'targets': {'app': {'url': 'http://x', 'ready': 'http://x', 'auth': 'none'}},
+                  'features': {'briefs': {'paths': ['app/briefs/**'], 'suites': ['e2e'], 'journey': 'docs/briefs.md'},
+                               'auth': {'paths': ['app/auth/**'], 'suites': ['e2e']},
+                               'cli': {'paths': ['cli/**'], 'journey': 'docs/missing.md'}}}
+        files = ['app/briefs/a.ts', 'app/auth/a.ts', 'cli/x.py', 'docs/briefs.md']
+        text = '\n'.join(f'{level}: {t}' for level, t in verify_plan.audit(files, config, root))
+        self.assertIn('WARN: Feature auth has screens but no "journey" document', text)
+        self.assertIn('FAIL: Feature cli names journey docs/missing.md, which is not a tracked file', text)
+        self.assertIn('WARN: Journey docs/briefs.md does not say how these are proven: Empty state explains next step', text)
+        self.assertNotIn('Feature briefs has screens but no', text)
 
     def test_status_follows_verdict_at_current_head(self):
         self.assertIn('failure: No verdict', self.run_script('check', '--pr', '5', code=1))

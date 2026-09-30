@@ -30,6 +30,16 @@ For removed or consolidated material, summarize the old path, new home and reaso
 
 Fix relative links, instructions that load moved files, task references and known external entry points. Verify relevant links exist and referenced commands still exist; execute commands when needed to support their claims. Search again for the contradictions you resolved. Keep unresolved items visible rather than calling the whole documentation tree current.
 
+## When a document and the code disagree
+
+Decide which one is wrong before changing either:
+
+- **The document is out of date.** The code reflects an intended change: an owner decision, an agreed objective or a merged PR that says so. Update the document in the same change and link that decision.
+- **The product broke.** The document still states the intent, and the code no longer meets it. Report it as a defect or an objective, with the document and the observed behavior as evidence. Do not edit the document to match; that hides a regression from every later check.
+- **Unclear.** Record both sources and the decision needed, and ask the owner. Keep the document unchanged until they answer.
+
+Standards and journey documents (`.jfactory/standards.md`) are the sources verifiers check against, so an edit to one always gets an independent review of which case it is.
+
 ## Keep it current during work
 
 Update a fact in its canonical home in the same change that alters it. Feature status should distinguish proposed, implemented, verified at a specific scope/revision, and owner-accepted. Link to evidence and the task/PR instead of copying logs. Keep current next steps in one task record; archive completed task context according to the repo's convention.

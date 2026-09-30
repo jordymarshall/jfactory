@@ -98,6 +98,10 @@ Then ask the owner when the **whole suite** runs, and record the answer as `"ful
 
 There is no default time limit. Precision comes from the map plus recorded coverage, and speed from parallel jobs, so a PR runs what its change needs without trading away checks. The one structural rule, enforced by `audit`, is that the map never makes journey suites run on every PR: `always_suites` and `static_suites` contain no suite with a `target`. Running the whole suite on every PR is a separate, explicit owner choice (`"full_suite": "every-pr"`). If the owner wants a cap anyway, show the measured numbers (each feature's plan, a shared-code change's plan and the parallel wait) and record their choice as `pr_budget_minutes`. `audit` then warns about changes over it; it never skips a required check.
 
+### Link each feature to its journey
+
+A feature users see names its journey document: `"journey": "docs/journeys/briefs.md"` (see [setup](setup.md#record-the-sources-of-truth-verifiers-check-against) and [the template](../templates/journey.md)). The journey says what the user is trying to do and how each goal is proven; the suites here are how most of those proofs run. `audit` warns about a feature with screens and no journey, fails on a journey path that isn't tracked, and warns about journey goals without a proof. Journey and standards documents are never `static`: edits to them always get the independent verifier.
+
 ## 9. Audit until clean and show the owner
 
 Run `$VP audit` and fix every FAIL, then the warnings. Then run `$VP plan --files <path>` for one typical file per feature, a shared file, the lockfile and a doc. Put a table of those plans (suites, total minutes and parallel wait) in the adoption PR, so the owner sees what a typical PR will run.
