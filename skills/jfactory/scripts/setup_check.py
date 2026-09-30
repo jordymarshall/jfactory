@@ -12,6 +12,7 @@ Exit status: 0 complete, 1 something must be fixed, 3 consistent but blocked on 
 import argparse
 import json
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -216,7 +217,8 @@ def check_targets(root, config, report, states):
 
 
 def run_blocks(text):
-    """The commands of each `run:` step: the inline value, or the indented block below `run: |` / `run: >-`."""
+    """The shell script of each `run:` step: the inline value (unquoted if YAML-quoted), or the indented block below
+    `run: |` / `run: >-`."""
     lines, blocks = text.splitlines(), []
     for i, line in enumerate(lines):
         match = re.match(r'^(\s*)(-\s+)?run:\s*(.*)$', line)
@@ -224,22 +226,59 @@ def run_blocks(text):
             continue
         indent, value = len(match.group(1)) + len(match.group(2) or ''), match.group(3).strip()
         if value and value[0] not in '|>':
-            blocks.append([value])
+            if len(value) > 1 and value[0] == value[-1] == "'":
+                value = value[1:-1].replace("''", "'")
+            elif len(value) > 1 and value[0] == value[-1] == '"':
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    value = value[1:-1]
+            blocks.append(value)
             continue
         block = []
         for follow in lines[i + 1:]:
             if follow.strip() and len(follow) - len(follow.lstrip()) <= indent:
                 break
             block.append(follow.strip())
-        blocks.append(block)
+        blocks.append((' ' if value.startswith('>') else '\n').join(block))
     return blocks
 
 
+def shell_commands(script):
+    """Each simple command in a shell script as its words. Comments and quoted text stay inside their words, so an
+    operator written in a comment or a string never starts a command."""
+    commands = []
+    for line in script.replace('\\\n', ' ').splitlines():
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        try:
+            words = list(lexer)
+        except ValueError:  # unbalanced quotes: nothing here runs as written
+            continue
+        current = []
+        for word in words:
+            if word and set(word) <= set(';&|()'):
+                commands.append(current)
+                current = []
+            else:
+                current.append(word)
+        commands.append(current)
+    return [c for c in commands if c]
+
+
 def runs_method_audit(text):
-    """A scheduled workflow whose run step starts `python3 ... method_audit.py` as a command."""
+    """A scheduled workflow with a run step that executes `python3 ... method_audit.py`."""
     scheduled = re.search(r'(?m)^\s*schedule:\s*$', text) and re.search(r'(?m)^\s*-\s*cron:', text)
-    command = re.compile(r'^(?:.*(?:&&|;|\|\|)\s*)?python3?\s+\S*method_audit\.py\b')
-    return bool(scheduled) and any(command.match(line) for block in run_blocks(text) for line in block)
+
+    def audits(words):
+        while words and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*=.*', words[0]):
+            words = words[1:]
+        if not words or not re.fullmatch(r'(\S*/)?python3?', words[0]):
+            return False
+        script = next((w for w in words[1:] if not w.startswith('-')), '')
+        return script.endswith('method_audit.py')
+
+    return bool(scheduled) and any(audits(c) for script in run_blocks(text) for c in shell_commands(script))
 
 
 def check_standards(root, report, states):
