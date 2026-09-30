@@ -748,7 +748,7 @@ def git_files(base):
 
 def pr_info(repo, number):
     pr = json.loads(run('gh', 'pr', 'view', str(number), '--repo', repo, '--json',
-                        'headRefOid,baseRefName,comments,isCrossRepository,body'))
+                        'headRefOid,baseRefName,comments,isCrossRepository,body,title'))
     files = run('gh', 'api', f'repos/{repo}/pulls/{number}/files', '--paginate', '--jq', '.[].filename')
     pr['files'] = [line for line in files.splitlines() if line]
     return pr
@@ -892,6 +892,11 @@ def evaluate(pr, config, ci_check=None):
     result = plan(pr['files'], config)
     if result['level'] != 'static' and config.get('require_objective', True) and not states_objective(pr.get('body')):
         return 'failure', 'PR description must start with its objective: an Objective heading (such as "## Objective") or "Objective:" line'
+    outcomes = [s for s in config.get('_standards', []) if s.startswith('outcomes/')]
+    if (result['level'] != 'static' and outcomes and config.get('require_objective', True)
+            and not any(doc in (pr.get('body') or '') for doc in outcomes)):
+        return 'failure', ('PR description must name the outcomes/ document(s) this change serves and say why it is '
+                           'right (a "Why it\'s right" section; templates/objective.md)')
     if not result['needs_verifier']:
         if result['level'] == 'ci':
             return 'success', 'Low-risk change (verify: ci); required CI checks apply'

@@ -181,6 +181,13 @@ def check_verification(root, report, states):
         report.add('PASS', f'The jfactory verified workflow is installed: {gate[0].relative_to(root)}')
     else:
         report.add('FAIL', 'No workflow runs `verify_plan.py ... check`; install templates/jfactory-verified.yml')
+    audits = [p for p in workflows.glob('*.y*ml') if 'method_audit.py' in p.read_text()] if workflows.is_dir() else []
+    if audits:
+        report.add('PASS', f'The method audit checks the checkers: {audits[0].relative_to(root)}')
+    else:
+        report.add('FAIL' if states.get('PR delivery') == 'verified' else 'WARN',
+                   'No workflow runs `method_audit.py`, so nothing notices when verification stops meeting "done '
+                   'means right" across merged PRs; install templates/jfactory-method-audit.yml')
 
 
 def check_targets(root, config, report, states):
@@ -215,6 +222,9 @@ def check_standards(root, report, states):
         report.add(level, f'No standards map at {verify_plan.STANDARDS}: verifiers have no source of truth to check '
                           'changes against. Create it from templates/standards.md (references/setup.md)')
         return
+    if not (root / 'outcomes' / 'README.md').is_file():
+        report.add(level, 'No outcomes/README.md: the customer, the outcomes that matter and the non-goals every change '
+                          'is judged against. Create it from templates/outcomes-readme.md (references/setup.md)')
     rows = verify_plan.parse_standards(path.read_text())
     missing = [d for d in verify_plan.STANDARD_DIMENSIONS if d not in rows]
     if missing:

@@ -1,0 +1,30 @@
+# Copy to .github/workflows/jfactory-method-audit.yml during setup and set JFACTORY_DIR to the installed bundle path.
+# Weekly, it samples recently merged PRs and reports where verification fell short of "done means right": verdicts
+# that named no standards, screen changes merged without reviewed screenshots, descriptions that named no outcomes.
+# Findings open or update an issue labelled jfactory-method-audit; fix each repeated finding at the strongest layer.
+name: jfactory method audit
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+env:
+  JFACTORY_DIR: .agents/skills/jfactory
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Audit recently merged PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Findings exit 1 after publishing the issue, so the run shows red until the gap is fixed.
+        run: python3 "$JFACTORY_DIR/scripts/method_audit.py" --repo "$GITHUB_REPOSITORY" --limit 20 --issue

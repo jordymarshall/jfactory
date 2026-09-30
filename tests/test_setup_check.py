@@ -55,11 +55,15 @@ class SetupCheckTest(unittest.TestCase):
         (self.root / '.jfactory' / 'standards.md').write_text(standards())
         (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(
             {'static': ['README.md'], 'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**',
-                                                                    '.github/**']}}}))
+                                                                    '.github/**', 'outcomes/**']}}}))
         (self.root / '.jfactory' / 'coordination.json').write_text(json.dumps(
             {'merge_deploys': 'staging', 'release': RELEASE}))
         (self.root / '.github' / 'workflows').mkdir(parents=True)
         shutil.copy(WORKFLOW, self.root / '.github' / 'workflows' / 'jfactory-verified.yml')
+        shutil.copy(ROOT / 'skills' / 'jfactory' / 'templates' / 'jfactory-method-audit.yml',
+                    self.root / '.github' / 'workflows' / 'jfactory-method-audit.yml')
+        (self.root / 'outcomes').mkdir()
+        (self.root / 'outcomes' / 'README.md').write_text('# Outcomes\n')
         (self.root / 'src').mkdir()
         (self.root / 'src' / 'app.py').write_text('')
         subprocess.run(['git', '-C', str(self.root), 'add', '-A'], check=True)
@@ -102,6 +106,14 @@ class SetupCheckTest(unittest.TestCase):
         self.assertNotIn('older-spec.md', out)
         (self.root / '.jfactory' / 'standards.md').unlink()
         self.assertIn('No standards map', self.check('--remote', '--repo', 'o/r', code=1))
+        (self.root / '.jfactory' / 'standards.md').write_text(standards())
+        (self.root / 'outcomes' / 'README.md').unlink()
+        self.assertIn('No outcomes/README.md', self.check('--remote', '--repo', 'o/r', code=1))
+
+    def test_verified_delivery_needs_the_method_audit(self):
+        self.assertIn('PASS: The method audit checks the checkers', self.check('--remote', '--repo', 'o/r'))
+        (self.root / '.github' / 'workflows' / 'jfactory-method-audit.yml').unlink()
+        self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
 
     def test_complete_setup_passes_with_remote_protection(self):
         out = self.check('--remote', '--repo', 'o/r')
@@ -180,14 +192,14 @@ class SetupCheckTest(unittest.TestCase):
     def test_risk_levels_are_reported(self):
         self.assertIn('WARN: 1 feature(s) have no risk level', self.check('--remote', '--repo', 'o/r'))
         (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(
-            {'static': ['README.md'], 'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**', '.github/**'],
+            {'static': ['README.md'], 'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**', '.github/**', 'outcomes/**'],
                                                            'verify': 'independent'}}}))
         self.assertIn('Risk levels set: 1 independent, 0 CI-only', self.check('--remote', '--repo', 'o/r'))
 
     def mapping(self, **extra):
         (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(
             {'static': ['README.md'], 'always_suites': ['unit'], **extra,
-             'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**', '.github/**'], 'verify': 'independent',
+             'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**', '.github/**', 'outcomes/**'], 'verify': 'independent',
                                   'suites': ['e2e-app']}}}))
 
     def test_per_pr_cost_must_fit_the_budget(self):

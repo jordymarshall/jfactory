@@ -387,6 +387,14 @@ class GateTest(unittest.TestCase):
              'verifier': 'codex/gpt-6-sol', 'implementer': 'claude/opus-5-5-1m', 'evidence': ['x']}) + ' -->'})
         self.state.write_text(json.dumps(db))
         self.assertIn('does not name the standards', self.run_script('check', '--pr', '5', code=1))
+        # With outcomes/ documents, the PR itself must name the ones it serves.
+        config['features']['briefs']['journey'] = 'outcomes/save-a-brief.md'
+        self.write(files=['app/briefs/save.ts'], head='e' * 40, config=config)
+        self.assertIn('must name the outcomes/ document(s)', self.run_script('check', '--pr', '5', code=1))
+        db = json.loads(self.state.read_text())
+        db['prs']['5']['body'] = "## Objective\nSave briefs.\n\n## Why it's right\nServes `outcomes/save-a-brief.md`.\n"
+        self.state.write_text(json.dumps(db))
+        self.assertIn('No verdict', self.run_script('check', '--pr', '5', code=1))
         # Docs-only changes need none.
         self.write(files=['docs/a.md'], head='c' * 40, config=config)
         self.assertIn('success: Static-only', self.run_script('check', '--pr', '5'))

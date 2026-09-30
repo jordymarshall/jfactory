@@ -86,6 +86,15 @@ A UX judgment is an assessment, not customer validation. Owner and customer feed
 
 Autonomy grows with trust, and trust comes from watching the agent do the work. Start a new kind of task where you can watch it: read the agent's actual tool calls and outputs, correct it, and turn the correction into a check or skill. Once the same task runs correctly without correction, let it run unattended, then several at once. The same order applies to a repository: first a verifier that can run the real app, then trusted single sessions, then [parallel workspaces](coordination.md). Protected auto-merge does not skip this ladder. It lands only work that passed the agreed verification, and only to staging at most, so it can be on from the start. As trust grows, the owner reads what landed instead of every PR before it merges. Starting many agents before one is trustworthy mostly produces rework.
 
+## Check the checkers
+
+Gates can look green while they measure the wrong thing: a checker that confirms headings exist, a verifier that judges only the criteria the agent wrote for itself, tests that pass while nobody looks at the screen, suites that pass while getting slower each week. Look past the gates on a schedule:
+
+- **Method audit.** `scripts/method_audit.py` samples recently merged PRs and reports each that merged short of "done means right": no verified verdict at its final commit, a verdict naming no standards, a screen change merged without reviewed screenshots, a description naming no `outcomes/` document or missing its "Why it's right" section. [The workflow template](../templates/jfactory-method-audit.yml) runs it weekly and opens an issue labelled `jfactory-method-audit`. `setup_check.py` warns while it isn't installed and fails once PR delivery is marked verified without it.
+- **Question the method before calling work done.** Ask what would make this change wrong even though every check passes, and rule each out. The PR's "Why it's right" section records the answer; the verifier challenges it.
+- **Owner corrections are findings about the method.** When the owner catches something the gates passed, treat it as a gap in the gates, not only in the change: find why every check missed it and move the rule up the correction ladder below.
+- **Blinded evals.** The eval playbook below measures whether a method change helps. Run it before trusting a new rule's effect, and record the result.
+
 ## The correction ladder
 
 Whenever you correct an agent, choose where the fix lives. Stronger layers enforce themselves; weaker ones depend on someone remembering.
