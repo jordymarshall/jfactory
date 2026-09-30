@@ -61,10 +61,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # The newest unexpired coverage from a whole-suite run, on any branch, however many runs came since.
-          # Coverage only adds suites, so without any the plan falls back to the map.
-          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=jfactory-impact-1&per_page=20" \
-            --jq '[.artifacts[] | select(.expired | not)][0].workflow_run.id // empty')
+          # Coverage from the newest whole-suite run that completed successfully, on any branch, however many runs
+          # came since. A run still in progress or one that failed may hold only some shards' records, so skip it.
+          # Coverage only adds suites; with none usable the plan falls back to the map.
+          run=""
+          for id in $(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?name=jfactory-impact-1&per_page=100" \
+              --jq '.artifacts[] | select(.expired | not) | .workflow_run.id'); do
+            state=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id" --jq '.status + "/" + (.conclusion // "")')
+            if [ "$state" = "completed/success" ]; then run=$id; break; fi
+          done
           if [ -n "$run" ]; then gh run download "$run" --pattern 'jfactory-impact-*' --dir .jfactory-impact || true; fi
       - name: Run this job's share of the suites the change needs
         if: needs.mode.outputs.mode == 'planned'
