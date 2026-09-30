@@ -390,7 +390,11 @@ class GateTest(unittest.TestCase):
         # With outcomes/ documents, the PR itself must name the ones it serves.
         config['features']['briefs']['journey'] = 'outcomes/save-a-brief.md'
         self.write(files=['app/briefs/save.ts'], head='e' * 40, config=config)
-        self.assertIn('must name the outcomes/ document(s)', self.run_script('check', '--pr', '5', code=1))
+        self.assertIn('needs a "Why it\'s right" section', self.run_script('check', '--pr', '5', code=1))
+        db = json.loads(self.state.read_text())
+        db['prs']['5']['body'] = "## Objective\nSave briefs.\n\n## Why it's right\nIt serves the outcomes.\n"
+        self.state.write_text(json.dumps(db))
+        self.assertIn('must name the outcomes/<job>.md document(s)', self.run_script('check', '--pr', '5', code=1))
         db = json.loads(self.state.read_text())
         db['prs']['5']['body'] = "## Objective\nSave briefs.\n\n## Why it's right\nServes `outcomes/save-a-brief.md`.\n"
         self.state.write_text(json.dumps(db))
@@ -398,6 +402,30 @@ class GateTest(unittest.TestCase):
         # Docs-only changes need none.
         self.write(files=['docs/a.md'], head='c' * 40, config=config)
         self.assertIn('success: Static-only', self.run_script('check', '--pr', '5'))
+
+    def test_citations_must_name_real_sources_and_a_failed_verdict_vetoes(self):
+        standards = ('| Dimension | Source of truth | How changes are checked |\n| --- | --- | --- |\n'
+                     '| Brand, voice and copy | `docs/brand.md` | Rubric |\n')
+        self.write(files=['app/briefs/save.ts'], config=CONFIG)
+        db = json.loads(self.state.read_text())
+        db['standards'] = standards
+        self.state.write_text(json.dumps(db))
+        for cited in ([''], ['docs/invented.md'], 'docs/brand.md', [7]):
+            db = json.loads(self.state.read_text())
+            db['prs']['5']['comments'] = [{'authorAssociation': 'OWNER', 'body': '<!-- jfactory-verdict ' + json.dumps(
+                {'head': HEAD, 'verdict': 'verified', 'features': ['auth', 'briefs'], 'full': False, 'standards': cited,
+                 'verifier': 'codex/gpt-6-sol', 'implementer': 'claude/opus-5-5-1m', 'evidence': ['x']}) + ' -->'}]
+            self.state.write_text(json.dumps(db))
+            self.assertIn('does not name the standards', self.run_script('check', '--pr', '5', code=1), cited)
+        self.assertIn('is not a source', self.verdict('--standards', '../docs/brand.md', code=2))
+        self.verdict('--standards', './docs/brand.md#voice')
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+        # Done means right: a failed verdict vetoes even a change that needed none.
+        self.write(files=['lint/rules.py'], head='c' * 40, config=CONFIG)
+        self.assertIn('success: Low-risk', self.run_script('check', '--pr', '5'))
+        self.run_script('verdict', '--pr', '5', '--head', 'c' * 40, '--verdict', 'failed', '--verifier', 'codex/gpt-6-sol',
+                        '--implementer', 'claude/opus-5-5-1m', '--evidence', 'https://evidence')
+        self.assertIn('Latest verdict at ccccccc is failed', self.run_script('check', '--pr', '5', code=1))
 
     def test_standards_and_journey_documents_are_always_reviewed(self):
         config = {**CONFIG, '_standards': ['docs/brand.md', 'docs/journeys/briefs.md'],
@@ -408,6 +436,27 @@ class GateTest(unittest.TestCase):
         journey = verify_plan.plan(['docs/journeys/briefs.md'], config)
         self.assertEqual((journey['level'], journey['overridden']), ('independent', {'docs': 'standards'}))
         self.assertTrue(verify_plan.plan(['docs/guide.md'], config)['static_only'])
+
+    def test_tables_and_sources_parse_as_written(self):
+        rows = verify_plan.journey_proofs("| Goal | How it's proven |\n| --- | --- |\n| Preserve A \\| B | |\n| Save | `e2e/a.spec.ts` |\n")
+        self.assertEqual(rows, [('Preserve A | B', ''), ('Save', '`e2e/a.spec.ts`')])
+        parsed = verify_plan.parse_standards(
+            '| **Dimension** | **Source of truth** | **How changes are checked** |\n| --- | --- | --- |\n'
+            '| Brand | `./docs/brand.md#voice` | Rubric |\n'
+            '| Conventions | `Makefile` and `LICENSE` | CI |\n'
+            '| Accessibility | none: owner deferred `WCAG2.2` | Later |\n'
+            '| Escape | `../outside.md` | x |\n'
+            '| Pipes | `docs/a.md` | checks A \\| B |\n')
+        self.assertEqual(sorted(parsed), ['Accessibility', 'Brand', 'Conventions', 'Escape', 'Pipes'])
+        self.assertEqual(parsed['Brand']['paths'], ['docs/brand.md'])
+        self.assertEqual(parsed['Conventions']['paths'], ['Makefile', 'LICENSE'])
+        self.assertEqual((parsed['Accessibility']['paths'], parsed['Accessibility']['none']), ([], 'owner deferred `WCAG2.2`'))
+        self.assertEqual(parsed['Escape']['paths'], ['!../outside.md'])
+        self.assertEqual(parsed['Pipes']['check'], 'checks A | B')
+        # A source written with ./ is the same file the plan sees, so it is still always reviewed.
+        config = {**CONFIG, '_standards': ['README.md']}
+        self.assertEqual(verify_plan.plan(['README.md'], config)['unmapped'], ['README.md'])
+        self.assertEqual(verify_plan.source_path('./README.md#brand'), 'README.md')
 
     def test_audit_asks_each_screen_feature_for_a_proven_journey(self):
         root = Path(tempfile.mkdtemp())

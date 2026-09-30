@@ -99,11 +99,26 @@ class SetupCheckTest(unittest.TestCase):
         (self.root / '.jfactory' / 'verification.json').write_text(json.dumps({**config, 'static': ['README.md', 'docs/**']}))
         (self.root / 'docs').mkdir()
         (self.root / 'docs' / 'old-spec.md').write_text('# Old spec\n\nTHIS DOCUMENT IS THE SOURCE OF TRUTH.\n')
-        (self.root / 'docs' / 'older-spec.md').write_text('# Older spec\n\nSuperseded by the PRD. Was the source of truth.\n')
+        (self.root / 'docs' / 'older-spec.md').write_text('# Older spec\n\nSuperseded by the PRD. This document is the source of truth.\n')
+        (self.root / 'docs' / 'denial.md').write_text('# Notes\n\nThis document is NOT the source of truth. Use the PRD instead.\n')
+        (self.root / 'docs' / 'mention.md').write_text('# Log\n\nArchived logs live elsewhere.\n\nThis spec is the source of truth.\n')
         subprocess.run(['git', '-C', str(self.root), 'add', '-A'], check=True)
         out = self.check('--remote', '--repo', 'o/r')
-        self.assertIn('claim to be the source of truth without a superseded or historical note: docs/old-spec.md', out)
+        self.assertIn('claim to be the source of truth without a superseded or historical note: docs/mention.md, docs/old-spec.md', out)
         self.assertNotIn('older-spec.md', out)
+        self.assertNotIn('denial.md', out)
+        write(**{'Brand, voice and copy': ('`../elsewhere/brand.md`', 'Rubric')})
+        self.assertIn('outside the repository: ../elsewhere/brand.md', self.check('--remote', '--repo', 'o/r', code=1))
+        write(**{'Brand, voice and copy': ('`./AGENTS.md#brand`', 'Rubric'),
+                 'Accessibility': ('none: owner has deferred `WCAG2.2`', 'Later'),
+                 'Engineering conventions': ('`LICENSE` and `AGENTS.md`', 'CI')})
+        (self.root / 'LICENSE').write_text('MIT\n')
+        config = json.loads((self.root / '.jfactory' / 'verification.json').read_text())
+        config['features']['app']['paths'].append('LICENSE')
+        (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(config))
+        subprocess.run(['git', '-C', str(self.root), 'add', '-A'], check=True)
+        self.assertIn('PASS: Standards map covers 9 dimensions', self.check('--remote', '--repo', 'o/r'))
+        write()
         (self.root / '.jfactory' / 'standards.md').unlink()
         self.assertIn('No standards map', self.check('--remote', '--repo', 'o/r', code=1))
         (self.root / '.jfactory' / 'standards.md').write_text(standards())
@@ -112,7 +127,11 @@ class SetupCheckTest(unittest.TestCase):
 
     def test_verified_delivery_needs_the_method_audit(self):
         self.assertIn('PASS: The method audit checks the checkers', self.check('--remote', '--repo', 'o/r'))
-        (self.root / '.github' / 'workflows' / 'jfactory-method-audit.yml').unlink()
+        audit = self.root / '.github' / 'workflows' / 'jfactory-method-audit.yml'
+        # A manual workflow that only mentions the script audits nothing.
+        audit.write_text('on: workflow_dispatch\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo method_audit.py\n')
+        self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
+        audit.unlink()
         self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
 
     def test_complete_setup_passes_with_remote_protection(self):
