@@ -446,8 +446,10 @@ class GateTest(unittest.TestCase):
             '| Conventions | `Makefile` and `LICENSE` | CI |\n'
             '| Accessibility | none: owner deferred `WCAG2.2` | Later |\n'
             '| Escape | `../outside.md` | x |\n'
-            '| Pipes | `docs/a.md` | checks A \\| B |\n')
-        self.assertEqual(sorted(parsed), ['Accessibility', 'Brand', 'Conventions', 'Escape', 'Pipes'])
+            '| Pipes | `docs/a.md` | checks A \\| B |\n'
+            '| Spaces | `docs/Brand Guide.md#voice` | Rubric |\n')
+        self.assertEqual(sorted(parsed), ['Accessibility', 'Brand', 'Conventions', 'Escape', 'Pipes', 'Spaces'])
+        self.assertEqual(parsed['Spaces']['paths'], ['docs/Brand Guide.md'])
         self.assertEqual(parsed['Brand']['paths'], ['docs/brand.md'])
         self.assertEqual(parsed['Conventions']['paths'], ['Makefile', 'LICENSE'])
         self.assertEqual((parsed['Accessibility']['paths'], parsed['Accessibility']['none']), ([], 'owner deferred `WCAG2.2`'))

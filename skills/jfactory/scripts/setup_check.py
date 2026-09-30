@@ -181,11 +181,8 @@ def check_verification(root, report, states):
         report.add('PASS', f'The jfactory verified workflow is installed: {gate[0].relative_to(root)}')
     else:
         report.add('FAIL', 'No workflow runs `verify_plan.py ... check`; install templates/jfactory-verified.yml')
-    # An audit counts only if a scheduled workflow actually runs the script, not one that merely mentions it.
-    audits = [p for p in workflows.glob('*.y*ml')
-              if re.search(r'python3?\s+\S*method_audit\.py\b', p.read_text())
-              and re.search(r'(?m)^\s*schedule:\s*$', p.read_text()) and 'cron:' in p.read_text()] \
-        if workflows.is_dir() else []
+    # An audit counts only if a scheduled workflow executes the script in a `run:` step, not one that mentions it.
+    audits = [p for p in workflows.glob('*.y*ml') if runs_method_audit(p.read_text())] if workflows.is_dir() else []
     if audits:
         report.add('PASS', f'The method audit checks the checkers: {audits[0].relative_to(root)}')
     else:
@@ -216,6 +213,33 @@ def check_targets(root, config, report, states):
         else:
             report.add('PASS', f'Target {name} started in a fresh workspace at {receipt.get("commit", "")[:7]} '
                                f'on {receipt.get("at", "?")}')
+
+
+def run_blocks(text):
+    """The commands of each `run:` step: the inline value, or the indented block below `run: |` / `run: >-`."""
+    lines, blocks = text.splitlines(), []
+    for i, line in enumerate(lines):
+        match = re.match(r'^(\s*)(-\s+)?run:\s*(.*)$', line)
+        if not match:
+            continue
+        indent, value = len(match.group(1)) + len(match.group(2) or ''), match.group(3).strip()
+        if value and value[0] not in '|>':
+            blocks.append([value])
+            continue
+        block = []
+        for follow in lines[i + 1:]:
+            if follow.strip() and len(follow) - len(follow.lstrip()) <= indent:
+                break
+            block.append(follow.strip())
+        blocks.append(block)
+    return blocks
+
+
+def runs_method_audit(text):
+    """A scheduled workflow whose run step starts `python3 ... method_audit.py` as a command."""
+    scheduled = re.search(r'(?m)^\s*schedule:\s*$', text) and re.search(r'(?m)^\s*-\s*cron:', text)
+    command = re.compile(r'^(?:.*(?:&&|;|\|\|)\s*)?python3?\s+\S*method_audit\.py\b')
+    return bool(scheduled) and any(command.match(line) for block in run_blocks(text) for line in block)
 
 
 def check_standards(root, report, states):
