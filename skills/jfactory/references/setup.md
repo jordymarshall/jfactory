@@ -3,7 +3,7 @@
 Setup has five steps, and each leaves something `scripts/setup_check.py` can check:
 
 1. **Inspect and resume:** install or update the bundle, then read the setup record at `.jfactory/setup.md`.
-2. **Reconcile the foundation:** clean up the docs, put the four entry sections in `AGENTS.md`, and interview the owner. The answers go in the record.
+2. **Reconcile the foundation:** clean up the docs, put the four entry sections in `AGENTS.md`, record the outcomes, the standards map and a document per job to be done, and interview the owner. The answers go in the record.
 3. **Prepare tools and verification:** set up bootstrap and doctor, the project verifier, `.jfactory/verification.json` through [guided mapping](mapping.md), a start-up receipt for each place the app runs, the change-aware CI job and the `jfactory verified` workflow.
 4. **Establish the loop and delivery:** name the task location, write the next objective, record `merge_deploys` and the release procedure, and set up the GitHub gates.
 5. **Deliver:** run `setup_check.py --remote` and open one adoption PR with the readiness report.
@@ -39,6 +39,19 @@ Apply [documentation reconciliation](documentation.md), including nested agent i
 
 Use the existing homes for these facts; these are sections, not four mandatory new files. Keep the installation-managed block intact. Avoid maintaining separate competing instructions for different agent hosts; link their entry points to shared project policy where supported.
 
+### Record the sources of truth verifiers check against
+
+Tests prove behavior; the project's own documents say what good looks like. Verifiers need both, so record them explicitly:
+
+- **Standards map.** Create `.jfactory/standards.md` from [the template](../templates/standards.md). For each dimension (product goals and customer, brand, voice and copy, visual design system, UX principles, accessibility, performance and scale, security, privacy and data, engineering conventions, definition of done) name the one canonical document as a backticked path, or write `none` and the owner's reason. Say how changes are proven against it: a CI check, a judgment rubric, reviewed screenshots or a measure. Find the documents during reconciliation; ask the owner where a dimension has none, and offer a draft built from what exists. Mark every older document that claims the same authority as superseded.
+- **Outcomes.** Create `outcomes/README.md` from [the template](../templates/outcomes-readme.md): the customer, the outcomes that matter and how each is measured, and the non-goals, linking the product brief or PRD rather than copying it. List it under "Product goals and customer" in the standards map.
+- **One document per job to be done.** For each thing users do, in their words, write `outcomes/<job>.md` from [the template](../templates/outcome.md) and name it as the feature's `"outcome"` in `.jfactory/verification.json`. Cover who does it and why, the business outcome it serves, each standing goal with **how it's proven**, a quality rubric and eval scenarios. Link the verification skill's feature recipe for how to drive it. Draft from the product documents and task criteria that exist, cite them, and mark goals the owner hasn't confirmed.
+- **Entry points.** `AGENTS.md` links `outcomes/README.md` and the standards map. `CLAUDE.md` is one line, `@AGENTS.md`, so every host reads the same instructions.
+
+Keep the levels apart. `outcomes/README.md` is why the product exists; it changes by owner decision. The standards map is what good looks like everywhere. A job document holds the standing goals of one thing users do. A work item's objective holds the criteria for one change, and each criterion names the job goal it adds, changes or relies on; when a change adds or alters a standing goal, it updates the job document in the same PR.
+
+`setup_check.py` fails when the map names a source that doesn't exist, and warns about missing dimensions, rows without a proof method and documents outside the map that still claim to be the source of truth. `audit` warns about screen features without an outcome document and goals without a proof. Edits to any of these documents always get the independent verifier.
+
 Explain the main customer journey and largest gaps in plain language. Then interview the owner. This step is required: code establishes what exists, not what the customer should want, and a brief the agent writes alone is an assumption. Ask each question in the setup record's interview table:
 
 - who is struggling;
@@ -69,7 +82,7 @@ An empty repo has no existing journey to prove. Establish the first proposed run
 
 Choose the task location where objectives live, for example the project's GitHub issues with a `jfactory-objective` label, or its existing tracker. Record it as `Task location:` in the setup record and in the agent instructions. Put the next bounded objective there using the [objective contract](verification.md#objective-contract) and [its template](../templates/objective.md), marked proposed until the owner agrees. Connect the customer outcome to concrete observations, executable checks and required evidence scopes. Identify the riskiest unknown, permitted data/services, any cost or iteration limits, next owner checkpoint and conditions for stopping. Setup has its own objective; suggesting a product task does not authorize implementing it.
 
-The agent chooses an unresolved criterion, implements or investigates, runs the check, reads the result and side effects, corrects failures, and repeats within scope. It must not weaken criteria to make the loop finish. Failed attempts should inform the next attempt. If no new evidence supports another retry, diagnose the blocker or ask the consequential question while advancing independent work. A completed objective ends that loop. Record the next action so another session can resume without asking the owner to reconstruct the conversation.
+The agent chooses an unresolved criterion, or anything not yet right against the job goals, standards and outcomes, implements or investigates, runs the check, reads the result and side effects, corrects failures, and repeats within scope until the change is right. It must not weaken criteria to make the loop finish. Failed attempts should inform the next attempt. If no new evidence supports another retry, diagnose the blocker or ask the consequential question while advancing independent work. A completed objective ends that loop. Record the next action so another session can resume without asking the owner to reconstruct the conversation.
 
 Inspect actual CI coverage, including skips, and integrate appropriate deterministic checks into existing CI. Establish what is checked locally, in a PR preview, in a staging environment and after release. Follow [auto-merge setup](auto-merge.md) to carry forward or establish the standing merge/release policy. Configure authorized server-side gates when access permits, starting from the [ruleset template](../templates/ruleset-main.json) as described in [auto-merge setup](auto-merge.md#establish-the-repository-gates-once); if the agent's token cannot edit rulesets, prepare the filled-in file and give the owner the browser steps and the one-line `gh` command. Missing settings access, proof or authorization remains a named blocker; a workflow file is not proof of branch protection.
 

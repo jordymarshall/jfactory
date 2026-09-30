@@ -1,6 +1,10 @@
 # Verification contract
 
-Choose evidence from the claim, not from whichever test is easiest to run. Engineering correctness, experience quality, customer value and agent-workflow effectiveness are separate conclusions.
+Choose evidence from the claim, not from whichever test is easiest to run.
+
+**Done means right.** A change is done only when it is right: it serves the outcomes in `outcomes/README.md` and crosses none of its non-goals, keeps every standing goal of the jobs it touches (`outcomes/<job>.md`), meets the standards map (`.jfactory/standards.md`) and meets its own criteria, each proven at the current commit. Green CI, passing tests, an approved review or a completed checklist is evidence toward done, never done by itself. Done but not right is not done: keep working, or report it as not done.
+
+Engineering correctness, experience quality, customer value and agent-workflow effectiveness need different evidence, and each one that applies must hold. Proving one does not stand in for another: correct code with a confusing experience, or a polished screen that doesn't serve the outcome, is not done.
 
 ## Objective contract
 
@@ -15,7 +19,7 @@ Write the objective before substantial implementation, in the task location name
 
 For example, "make saving good" is incomplete. "A signed-in customer saves an item, sees it after reload and in a new session, and receives a recoverable error if saving fails" identifies observable behavior. The tests must exercise the real application's auth/storage boundary for that claim. An additional customer interview may still be needed to determine whether saving solves the right problem.
 
-Work through unresolved criteria autonomously. Use failed checks and observations to choose the next correction. Keep the original acceptance standard visible when a proposal changes it; an agent cannot mark a requirement done by deleting its failing assertion. Stop dependent work for a material unresolved decision, inaccessible required service or exhausted agreed budget; continue feasible independent work. Once criteria and required reviews pass, deliver under the recorded PR policy and stop at the agreed boundary.
+Work through unresolved criteria, and anything that is not yet right against the job goals, standards and outcomes, autonomously. Use failed checks and observations to choose the next correction. Keep the original acceptance standard visible when a proposal changes it; an agent cannot mark a requirement done by deleting its failing assertion. Stop dependent work for a material unresolved decision, inaccessible required service or exhausted agreed budget; continue feasible independent work. Once the change is right (its criteria pass, the touched jobs' standing goals hold, the standards are met and the outcomes are served, each proven) and the required reviews agree, deliver under the recorded PR policy and stop at the agreed boundary.
 
 ## Required scopes
 
@@ -56,6 +60,8 @@ Verification needs follow from what a PR changes, not from a fixed repository-wi
 5. **Independent verdict.** One verifier from a different model family (the default is GPT Luna 6 in fast mode) checks the PR at its current head and posts the verdict itself; nobody re-judges it afterwards. It does not repeat work CI already proved:
    - **Deterministic suites:** it reuses CI's results at the head instead of re-running them. `verdict --verdict verified` refuses while any CI check at that head is missing, running or failed, so the reuse is safe. It re-runs a suite only when it doubts what the suite's assertions prove.
    - **What users see:** when the PR changes anything users see, it drives the changed journeys in the running app (PR preview, staging or the local target) and captures screenshots of each changed screen at the target viewports (for example desktop and mobile), plus a walkthrough video for interactions and motion. It looks at them with a vision-capable model, against the objective: layout, readability, clipping, collisions, empty and error states, and whether the screen does what the criterion says. Scripted journeys prove structure and behavior, not appearance, so this is the only check that sees the screen. It runs `smoke` first. The verdict links the images with `--screenshots` (one per link, uploaded to the PR or the CI run's artifacts); for a `--since` re-check whose changes leave the screens untouched, link the earlier images again.
+   - **Outcomes and standards:** it checks the change at every level. It checks the work item's own criteria. It checks the standing goals in the `outcomes/<job>.md` document of each affected feature, running or confirming each goal's proof and scoring its rubric. It checks the rows of `.jfactory/standards.md` the change touches: the writing rules for changed copy, the design system for changed screens, the UX principles for changed interactions, and the budgets and policies for everything else. And it checks the outcomes and non-goals in `outcomes/README.md`. It names every document it checked with `--standards <path>`; with a standards map, the command refuses a verdict on a change that isn't static without them, and the status rejects one.
+   - **When a document and the product disagree:** it decides which is wrong. If the document is out of date because the product changed on purpose (an owner decision or an agreed objective), the PR must update the document; a PR that doesn't is `failed` until it does. If the product no longer does what the document says, that is a defect: `failed`, with the document and the observed behavior as evidence. Never accept a document edited to match broken behavior; an edit to a outcome or standards document must link the decision that changed the intent.
    - **Judgment criteria:** it scores them against their rubric.
    - **Everything else:** it reviews the diff and any mapping change, and checks each criterion without passing evidence at this head.
 

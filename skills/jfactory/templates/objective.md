@@ -3,7 +3,7 @@
 Keep this in the project's task location (named in the setup record), for example a GitHub issue. Update it as the work progresses; do not start a new one each turn.
 
 ## Outcome
-Customer and experience outcome.
+Customer and experience outcome. Name the business outcome in `outcomes/README.md` and the job document(s) in `outcomes/` this work serves.
 - **Owner decisions:** <what the owner decided, with the source>
 - **Agent assumptions:** <what the agent inferred and has not confirmed>
 - **Open questions:** <consequential choices still unsettled>
@@ -22,10 +22,12 @@ Loops this objective uses, and why. See the routing table in `references/methodo
 
 ## Acceptance criteria
 
-| ID | Criterion (starting state, action, expected result) | Required scopes | How it is proven |
-| --- | --- | --- | --- |
-| save | A signed-in user saves an item and sees it after reload and in a new session | application | `npm run test:e2e -- save.spec.ts` against the PR preview, plus a storage readback |
-| clear | Saving an item is quick and obvious for a first-time user | judgment | Rubric below, scored by the independent verifier from the walkthrough video and screenshots |
+These are the criteria for this piece of work. Each one adds, changes or relies on a standing goal in a job document; say which. When the work adds or changes a standing goal, update that job document in the same PR, with its proof.
+
+| ID | Criterion (starting state, action, expected result) | Job goal it adds, changes or relies on | Required scopes | How it is proven |
+| --- | --- | --- | --- | --- |
+| save | A signed-in user saves an item and sees it after reload and in a new session | `outcomes/save-items.md`: "A saved item survives reload" (adds) | application | `npm run test:e2e -- save.spec.ts` against the PR preview, plus a storage readback |
+| clear | Saving an item is quick and obvious for a first-time user | `outcomes/save-items.md` rubric (relies on) | judgment | Rubric below, scored by the independent verifier from the walkthrough video and screenshots |
 
 For a `judgment` criterion, write the rubric before building. Give each point something the judge can observe, and set a pass mark:
 
@@ -43,7 +45,7 @@ For a `judgment` criterion, write the rubric before building. Give each point so
 
 ## Review and stop
 - **Checkpoint:** <when the owner reviews>
-- **Stop conditions:** <when to stop, e.g. the criteria pass>
+- **Stop conditions:** <when to stop. Done means right: every criterion passes, the touched jobs' standing goals still hold, the standards are met and the outcomes are served, each proven at the current commit. Passing checks alone is not a stop condition.>
 - **Merge and release policy:** <what merging does; production needs an owner request and follows the `release` procedure in .jfactory/coordination.json>
 
 ## Status

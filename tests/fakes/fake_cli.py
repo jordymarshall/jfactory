@@ -64,6 +64,12 @@ if tool == 'conductor':
             sys.stderr.write('status unavailable')
             sys.exit(1)
         done({'status': db.get('sessions', {}).get(args[2], 'working')})
+if tool == 'git' and args[:1] == ['show'] and args[1].endswith(':.jfactory/standards.md'):
+    if 'standards' not in db:
+        path.write_text(json.dumps(db))
+        sys.stderr.write('fatal: path does not exist')
+        sys.exit(128)
+    done(db['standards'])
 if tool == 'git' and args[:1] == ['show']:
     done(json.dumps(db.get('config', {'static': ['**/*.md'], 'features': {'all': {'paths': ['**']}}})))
 if tool == 'git' and args[:2] == ['diff', '--name-only']:

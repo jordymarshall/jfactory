@@ -9,6 +9,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'skills' / 'jfactory' / 'scripts' / 'setup_check.py'
+sys.path.insert(0, str(SCRIPT.parent))
+import verify_plan  # noqa: E402
 TEMPLATE = ROOT / 'skills' / 'jfactory' / 'templates' / 'setup-record.md'
 WORKFLOW = ROOT / 'skills' / 'jfactory' / 'templates' / 'jfactory-verified.yml'
 FAKE = ROOT / 'tests' / 'fakes' / 'fake_cli.py'
@@ -34,6 +36,14 @@ def record(states=READY, answers=('Developers', 'Retyping', 'Fewer steps', 'Bill
             f'## Open owner decisions\n\nNone.\n\n## Next objective\n\nTask location: {location}\n')
 
 
+def standards(**overrides):
+    rows = {d: ('none: not decided yet in this fixture', 'Verifier review') for d in verify_plan.STANDARD_DIMENSIONS}
+    rows['Product goals and customer'] = ('`AGENTS.md#product-brief`', 'Verifier: serves the stated customer')
+    rows.update(overrides)
+    return '| Dimension | Source of truth | How changes are checked |\n| --- | --- | --- |\n' + ''.join(
+        f'| {d} | {source} | {check} |\n' for d, (source, check) in rows.items() if source is not None)
+
+
 class SetupCheckTest(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())
@@ -42,6 +52,7 @@ class SetupCheckTest(unittest.TestCase):
         (self.root / 'AGENTS.md').write_text(AGENTS)
         (self.root / '.jfactory').mkdir()
         (self.root / '.jfactory' / 'setup.md').write_text(record())
+        (self.root / '.jfactory' / 'standards.md').write_text(standards())
         (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(
             {'static': ['README.md'], 'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**',
                                                                     '.github/**']}}}))
@@ -67,6 +78,45 @@ class SetupCheckTest(unittest.TestCase):
                               capture_output=True, text=True)
         self.assertEqual(proc.returncode, code, proc.stdout + proc.stderr)
         return proc.stdout
+
+    def test_standards_map_names_real_sources_and_how_to_prove_them(self):
+        self.assertIn('PASS: Standards map covers 9 dimensions', self.check('--remote', '--repo', 'o/r'))
+        write = lambda **rows: (self.root / '.jfactory' / 'standards.md').write_text(standards(**rows))
+        write(**{'Brand, voice and copy': ('`docs/brand.md`', 'Rubric')})
+        self.assertIn('names source(s) that do not exist: docs/brand.md', self.check('--remote', '--repo', 'o/r', code=1))
+        write(**{'Accessibility': ('WCAG somewhere', 'Scan'), 'UX principles': ('none: owner later', '')})
+        out = self.check('--remote', '--repo', 'o/r', code=1)
+        self.assertIn('need a backticked source path, or "none" and why: Accessibility', out)
+        self.assertIn('need a "How changes are checked" entry that says how it is proven: UX principles', out)
+        write(**{'Performance and scale': (None, None)})
+        self.assertIn('lacks dimension(s): Performance and scale', self.check('--remote', '--repo', 'o/r', code=1))
+        write()
+        config = json.loads((self.root / '.jfactory' / 'verification.json').read_text())
+        (self.root / '.jfactory' / 'verification.json').write_text(json.dumps({**config, 'static': ['README.md', 'docs/**']}))
+        (self.root / 'docs').mkdir()
+        (self.root / 'docs' / 'old-spec.md').write_text('# Old spec\n\nTHIS DOCUMENT IS THE SOURCE OF TRUTH.\n')
+        (self.root / 'docs' / 'older-spec.md').write_text('# Older spec\n\nSuperseded by the PRD. This document is the source of truth.\n')
+        (self.root / 'docs' / 'denial.md').write_text('# Notes\n\nThis document is NOT the source of truth. Use the PRD instead.\n')
+        (self.root / 'docs' / 'mention.md').write_text('# Log\n\nArchived logs live elsewhere.\n\nThis spec is the source of truth.\n')
+        subprocess.run(['git', '-C', str(self.root), 'add', '-A'], check=True)
+        out = self.check('--remote', '--repo', 'o/r')
+        self.assertIn('claim to be the source of truth without a superseded or historical note: docs/mention.md, docs/old-spec.md', out)
+        self.assertNotIn('older-spec.md', out)
+        self.assertNotIn('denial.md', out)
+        write(**{'Brand, voice and copy': ('`../elsewhere/brand.md`', 'Rubric')})
+        self.assertIn('outside the repository: ../elsewhere/brand.md', self.check('--remote', '--repo', 'o/r', code=1))
+        write(**{'Brand, voice and copy': ('`./AGENTS.md#brand`', 'Rubric'),
+                 'Accessibility': ('none: owner has deferred `WCAG2.2`', 'Later'),
+                 'Engineering conventions': ('`LICENSE` and `AGENTS.md`', 'CI')})
+        (self.root / 'LICENSE').write_text('MIT\n')
+        config = json.loads((self.root / '.jfactory' / 'verification.json').read_text())
+        config['features']['app']['paths'].append('LICENSE')
+        (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(config))
+        subprocess.run(['git', '-C', str(self.root), 'add', '-A'], check=True)
+        self.assertIn('PASS: Standards map covers 9 dimensions', self.check('--remote', '--repo', 'o/r'))
+        write()
+        (self.root / '.jfactory' / 'standards.md').unlink()
+        self.assertIn('No standards map', self.check('--remote', '--repo', 'o/r', code=1))
 
     def test_complete_setup_passes_with_remote_protection(self):
         out = self.check('--remote', '--repo', 'o/r')

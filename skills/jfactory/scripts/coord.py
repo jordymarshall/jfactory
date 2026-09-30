@@ -634,7 +634,8 @@ def cmd_verdict(args):
                              '--evidence', args.evidence, *(['--full'] if args.full else []),
                              *(['--since', args.since] if args.since else []),
                              *(['--features', ','.join(args.features)] if args.features else []),
-                             *[a for link in args.screenshots for a in ('--screenshots', link)]])
+                             *[a for link in args.screenshots for a in ('--screenshots', link)],
+                             *[a for doc in args.standards for a in ('--standards', doc)]])
     if code:
         raise Refused('PR verdict was not posted; see the message above')
     state['ledger'].append({'pr': unit['pr'], 'head': head, 'verdict': args.verdict, 'scopes': args.scopes,
@@ -652,7 +653,11 @@ def cmd_merge(args):
     refresh_prs(state, args.repo)
     unit = unit_of(state, args.unit)
     basis = 'verified verdict'
-    if verdict_at_head(state, unit) != 'verified':
+    verdict = verdict_at_head(state, unit)
+    if verdict in ('failed', 'blocked', 'partially-verified'):
+        # Done means right: a reviewer found this head wrong or unproven, so no low-risk shortcut applies.
+        raise Refused(f'{args.unit} has a {verdict} verdict at its current head {(unit.get("head") or "")[:7]}')
+    if verdict != 'verified':
         # Low-risk changes (every affected feature is `verify: ci`) need passing CI, not an independent verdict.
         # The plan reads the base branch's mapping, so a PR cannot lower its own risk level.
         pr = verify_plan.pr_info(args.repo, unit['pr']) if unit.get('pr') else None
@@ -799,6 +804,8 @@ def main(argv=None):
     p.add_argument('--since', help='Head of the earlier verdict on this PR; this one re-checked only the changes since')
     p.add_argument('--screenshots', action='append', default=[],
                    help='Link to reviewed screenshots of a changed screen; required when the change touches screens')
+    p.add_argument('--standards', action='append', default=[],
+                   help='A source in .jfactory/standards.md the change was checked against; required with a standards map')
     p.set_defaults(func=cmd_verdict)
     p = sub.add_parser('merge', help='Queue protected auto-merge for a verified unit')
     p.add_argument('program', type=int)

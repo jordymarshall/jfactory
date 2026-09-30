@@ -156,7 +156,7 @@ def check_verification(root, report, states):
             report.add('PASS', f'Risk levels set: {len(features) - len(low)} independent, {len(low)} CI-only'
                                + (f' ({", ".join(low)})' if low else ''))
     if config is not None and tracked is not None:
-        for level, text in verify_plan.audit(tracked, config):
+        for level, text in verify_plan.audit(tracked, config, root):
             report.add(level, f'Map: {text}')
     if config is not None:
         check_targets(root, config, report, states)
@@ -205,6 +205,63 @@ def check_targets(root, config, report, states):
         else:
             report.add('PASS', f'Target {name} started in a fresh workspace at {receipt.get("commit", "")[:7]} '
                                f'on {receipt.get("at", "?")}')
+
+
+def check_standards(root, report, states):
+    """The standards map names each quality dimension's source of truth, and every source it names exists."""
+    path = root / verify_plan.STANDARDS
+    level = 'FAIL' if states.get('Documentation') == 'verified' else 'WARN'
+    if not path.is_file():
+        report.add(level, f'No standards map at {verify_plan.STANDARDS}: verifiers have no source of truth to check '
+                          'changes against. Create it from templates/standards.md (references/setup.md)')
+        return
+    rows = verify_plan.parse_standards(path.read_text())
+    missing = [d for d in verify_plan.STANDARD_DIMENSIONS if d not in rows]
+    if missing:
+        report.add(level, 'Standards map lacks dimension(s): ' + '; '.join(missing))
+    vague = [d for d, row in rows.items() if not row['paths'] and not row['none']]
+    if vague:
+        report.add(level, 'Standards map rows need a backticked source path, or "none" and why: ' + '; '.join(vague))
+    unproven = [d for d, row in rows.items() if not row['check'].strip()]
+    if unproven:
+        report.add(level, 'Standards map rows need a "How changes are checked" entry that says how it is proven: '
+                   + '; '.join(unproven))
+    outside = sorted({p[1:] for row in rows.values() for p in row['paths'] if p.startswith('!')})
+    if outside:
+        report.add('FAIL', 'Standards map names source(s) outside the repository: ' + ', '.join(outside))
+    absent = sorted({p for row in rows.values() for p in row['paths'] if not p.startswith('!') and not (root / p).exists()})
+    if absent:
+        report.add('FAIL', 'Standards map names source(s) that do not exist: ' + ', '.join(absent))
+    sources = {p for row in rows.values() for p in row['paths']}
+    # A document outside the map that still claims authority misleads agents and verifiers alike.
+    claims = []
+    try:
+        tracked = subprocess.run(['git', '-C', str(root), 'ls-files', '*.md'], capture_output=True, text=True,
+                                 check=True).stdout.split()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        tracked = []
+    for name in tracked:
+        if name in sources or name.startswith(('.jfactory/', '.agents/', '.claude/', '.cursor/', 'skills/', 'vendor/')):
+            continue
+        try:
+            head = (root / name).read_text(errors='replace')[:3000]
+        except OSError:
+            continue
+        # An affirmative claim ("this document is the source of truth", "this spec wins"), not a denial, and not
+        # in a document that carries an explicit superseded, historical or archived notice.
+        claim = re.search(r'\b(this|the)\s+(document|file|spec|specification|page)\s+(is|remains)\s+(the\s+)?'
+                          r'(single\s+|canonical\s+|only\s+)?source\s+of\s+truth|\bthis\s+(one|document|spec)\s+wins\b',
+                          head, re.I)
+        notice = re.search(r'(?im)^\s*(>\s*)?(\*\*)?\s*(status\s*:\s*)?(superseded|historical|archived|deprecated)(\*\*)?'
+                           r'\s*(:|\u2014|-|\.|$)|\b(this|the)\s+(document|file|spec|specification|page)\s+(is|was)\s+'
+                           r'(now\s+)?(superseded|historical|archived|deprecated)\b|\bsuperseded\s+by\b', head)
+        if claim and not notice:
+            claims.append(name)
+    if claims:
+        report.add('WARN', 'Document(s) outside the standards map claim to be the source of truth without a '
+                           'superseded or historical note: ' + ', '.join(claims[:8]))
+    if not missing and not vague and not unproven and not absent:
+        report.add('PASS', f'Standards map covers {len(rows)} dimensions with {len(sources)} source document(s)')
 
 
 def check_delivery(root, report, states):
@@ -295,6 +352,7 @@ def main(argv=None):
     check_entry(root, entry, report)
     states = check_record(root, args.record, report)
     check_verification(root, report, states)
+    check_standards(root, report, states)
     check_delivery(root, report, states)
     remote_ok = False
     if args.remote:
@@ -322,7 +380,8 @@ def main(argv=None):
         print('\nSetup is consistent but incomplete. Open areas: ' + ', '.join(pending) +
               '. Report each with its owner step.')
         return 3
-    print('\nSetup is complete.')
+    print('\nSetup is complete: every check here passes. These checks confirm the records exist and agree; whether '
+          'the outcomes, job goals and standards are right is for the owner and the verifiers to judge.')
     return 0
 
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "static": ["README.md", "LICENSE", "evals/**", ".gitignore", "docs/**"],
+  "static": ["LICENSE", "evals/**", ".gitignore", "docs/**"],
   "static_suites": ["checks"],
   "always_suites": ["checks"],
   "full_suites": ["checks"],
@@ -12,7 +12,8 @@
   },
   "features": {
     "agent-instructions": {
-      "paths": ["AGENTS.md", "skills/jfactory/SKILL.md", "skills/jfactory/references/**", "skills/jfactory/skills/*/SKILL.md", "skills/jfactory/skills/*/references/**"],
+      "outcome": "outcomes/deliver-an-objective.md",
+      "paths": ["AGENTS.md", "CLAUDE.md", "README.md", "outcomes/**", "skills/jfactory/SKILL.md", "skills/jfactory/references/**", "skills/jfactory/skills/*/SKILL.md", "skills/jfactory/skills/*/references/**"],
       "recipe": "Read the changed instructions for contradictions with the other references; run tests/test_links.py; behavior changes need a scenario from evals/scenarios.md",
       "suites": ["checks"],
       "verify": "independent"
@@ -30,24 +31,28 @@
       "verify": "ci"
     },
     "evidence-receipts": {
+      "outcome": "outcomes/deliver-an-objective.md",
       "paths": ["skills/jfactory/scripts/evidence.py", "tests/test_evidence.py"],
       "recipe": "Run tests/test_evidence.py, including its negative controls",
       "suites": ["checks"],
       "verify": "independent"
     },
     "coordination": {
+      "outcome": ["outcomes/merge-verified-changes.md", "outcomes/run-many-agents.md"],
       "paths": ["skills/jfactory/scripts/coord.py", "skills/jfactory/scripts/verify_plan.py", "skills/jfactory/templates/**", "tests/test_coord.py", "tests/test_verify_plan.py", "tests/fakes/**"],
       "recipe": "Run tests/test_coord.py and tests/test_verify_plan.py; exercise changed commands against real GitHub and Conductor with a dry-run program",
       "suites": ["checks"],
       "verify": "independent"
     },
     "model-selection": {
+      "outcome": "outcomes/run-many-agents.md",
       "paths": ["skills/jfactory/scripts/usage.py", "tests/test_usage.py"],
       "recipe": "Run tests/test_usage.py, whose policy test compares usage.POLICY with the models.md table, and tests/test_coord.py, whose roles are built from it; run usage.py --no-probe in a Conductor workspace and compare its readings with the provider's usage page",
       "suites": ["checks"],
       "verify": "ci"
     },
     "setup-check": {
+      "outcome": "outcomes/set-up-a-repository.md",
       "paths": ["skills/jfactory/scripts/setup_check.py", "tests/test_setup_check.py", "skills/jfactory/templates/setup-record.md", "skills/jfactory/templates/objective.md"],
       "recipe": "Run tests/test_setup_check.py, including its negative controls; run setup_check.py --remote on this repository and on a fresh disposable install",
       "suites": ["checks"],

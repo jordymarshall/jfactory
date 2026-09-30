@@ -5,9 +5,11 @@
 jfactory is a portable engineering methodology and toolset for coding agents, not an application. It is for the owner first, then any developer who points their coding agent at this repository. It removes four pains:
 
 - babysitting agents with "keep going" (the primary one);
-- agents claiming done without evidence;
+- agents calling work done when it isn't right: unproven, or proven only against checks that miss the outcomes, the job goals or the standards;
 - reviewing every PR by hand;
 - coordinating many agents in parallel.
+
+The principle behind all of it: done means right. Work that passes its checks but misses the outcomes, the job goals or the standards is not done.
 
 Success is measured in this order:
 
@@ -20,7 +22,7 @@ Non-goals:
 - Anything that works for only one repository or product. jfactory must set up and improve any repository, so product facts belong in each project's own files, never in the bundle.
 - Releasing production on its own.
 
-Routines and scheduled automation are acceptable where they help. Preserve upstream pstack attribution and original bytes. The owner's answers are in the [setup record](.jfactory/setup.md#owner-interview).
+Routines and scheduled automation are acceptable where they help. Preserve upstream pstack attribution and original bytes. The owner's answers are in the [setup record](.jfactory/setup.md#owner-interview). Outcomes, measures and one document per job to be done are in [outcomes/](outcomes/README.md); what good looks like per dimension is in the [standards map](.jfactory/standards.md).
 
 ## System map
 
