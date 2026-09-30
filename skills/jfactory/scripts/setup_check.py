@@ -216,7 +216,8 @@ def check_targets(root, config, report, states):
 
 
 def run_blocks(text):
-    """The commands of each `run:` step: the inline value, or the indented block below `run: |` / `run: >-`."""
+    """The shell script of each `run:` step: the inline value (unquoted if YAML-quoted), or the indented block below
+    `run: |` / `run: >-`."""
     lines, blocks = text.splitlines(), []
     for i, line in enumerate(lines):
         match = re.match(r'^(\s*)(-\s+)?run:\s*(.*)$', line)
@@ -224,22 +225,115 @@ def run_blocks(text):
             continue
         indent, value = len(match.group(1)) + len(match.group(2) or ''), match.group(3).strip()
         if value and value[0] not in '|>':
-            blocks.append([value])
+            if len(value) > 1 and value[0] == value[-1] == "'":
+                value = value[1:-1].replace("''", "'")
+            elif len(value) > 1 and value[0] == value[-1] == '"':
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    value = value[1:-1]
+            blocks.append(value)
             continue
-        block = []
+        block, margin = [], None
         for follow in lines[i + 1:]:
             if follow.strip() and len(follow) - len(follow.lstrip()) <= indent:
                 break
-            block.append(follow.strip())
-        blocks.append(block)
+            if margin is None and follow.strip():
+                margin = len(follow) - len(follow.lstrip(' '))
+            block.append(follow)
+        # Remove only the YAML block indentation: other leading and trailing space is part of the script.
+        block = [line[margin or 0:] for line in block]
+        blocks.append((' ' if value.startswith('>') else '\n').join(block))
     return blocks
 
 
+def shell_commands(script):
+    """Each simple command in a shell script as its words, read the way the shell reads them: quotes and backslashes
+    keep operators literal, a quoted string may span lines, and comments and here-document bodies run nothing. A
+    script with an unclosed quote fails before running, so it yields no commands."""
+    commands, words, word, heredocs = [], [], None, []
+    i, n = 0, len(script)
+
+    def finish_word():
+        nonlocal word
+        if word is not None:
+            words.append(word)
+            word = None
+
+    def finish_command():
+        nonlocal words
+        finish_word()
+        if words:
+            commands.append(words)
+        words = []
+
+    while i < n:
+        c = script[i]
+        if c == '\\':
+            if script[i + 1:i + 2] != '\n':
+                word = (word or '') + script[i + 1:i + 2]
+            i += 2
+        elif c == "'":
+            end = script.find("'", i + 1)
+            if end < 0:
+                return []
+            word, i = (word or '') + script[i + 1:end], end + 1
+        elif c == '"':
+            j, text = i + 1, ''
+            while j < n and script[j] != '"':
+                if script[j] == '\\' and j + 1 < n:
+                    j += 1
+                text, j = text + script[j], j + 1
+            if j >= n:
+                return []
+            word, i = (word or '') + text, j + 1
+        elif c == '#' and word is None:
+            end = script.find('\n', i)
+            i = n if end < 0 else end
+        elif c == '<' and script.startswith('<<', i) and not script.startswith('<<<', i):
+            finish_word()
+            match = re.compile(r'<<(-?)[ \t]*([\'"]?)([^\s\'";&|()<>]+)\2').match(script, i)
+            if not match:
+                return []
+            heredocs.append((match.group(3), bool(match.group(1))))
+            i = match.end()
+        elif c == '\n':
+            finish_command()
+            i += 1
+            # A here-document ends only at a line that is exactly its delimiter; <<- also strips leading tabs.
+            for delimiter, tabs in heredocs:
+                while i < n:
+                    end = script.find('\n', i)
+                    line = script[i:n if end < 0 else end]
+                    i = n if end < 0 else end + 1
+                    if (line.lstrip('\t') if tabs else line) == delimiter:
+                        break
+            heredocs = []
+        elif c in ' \t':
+            finish_word()
+            i += 1
+        elif c in ';&|()`':
+            finish_command()
+            i += 1
+        else:
+            word, i = (word or '') + c, i + 1
+    finish_command()
+    return commands
+
+
 def runs_method_audit(text):
-    """A scheduled workflow whose run step starts `python3 ... method_audit.py` as a command."""
+    """A scheduled workflow with a run step that executes `python3 ... method_audit.py`."""
     scheduled = re.search(r'(?m)^\s*schedule:\s*$', text) and re.search(r'(?m)^\s*-\s*cron:', text)
-    command = re.compile(r'^(?:.*(?:&&|;|\|\|)\s*)?python3?\s+\S*method_audit\.py\b')
-    return bool(scheduled) and any(command.match(line) for block in run_blocks(text) for line in block)
+
+    def audits(words):
+        while words and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*=.*', words[0]):
+            words = words[1:]
+        if not words or not re.fullmatch(r'(\S*/)?python3?', words[0]):
+            return False
+        script = next((w for w in words[1:] if not w.startswith('-')), '')
+        return script.endswith('method_audit.py')
+
+    return bool(scheduled) and any(audits(c) for script in run_blocks(text) for c in shell_commands(script))
 
 
 def check_standards(root, report, states):
