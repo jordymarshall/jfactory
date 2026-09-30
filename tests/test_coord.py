@@ -228,7 +228,7 @@ class CoordTest(unittest.TestCase):
 
     def test_review_needs_other_family_and_retries_are_capped(self):
         self.start(['a', '--objective', 'x', '--effort', 'high'],
-                   ['r', '--objective', 'verify a', '--role', 'verify', '--depends', 'a', '--effort', 'low'], limit=3)
+                   ['r', '--objective', 'verify a', '--role', 'verify', '--depends', 'a'], limit=3)
         self.coord('launch', '1', 'a', '--brief', str(self.brief))
         self.set_db(prs={'7': {'state': 'MERGED', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
         self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
@@ -239,7 +239,7 @@ class CoordTest(unittest.TestCase):
         self.coord('launch', '1', 'r', '--brief', str(self.brief))
         verifier = self.db()['workspaces'][-1]
         self.assertEqual((verifier['agent'], verifier['model'], verifier['effort'], verifier['fast']),
-                         ('codex', 'gpt-6-luna', 'low', True))
+                         ('codex', 'gpt-6.1-sol', 'high', False))
         for _ in range(2):
             self.coord('set', '1', 'r', '--state', 'failed')
             self.coord('launch', '1', 'r', '--brief', str(self.brief))
@@ -279,6 +279,9 @@ class CoordTest(unittest.TestCase):
         self.coord('close', '1')
 
     def test_open_decision_and_unsupported_fast_mode_block_launch(self):
+        # No default role uses fast mode any more; a repository can still ask for it.
+        (self.tmp / '.jfactory').mkdir(exist_ok=True)
+        (self.tmp / '.jfactory' / 'coordination.json').write_text(json.dumps({'roles': {'verify': {'fast': True}}}))
         self.start(['a', '--objective', 'x'], ['v', '--objective', 'verify', '--role', 'verify'], limit=3)
         self.coord('gate', 'add', '1', '--question', 'Grid or list?', '--options', 'grid,list', '--default', 'grid',
                    '--units', 'a')
@@ -303,7 +306,7 @@ class CoordTest(unittest.TestCase):
         self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on', 'a')
         verifier = self.db()['workspaces'][-1]
         self.assertEqual((verifier['agent'], verifier['model'], verifier['effort'], verifier['fast']),
-                         ('claude', 'opus-5-5-1m', 'low', False))
+                         ('claude', 'opus-5-5-1m', 'high', False))
 
     def test_verifier_fallback_holds_rather_than_verify_opus_work_with_opus(self):
         self.start(['a', '--objective', 'x'], ['r', '--objective', 'verify a', '--role', 'verify', '--depends', 'a'],
@@ -315,19 +318,19 @@ class CoordTest(unittest.TestCase):
         self.assertIn('same agent family', self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on', 'a',
                                                       '--fallback', '--reason', 'Codex weekly 95%', ok=False))
 
-    def test_opus_verifier_effort_stays_low_even_when_requested_higher(self):
+    def test_opus_verifier_effort_stays_high_whatever_is_requested(self):
         self.start(['a', '--objective', 'x'], ['r', '--objective', 'verify a', '--role', 'verify', '--depends', 'a',
                                                 '--effort', 'high'], limit=3)
         self.coord('launch', '1', 'a', '--brief', str(self.brief), '--fallback', '--reason', 'Claude weekly 95%')
         self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
         self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
         self.coord('sync', '1')
-        for override in (['--effort', 'high'], ['--agent', 'claude', '--model', 'opus-5-5-1m', '--effort', 'max']):
-            self.assertIn('low effort only', self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on',
-                                                        'a', *override, ok=False))
+        for override in (['--effort', 'low'], ['--agent', 'claude', '--model', 'opus-5-5-1m', '--effort', 'max']):
+            self.assertIn('high effort only', self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on',
+                                                         'a', *override, ok=False))
         self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on', 'a')
         verifier = self.db()['workspaces'][-1]
-        self.assertEqual((verifier['agent'], verifier['model'], verifier['effort']), ('claude', 'opus-5-5-1m', 'low'))
+        self.assertEqual((verifier['agent'], verifier['model'], verifier['effort']), ('claude', 'opus-5-5-1m', 'high'))
 
     def test_effort_outside_policy_is_refused(self):
         self.start(['a', '--objective', 'x'])

@@ -1305,7 +1305,7 @@ def main(argv=None):
     p.add_argument('--pr', type=int, required=True)
     p.add_argument('--head', required=True)
     p.add_argument('--verdict', required=True, choices=['verified', 'failed', 'blocked', 'partially-verified'])
-    p.add_argument('--verifier', required=True, help='agent/model, e.g. codex/gpt-6-luna')
+    p.add_argument('--verifier', required=True, help='agent/model, e.g. codex/gpt-6.1-sol')
     p.add_argument('--implementer', required=True, help='agent/model, e.g. claude/opus-5-5-1m')
     p.add_argument('--features', type=listing, default=[])
     p.add_argument('--full', action='store_true')
