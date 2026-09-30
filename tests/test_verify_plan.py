@@ -68,14 +68,20 @@ class PlanTest(unittest.TestCase):
         for path in ('packages/web/.claude/rules/security.md', 'packages/web/.cursor/rules/style.mdc',
                      'packages/web/.agents/skills/review/references/policy.md', 'packages/web/.cursorrules',
                      'cypress.config.ts', 'cypress/support/component.ts', 'src/components/Nav.cy.tsx',
-                     'src/models/user_spec.rb'):
+                     'src/models/user_spec.rb', 'spec/support/auth.rb', '.mocharc.yml', '.clinerules/general.md',
+                     'packages/web/.clinerules/security.md'):
             self.assertEqual(verify_plan.plan([path], nested)['level'], 'independent', path)
-        for path in ('src/lib/format.ts', 'src/app/api/health/route.ts', 'packages/web/src/specification.ts'):
+        for path in ('src/lib/format.ts', 'src/app/api/health/route.ts', 'packages/web/src/specification.ts',
+                     'src/runtime/spec/format.ts', 'src/generated/api_spec.json'):
             self.assertEqual(verify_plan.plan([path], nested)['level'], 'ci', path)
+        # Prose that only names a spec stays static.
+        for path in ('docs/spec/architecture.md', 'docs/api_spec.md', 'docs/.mocharc.md'):
+            self.assertTrue(verify_plan.plan([path], {**nested, 'static': ['docs/**']})['static_only'], path)
         loose = {**nested, 'features': {}}
         self.assertEqual(verify_plan.plan(['packages/web/.claude/rules/security.md'], loose)['unmapped'],
                          ['packages/web/.claude/rules/security.md'])
         self.assertTrue(verify_plan.plan(['packages/web/docs/guide.md'], loose)['static_only'])
+        self.assertEqual(verify_plan.plan(['.clinerules/general.md'], loose)['unmapped'], ['.clinerules/general.md'])
         self.assertIn('Marked `ci` but reviewed anyway: `tooling` (tests)',
                       verify_plan.render_plan(verify_plan.plan(['tools/x.test.ts'], CONFIG)))
         # Instructions are never static, even when a static pattern covers all Markdown.

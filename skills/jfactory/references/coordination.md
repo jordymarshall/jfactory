@@ -138,7 +138,7 @@ A worker question becomes an open decision at `sync`. Answer it from recorded de
 
 ## 7. Verify each result independently
 
-A worker's report is a claim; the verify unit checks it at the PR's current head and records the result with `verdict`. CI status is an input to that verdict, not a substitute for it. For a unit whose changes are all `verify: ci`, still check the claim against the PR, but no verdict is needed: `merge` relies on GitHub's required CI. A new head voids the previous verdict at the next `sync`.
+A worker's report is a claim; the verify unit checks it at the PR's current head and records the result with `verdict`. CI status is an input to that verdict, not a substitute for it. For a unit the plan calls CI-only (every changed feature `verify: ci`, with no screens, tests or agent instructions changed), still check the claim against the PR, but no verdict is needed: `merge` relies on GitHub's required CI. A new head voids the previous verdict at the next `sync`.
 
 Every unit whose PR touches an `independent` (high-risk), unmapped or gate path gets one `verify` unit that depends on it (a CI-only unit, as the plan decides, needs none). The verify unit is launched with `--stack-on` so it checks out the PR branch once the worker reports `in-review`. Its contract asks it to:
 
@@ -151,7 +151,7 @@ It runs on GPT Luna 6 in fast mode, or Opus 5.5 at low effort when the implement
 
 ## 8. Integrate continuously
 
-Land verified units as they finish rather than at the end. Follow [PR delivery](delivery.md), [worktree coordination](worktrees.md#deliver-and-integrate) and [auto-merge setup](auto-merge.md). `merge` queues protected auto-merge pinned to the unit's current head: after a `verified` verdict at that head, or, for a unit whose changes are all `verify: ci`, on GitHub's required CI alone. For overlapping units, merge one at a time. After each merge, message dependent workers to update from the base, rerun affected checks and report the new head. A conflict-free merge is not proof of combined behavior.
+Land verified units as they finish rather than at the end. Follow [PR delivery](delivery.md), [worktree coordination](worktrees.md#deliver-and-integrate) and [auto-merge setup](auto-merge.md). `merge` queues protected auto-merge pinned to the unit's current head: after a `verified` verdict at that head, or, for a unit the plan calls CI-only, on GitHub's required CI alone. For overlapping units, merge one at a time. After each merge, message dependent workers to update from the base, rerun affected checks and report the new head. A conflict-free merge is not proof of combined behavior.
 
 Finished workspaces are archived as soon as their unit finishes, not at program close, so the sidebar shows only live work. `sync` archives the workspace of every `merged`, `done` or `abandoned` unit once its session is idle, records it on the unit and reports sessions still working. Set `abandoned` only after the unit's work is pushed or deliberately discarded. `--keep-workspaces` skips archiving. Archive a workspace launched outside the tool, such as a probe or ad hoc reviewer, yourself with `conductor workspace archive <workspace id>`. Conductor's CLI archives workspaces; it does not delete them. Archived workspaces stay listed under `conductor workspace list --include-archived`. Archive only workspaces this program created. Leave the owner's own workspaces and other coordinators' workspaces alone, even when they look idle.
 

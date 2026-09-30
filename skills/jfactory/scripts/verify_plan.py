@@ -38,11 +38,13 @@ LEVELS = ('independent', 'ci')
 ALWAYS_REVIEW = {
     'agent instructions': ['**/AGENTS.md', '**/CLAUDE.md', '**/GEMINI.md', '**/SKILL.md', 'skills/**/*.md',
                            '**/.agents/**', '**/.claude/**', '**/.cursor/**', '**/.codex/**', '**/.cursorrules',
-                           '**/.windsurfrules', '**/.clinerules', '**/.github/copilot-instructions.md'],
-    'tests': ['**/e2e/**', '**/tests/**', '**/test/**', '**/__tests__/**', '**/spec/**', '**/cypress/**',
-              '**/*.test.*', '**/*.spec.*', '**/*.cy.*', '**/*_test.*', '**/*_spec.*', '**/test_*.py',
-              '**/conftest.py', '**/pytest.ini', '**/playwright.config.*', '**/vitest.config.*', '**/jest.config.*',
-              '**/cypress.config.*', '**/karma.conf.*', '**/.mocharc*'],
+                           '**/.windsurfrules', '**/.clinerules', '**/.clinerules/**', '**/.github/copilot-instructions.md'],
+    'tests': ['**/e2e/**', '**/tests/**', '**/test/**', '**/__tests__/**', '**/cypress/**', '**/*.test.*',
+              '**/*.spec.*', '**/*.cy.*', '**/*_test.*', '**/test_*.py', '**/conftest.py', '**/pytest.ini',
+              '**/*_spec.rb', '**/spec/spec_helper.rb', '**/spec/rails_helper.rb', '**/spec/support/**', '**/.rspec',
+              '**/playwright.config.*', '**/vitest.config.*', '**/jest.config.*', '**/cypress.config.*',
+              '**/karma.conf.*', '**/.mocharc.js', '**/.mocharc.cjs', '**/.mocharc.json', '**/.mocharc.jsonc',
+              '**/.mocharc.yml', '**/.mocharc.yaml'],
 }
 
 
