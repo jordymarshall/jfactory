@@ -236,7 +236,10 @@ def check_standards(root, report, states):
     if unproven:
         report.add(level, 'Standards map rows need a "How changes are checked" entry that says how it is proven: '
                    + '; '.join(unproven))
-    absent = sorted({p for row in rows.values() for p in row['paths'] if not (root / p).exists()})
+    outside = sorted({p[1:] for row in rows.values() for p in row['paths'] if p.startswith('!')})
+    if outside:
+        report.add('FAIL', 'Standards map names source(s) outside the repository: ' + ', '.join(outside))
+    absent = sorted({p for row in rows.values() for p in row['paths'] if not p.startswith('!') and not (root / p).exists()})
     if absent:
         report.add('FAIL', 'Standards map names source(s) that do not exist: ' + ', '.join(absent))
     sources = {p for row in rows.values() for p in row['paths']}
@@ -254,7 +257,15 @@ def check_standards(root, report, states):
             head = (root / name).read_text(errors='replace')[:3000]
         except OSError:
             continue
-        if re.search(r'source of truth', head, re.I) and not re.search(r'supersed|historical|archived', head, re.I):
+        # An affirmative claim ("this document is the source of truth", "this spec wins"), not a denial, and not
+        # in a document that carries an explicit superseded, historical or archived notice.
+        claim = re.search(r'\b(this|the)\s+(document|file|spec|specification|page)\s+(is|remains)\s+(the\s+)?'
+                          r'(single\s+|canonical\s+|only\s+)?source\s+of\s+truth|\bthis\s+(one|document|spec)\s+wins\b',
+                          head, re.I)
+        notice = re.search(r'(?im)^\s*(>\s*)?(\*\*)?\s*(status\s*:\s*)?(superseded|historical|archived|deprecated)(\*\*)?'
+                           r'\s*(:|\u2014|-|\.|$)|\b(this|the)\s+(document|file|spec|specification|page)\s+(is|was)\s+'
+                           r'(now\s+)?(superseded|historical|archived|deprecated)\b|\bsuperseded\s+by\b', head)
+        if claim and not notice:
             claims.append(name)
     if claims:
         report.add('WARN', 'Document(s) outside the standards map claim to be the source of truth without a '
@@ -379,7 +390,8 @@ def main(argv=None):
         print('\nSetup is consistent but incomplete. Open areas: ' + ', '.join(pending) +
               '. Report each with its owner step.')
         return 3
-    print('\nSetup is complete.')
+    print('\nSetup is complete: every check here passes. These checks confirm the records exist and agree; whether '
+          'the outcomes, job goals and standards are right is for the owner and the verifiers to judge.')
     return 0
 
 
