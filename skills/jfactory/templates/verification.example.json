@@ -33,15 +33,15 @@
   },
   "features": {
     "save-brief": {
-      "paths": ["docs/journeys/save-brief.md", "app/src/app/briefs/**", "app/src/lib/briefs/**", "app/e2e/briefs.spec.ts"],
-      "journey": "docs/journeys/save-brief.md",
+      "paths": ["outcomes/save-a-brief.md", "app/src/app/briefs/**", "app/src/lib/briefs/**", "app/e2e/briefs.spec.ts"],
+      "outcome": "outcomes/save-a-brief.md",
       "recipe": ".agents/skills/verify-app/features/save-brief.md",
       "suites": ["unit", "browser-briefs"],
       "verify": "independent"
     },
     "sign-in": {
-      "paths": ["docs/journeys/sign-in.md", "app/src/lib/auth.ts", "app/src/app/(auth)/**", "app/e2e/sign-in.spec.ts"],
-      "journey": "docs/journeys/sign-in.md",
+      "paths": ["outcomes/sign-in.md", "app/src/lib/auth.ts", "app/src/app/(auth)/**", "app/e2e/sign-in.spec.ts"],
+      "outcome": "outcomes/sign-in.md",
       "recipe": ".agents/skills/verify-app/features/sign-in.md",
       "suites": ["unit", "browser-sign-in"],
       "verify": "independent"

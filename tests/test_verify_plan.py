@@ -413,9 +413,13 @@ class GateTest(unittest.TestCase):
                                'cli': {'paths': ['cli/**'], 'journey': 'docs/missing.md'}}}
         files = ['app/briefs/a.ts', 'app/auth/a.ts', 'cli/x.py', 'docs/briefs.md']
         text = '\n'.join(f'{level}: {t}' for level, t in verify_plan.audit(files, config, root))
-        self.assertIn('WARN: Feature auth has screens but no "journey" document', text)
-        self.assertIn('FAIL: Feature cli names journey docs/missing.md, which is not a tracked file', text)
-        self.assertIn('WARN: Journey docs/briefs.md does not say how these are proven: Empty state explains next step', text)
+        self.assertIn('WARN: Feature auth has screens but no "outcome" document', text)
+        self.assertIn('FAIL: Feature cli names outcome docs/missing.md, which is not a tracked file', text)
+        self.assertIn('WARN: Outcome docs/briefs.md does not say how these are proven: Empty state explains next step', text)
+        # "outcome" is the field's name; "journey" is still read.
+        config['features']['auth']['outcome'] = 'docs/briefs.md'
+        text = '\n'.join(f'{level}: {t}' for level, t in verify_plan.audit(files, config, root))
+        self.assertNotIn('Feature auth has screens but no', text)
         self.assertNotIn('Feature briefs has screens but no', text)
 
     def test_status_follows_verdict_at_current_head(self):

@@ -1,6 +1,8 @@
-# Journey: REPLACE with what the user does, in their words (for example "Plan a campaign brief")
+# Job to be done: REPLACE with what the user does, in their words (for example "Plan a campaign brief")
 
-Feature: `REPLACE` in `.jfactory/verification.json`, which names this file as its `"journey"`. Verifiers read it for every change to the feature, check the change against it, and cite it with `verify_plan.py verdict --standards <this file>`.
+Lives at `outcomes/<job>.md`. Serves: REPLACE with the business outcome in `outcomes/README.md` it moves. Feature: `REPLACE` in `.jfactory/verification.json`, which names this file as its `"outcome"`. How to drive it: REPLACE with the verification skill's feature recipe, if there is one.
+
+These goals are standing: they hold for every change, not just one piece of work. A work item's objective names the goals here it adds, changes or relies on. Verifiers read this document for every change to the feature, check the change against it, and cite it with `verify_plan.py verdict --standards <this file>`.
 
 ## Who and why
 

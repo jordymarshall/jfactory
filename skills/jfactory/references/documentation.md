@@ -38,7 +38,7 @@ Decide which one is wrong before changing either:
 - **The product broke.** The document still states the intent, and the code no longer meets it. Report it as a defect or an objective, with the document and the observed behavior as evidence. Do not edit the document to match; that hides a regression from every later check.
 - **Unclear.** Record both sources and the decision needed, and ask the owner. Keep the document unchanged until they answer.
 
-Standards and journey documents (`.jfactory/standards.md`) are the sources verifiers check against, so an edit to one always gets an independent review of which case it is.
+Outcome and standards documents (`outcomes/`, `.jfactory/standards.md`) are the sources verifiers check against, so an edit to one always gets an independent review of which case it is.
 
 ## Keep it current during work
 

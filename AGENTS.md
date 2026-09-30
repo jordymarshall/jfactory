@@ -20,7 +20,7 @@ Non-goals:
 - Anything that works for only one repository or product. jfactory must set up and improve any repository, so product facts belong in each project's own files, never in the bundle.
 - Releasing production on its own.
 
-Routines and scheduled automation are acceptable where they help. Preserve upstream pstack attribution and original bytes. The owner's answers are in the [setup record](.jfactory/setup.md#owner-interview).
+Routines and scheduled automation are acceptable where they help. Preserve upstream pstack attribution and original bytes. The owner's answers are in the [setup record](.jfactory/setup.md#owner-interview). Outcomes, measures and one document per job to be done are in [outcomes/](outcomes/README.md); what good looks like per dimension is in the [standards map](.jfactory/standards.md).
 
 ## System map
 

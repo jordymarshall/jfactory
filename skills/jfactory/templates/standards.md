@@ -6,7 +6,7 @@ Name each source as a backticked repository path (`docs/brand.md`, or `docs/bran
 
 | Dimension | Source of truth | How changes are checked |
 | --- | --- | --- |
-| Product goals and customer | `REPLACE: product brief or PRD` | Verifier: does the change serve the stated customer and outcome, and stay out of the non-goals? |
+| Product goals and customer | `outcomes/README.md` and `REPLACE: product brief or PRD` | Verifier: does the change serve the stated customer and outcome, and stay out of the non-goals? |
 | Brand, voice and copy | `REPLACE: brand or writing guide` | Verifier: judgment rubric for every changed user-facing word |
 | Visual design system | `REPLACE: design tokens or style guide` | Verifier: reviewed screenshots against the tokens; screenshot comparisons for stable screens |
 | UX principles | `REPLACE: interaction principles or decision record` | Verifier: drives the changed journey against the principles |

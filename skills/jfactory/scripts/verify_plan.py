@@ -98,8 +98,13 @@ def load_standards(ref=None, root=None):
     return sorted({p for row in parse_standards(text).values() for p in row['paths']})
 
 
+def outcome_doc(feature):
+    """The job-to-be-done document a feature names (`"outcome"`; `"journey"` is accepted too), or None."""
+    return feature.get('outcome') or feature.get('journey')
+
+
 def journey_proofs(text):
-    """Rows of a journey document's goal tables: [(goal, proof)]. A goal table has a column whose header mentions
+    """Rows of an outcome document's goal tables: [(goal, proof)]. A goal table has a column whose header mentions
     "proven" or "proof"."""
     rows, proof_col = [], None
     for line in text.splitlines():
@@ -234,9 +239,9 @@ def load_config(ref=None, root=None):
         if feature.get('verify', 'independent') not in LEVELS:
             raise Refused(f'Feature {fid} in {CONFIG} has verify "{feature["verify"]}"; use independent or ci')
     standards = load_standards(ref, root)
-    journeys = sorted({f['journey'] for f in config.get('features', {}).values() if f.get('journey')})
+    journeys = sorted({outcome_doc(f) for f in config.get('features', {}).values() if outcome_doc(f)})
     if standards is not None or journeys:
-        # Journey documents are each feature's source of truth, so they are reviewed and cited like standards.
+        # Outcome (job-to-be-done) documents are each feature's source of truth: reviewed and cited like standards.
         config['_standards'] = sorted(set(standards or []) | set(journeys))
     return config
 
@@ -467,25 +472,25 @@ def audit(files, config, root='.'):
     else:
         items.append(('PASS', f'Every tracked file maps to a feature, the gate or static ({len(features)} features)'))
     for fid, f in features.items():
-        journey = f.get('journey')
+        journey = outcome_doc(f)
         if not journey:
             if has_screens(f, config):
-                items.append(('WARN', f'Feature {fid} has screens but no "journey" document saying what the user is '
-                                      'trying to do, what success looks like and how each part is proven '
-                                      '(templates/journey.md)'))
+                items.append(('WARN', f'Feature {fid} has screens but no "outcome" document (outcomes/<job>.md) saying '
+                                      'what the user is trying to do, what success looks like and how each part is '
+                                      'proven (templates/outcome.md)'))
             continue
         if journey not in files:
-            items.append(('FAIL', f'Feature {fid} names journey {journey}, which is not a tracked file'))
+            items.append(('FAIL', f'Feature {fid} names outcome {journey}, which is not a tracked file'))
             continue
         try:
             rows = journey_proofs((Path(root) / journey).read_text())
         except OSError:
             continue
         if not rows:
-            items.append(('WARN', f'Journey {journey} has no goal table with a "How it\'s proven" column'))
+            items.append(('WARN', f'Outcome {journey} has no goal table with a "How it\'s proven" column'))
         unproven = [goal for goal, proof in rows if not proof.strip()]
         if unproven:
-            items.append(('WARN', f'Journey {journey} does not say how these are proven: ' + '; '.join(unproven[:6])))
+            items.append(('WARN', f'Outcome {journey} does not say how these are proven: ' + '; '.join(unproven[:6])))
     unstatic = [p for p in unmapped if matches(p, config.get('static', []))]
     if unstatic:
         items.append(('FAIL', f'Static patterns cover tests, agent instructions or standards documents, which always '
