@@ -36,11 +36,13 @@ LEVELS = ('independent', 'ci')
 # verifier, whatever its feature's level: a PR must not be able to weaken a test or an instruction with only
 # those same tests watching.
 ALWAYS_REVIEW = {
-    'agent instructions': ['AGENTS.md', '**/AGENTS.md', 'CLAUDE.md', '**/CLAUDE.md', 'GEMINI.md', '**/GEMINI.md',
-                           '**/SKILL.md', 'skills/**/*.md', '.agents/**', '.claude/**', '.cursor/**', '.codex/**'],
-    'tests': ['**/e2e/**', '**/tests/**', '**/test/**', '**/__tests__/**', '**/*.test.*', '**/*.spec.*',
-              '**/*_test.*', '**/test_*.py', '**/conftest.py', '**/playwright.config.*', '**/vitest.config.*',
-              '**/jest.config.*'],
+    'agent instructions': ['**/AGENTS.md', '**/CLAUDE.md', '**/GEMINI.md', '**/SKILL.md', 'skills/**/*.md',
+                           '**/.agents/**', '**/.claude/**', '**/.cursor/**', '**/.codex/**', '**/.cursorrules',
+                           '**/.windsurfrules', '**/.clinerules', '**/.github/copilot-instructions.md'],
+    'tests': ['**/e2e/**', '**/tests/**', '**/test/**', '**/__tests__/**', '**/spec/**', '**/cypress/**',
+              '**/*.test.*', '**/*.spec.*', '**/*.cy.*', '**/*_test.*', '**/*_spec.*', '**/test_*.py',
+              '**/conftest.py', '**/pytest.ini', '**/playwright.config.*', '**/vitest.config.*', '**/jest.config.*',
+              '**/cypress.config.*', '**/karma.conf.*', '**/.mocharc*'],
 }
 
 

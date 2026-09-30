@@ -24,7 +24,7 @@ Read the pinned originals this adapts: [orchestrate](../vendor/pstack/skills/pot
 | `report <issue> <unit> --state ...` | Worker | Posts a structured comment with its state, PR, head SHA, note or question |
 | `sync <issue> [--dry-run]` | Coordinator | Folds worker reports, PR state and session status into the issue, voids verdicts on new heads and lists units ready to launch, including verifiers whose target has a PR (with the `--stack-on` to use) |
 | `verdict <issue> <unit> --head --verdict --scopes --evidence --verifier [--full] [--features] [--since]` | Verifier | Records verification only at the PR's current head, requires every declared scope, and posts the PR verdict that the `jfactory verified` status reads. The implementer is the unit's launched model, so units launched outside the tool cannot be verified through it |
-| `merge <issue> <unit>` | Coordinator | Queues protected auto-merge pinned to the unit's current head. It needs a `verified` verdict at that head, unless the base branch's mapping marks every affected feature `verify: ci`; then GitHub's required CI is the gate. It also needs no open decisions, and a recorded `merge_deploys` of `staging` or `none` |
+| `merge <issue> <unit>` | Coordinator | Queues protected auto-merge pinned to the unit's current head. It needs a `verified` verdict at that head, unless the base branch's mapping makes the change CI-only (every affected feature `verify: ci`, with no screens, tests or agent instructions changed); then GitHub's required CI is the gate. It also needs no open decisions, and a recorded `merge_deploys` of `staging` or `none` |
 | `gate add` / `gate resolve` | Coordinator | Records an owner decision and its answer; open decisions block launch and merge for their units |
 | `set <issue> <unit> --state` | Coordinator | Marks a unit blocked, failed or abandoned with a note |
 | `close <issue>` | Coordinator | Closes the program only when every unit is merged, done (verifiers without their own PR) or abandoned |
@@ -140,7 +140,7 @@ A worker question becomes an open decision at `sync`. Answer it from recorded de
 
 A worker's report is a claim; the verify unit checks it at the PR's current head and records the result with `verdict`. CI status is an input to that verdict, not a substitute for it. For a unit whose changes are all `verify: ci`, still check the claim against the PR, but no verdict is needed: `merge` relies on GitHub's required CI. A new head voids the previous verdict at the next `sync`.
 
-Every unit whose PR touches an `independent` (high-risk), unmapped or gate path gets one `verify` unit that depends on it (a unit whose changes are all `verify: ci` needs none). The verify unit is launched with `--stack-on` so it checks out the PR branch once the worker reports `in-review`. Its contract asks it to:
+Every unit whose PR touches an `independent` (high-risk), unmapped or gate path gets one `verify` unit that depends on it (a CI-only unit, as the plan decides, needs none). The verify unit is launched with `--stack-on` so it checks out the PR branch once the worker reports `in-review`. Its contract asks it to:
 
 - run `verify_plan.py smoke` for the target first and report a failed step as `blocked`;
 - check the PR as the [verification contract](verification.md#change-aware-verification-and-the-merge-gate) describes: reuse green CI, drive the changed journeys when users see the change, score judgment criteria, and review the diff and any mapping change;

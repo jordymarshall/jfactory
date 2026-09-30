@@ -62,6 +62,20 @@ class PlanTest(unittest.TestCase):
             result = verify_plan.plan([path], CONFIG)
             self.assertEqual((result['level'], result['independent_features'], result['overridden']),
                              ('independent', ['tooling'], {'tooling': why}), path)
+        # Nested agent-rule folders and other test runners' files count too (verifier findings on #30).
+        nested = {'static': ['**/*.md'], 'features': {'internal': {
+            'paths': ['packages/**', 'src/**', 'cypress/**', 'cypress.config.ts'], 'verify': 'ci'}}}
+        for path in ('packages/web/.claude/rules/security.md', 'packages/web/.cursor/rules/style.mdc',
+                     'packages/web/.agents/skills/review/references/policy.md', 'packages/web/.cursorrules',
+                     'cypress.config.ts', 'cypress/support/component.ts', 'src/components/Nav.cy.tsx',
+                     'src/models/user_spec.rb'):
+            self.assertEqual(verify_plan.plan([path], nested)['level'], 'independent', path)
+        for path in ('src/lib/format.ts', 'src/app/api/health/route.ts', 'packages/web/src/specification.ts'):
+            self.assertEqual(verify_plan.plan([path], nested)['level'], 'ci', path)
+        loose = {**nested, 'features': {}}
+        self.assertEqual(verify_plan.plan(['packages/web/.claude/rules/security.md'], loose)['unmapped'],
+                         ['packages/web/.claude/rules/security.md'])
+        self.assertTrue(verify_plan.plan(['packages/web/docs/guide.md'], loose)['static_only'])
         self.assertIn('Marked `ci` but reviewed anyway: `tooling` (tests)',
                       verify_plan.render_plan(verify_plan.plan(['tools/x.test.ts'], CONFIG)))
         # Instructions are never static, even when a static pattern covers all Markdown.
