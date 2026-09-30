@@ -64,14 +64,15 @@ class PlanTest(unittest.TestCase):
                              ('independent', ['tooling'], {'tooling': why}), path)
         # Nested agent-rule folders and other test runners' files count too (verifier findings on #30).
         nested = {'static': ['**/*.md'], 'features': {'internal': {
-            'paths': ['packages/**', 'src/**', 'cypress/**', 'cypress.config.ts'], 'verify': 'ci'}}}
+            'paths': ['packages/**', 'src/**', 'cypress/**', 'cypress.config.ts', 'spec/**', 'pkg/**', '.*'],
+            'verify': 'ci'}}}
         for path in ('packages/web/.claude/rules/security.md', 'packages/web/.cursor/rules/style.mdc',
                      'packages/web/.agents/skills/review/references/policy.md', 'packages/web/.cursorrules',
                      'cypress.config.ts', 'cypress/support/component.ts', 'src/components/Nav.cy.tsx',
                      'src/models/user_spec.rb', 'spec/support/auth.rb', '.mocharc.yml', '.clinerules/general.md',
                      'packages/web/.clinerules/security.md', 'spec/fixtures/users.yml', 'spec/factories.rb',
                      'packages/core/spec/fixtures/users.yml', 'src/runtime/spec/format.ts', 'pkg/testdata/golden.json',
-                     'src/test/java/AppTest.java'):
+                     'src/test/java/AppTest.java', '.mocharc.mjs', 'packages/core/.mocharc.mjs'):
             self.assertEqual(verify_plan.plan([path], nested)['level'], 'independent', path)
         for path in ('src/lib/format.ts', 'src/app/api/health/route.ts', 'packages/web/src/specification.ts',
                      'src/generated/api_spec.json'):
@@ -88,6 +89,9 @@ class PlanTest(unittest.TestCase):
         docs = {'static': ['docs/**'], 'features': {}}
         self.assertEqual(verify_plan.plan(['docs/tests/flow.test.ts'], docs)['unmapped'], ['docs/tests/flow.test.ts'])
         self.assertTrue(verify_plan.plan(['docs/tests/README.md'], docs)['static_only'])
+        self.assertTrue(verify_plan.plan(['docs/tests/README.txt'], docs)['static_only'])
+        for path in ('docs/tests/flow.test.txt', 'docs/flow.test.txt'):
+            self.assertEqual(verify_plan.plan([path], docs)['unmapped'], [path])
         self.assertIn('Marked `ci` but reviewed anyway: `tooling` (tests)',
                       verify_plan.render_plan(verify_plan.plan(['tools/x.test.ts'], CONFIG)))
         # Instructions are never static, even when a static pattern covers all Markdown.

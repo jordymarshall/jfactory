@@ -32,6 +32,15 @@ GATE_PATHS = ['.jfactory/**', '.github/workflows/**', '.github/rulesets/**']
 TRUSTED = {'OWNER', 'MEMBER', 'COLLABORATOR'}
 # Each feature declares how much proof its changes need. Unknown values fall back to the strictest level.
 LEVELS = ('independent', 'ci')
+# Everything inside a test folder counts, fixtures and helpers included: an extra review costs less than a gap.
+# Prose the map marks static inside such a folder is the one exception (see `static_allowed`).
+TEST_FOLDERS = ['**/e2e/**', '**/tests/**', '**/test/**', '**/__tests__/**', '**/spec/**', '**/cypress/**',
+                '**/testdata/**']
+# Files named as tests or test configuration are tests wherever they live, whatever their extension.
+TEST_FILES = ['**/*.test.*', '**/*.spec.*', '**/*.cy.*', '**/*_test.*', '**/*_spec.rb', '**/test_*.py',
+              '**/conftest.py', '**/pytest.ini', '**/.rspec', '**/playwright.config.*', '**/vitest.config.*',
+              '**/jest.config.*', '**/cypress.config.*', '**/karma.conf.*', '**/.mocharc.js', '**/.mocharc.cjs',
+              '**/.mocharc.mjs', '**/.mocharc.json', '**/.mocharc.jsonc', '**/.mocharc.yml', '**/.mocharc.yaml']
 # Files that decide what agents do and what the checks prove. A change to one always needs the independent
 # verifier, whatever its feature's level: a PR must not be able to weaken a test or an instruction with only
 # those same tests watching.
@@ -39,13 +48,7 @@ ALWAYS_REVIEW = {
     'agent instructions': ['**/AGENTS.md', '**/CLAUDE.md', '**/GEMINI.md', '**/SKILL.md', 'skills/**/*.md',
                            '**/.agents/**', '**/.claude/**', '**/.cursor/**', '**/.codex/**', '**/.cursorrules',
                            '**/.windsurfrules', '**/.clinerules', '**/.clinerules/**', '**/.github/copilot-instructions.md'],
-    # Everything inside a test folder counts, fixtures and helpers included: an extra review costs less than
-    # a gap. Prose that the map marks static is the one exception (see `plan`).
-    'tests': ['**/e2e/**', '**/tests/**', '**/test/**', '**/__tests__/**', '**/spec/**', '**/cypress/**',
-              '**/testdata/**', '**/*.test.*', '**/*.spec.*', '**/*.cy.*', '**/*_test.*', '**/*_spec.rb',
-              '**/test_*.py', '**/conftest.py', '**/pytest.ini', '**/.rspec', '**/playwright.config.*',
-              '**/vitest.config.*', '**/jest.config.*', '**/cypress.config.*', '**/karma.conf.*', '**/.mocharc.js',
-              '**/.mocharc.cjs', '**/.mocharc.json', '**/.mocharc.jsonc', '**/.mocharc.yml', '**/.mocharc.yaml'],
+    'tests': TEST_FOLDERS + TEST_FILES,
 }
 
 
@@ -55,9 +58,10 @@ def review_reason(path):
 
 
 def static_allowed(path, reason):
-    """Agent instructions and test code are never static. The map may mark prose inside a test folder static,
-    such as docs/spec/architecture.md."""
-    return reason is None or (reason == 'tests' and path.lower().endswith(('.md', '.mdx', '.txt', '.rst', '.adoc')))
+    """Agent instructions and test files are never static. The map may mark prose that is only inside a test
+    folder static, such as docs/spec/architecture.md, but not a file named as a test (flow.test.txt)."""
+    return reason is None or (reason == 'tests' and not matches(path, TEST_FILES)
+                              and path.lower().endswith(('.md', '.mdx', '.txt', '.rst', '.adoc')))
 
 
 def has_screens(feature, config):
