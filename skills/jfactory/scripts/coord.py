@@ -655,7 +655,11 @@ def cmd_merge(args):
     refresh_prs(state, args.repo)
     unit = unit_of(state, args.unit)
     basis = 'verified verdict'
-    if verdict_at_head(state, unit) != 'verified':
+    verdict = verdict_at_head(state, unit)
+    if verdict in ('failed', 'blocked', 'partially-verified'):
+        # Done means right: a reviewer found this head wrong or unproven, so no low-risk shortcut applies.
+        raise Refused(f'{args.unit} has a {verdict} verdict at its current head {(unit.get("head") or "")[:7]}')
+    if verdict != 'verified':
         # Low-risk changes (every affected feature is `verify: ci`) need passing CI, not an independent verdict.
         # The plan reads the base branch's mapping, so a PR cannot lower its own risk level.
         pr = verify_plan.pr_info(args.repo, unit['pr']) if unit.get('pr') else None

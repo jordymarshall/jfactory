@@ -410,6 +410,19 @@ class CoordTest(unittest.TestCase):
         self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
         self.assertIn('Ready to launch (3 free slots): r (--stack-on a)', self.coord('sync', '1'))
 
+    def test_a_failed_verdict_blocks_even_a_low_risk_merge(self):
+        self.start(['t', '--objective', 'Lint'])
+        config = {'features': {'lint': {'paths': ['lint/**'], 'verify': 'ci'}}}
+        self.coord('launch', '1', 't', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/t', 'files': ['lint/x.py']}},
+                    config=config)
+        self.coord('report', '1', 't', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.coord('sync', '1')
+        self.coord('verdict', '1', 't', '--head', 'aaa1111', '--verdict', 'failed', '--scopes', 'unit',
+                   '--evidence', 'https://evidence', '--verifier', 'codex/gpt-6-sol')
+        self.assertIn('has a failed verdict', self.coord('merge', '1', 't', ok=False))
+        self.assertNotIn('merged', self.db())
+
     def test_verdict_passes_screenshots_for_screen_changes(self):
         self.start(['a', '--objective', 'x'])
         self.coord('launch', '1', 'a', '--brief', str(self.brief))

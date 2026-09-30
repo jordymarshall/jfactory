@@ -381,7 +381,7 @@ When jfactory launches another agent, the task decides the tier, and remaining u
 | Trivial (`trivial`) | Renames, formatting, lookups | GPT Luna 6 | Opus 5.5, low effort |
 | Verify (`verify`) | Judging whether another agent's PR is right | GPT Sol 6.1, high effort | Opus 5.5, high effort |
 
-A verifier always comes from a different family than the implementer, so Codex-written work is verified by Opus 5.5 at low effort. Before launching, agents run `scripts/usage.py`. It reads your Claude and Codex usage from Conductor session records and Codex logs, starts a tiny probe session if a reading is missing or stale, and prints the model to use. It never reads credential files. Override the policy per repository in `.jfactory/coordination.json`. See [model selection](skills/jfactory/references/models.md).
+A verifier always comes from a different family than the implementer, so Codex-written work is verified by Opus 5.5 at high effort. Before launching, agents run `scripts/usage.py`. It reads your Claude and Codex usage from Conductor session records and Codex logs, starts a tiny probe session if a reading is missing or stale, and prints the model to use. It never reads credential files. Override the policy per repository in `.jfactory/coordination.json`. See [model selection](skills/jfactory/references/models.md).
 
 ## What jfactory adds to your project
 
@@ -400,7 +400,7 @@ The tools inside the bundle:
 
 | Tool | Purpose |
 | --- | --- |
-| `setup_check.py` | Checks that setup is complete and that the setup record's claims match the evidence; `--remote` also checks the GitHub gates |
+| `setup_check.py` | Checks that setup's records exist and agree with the evidence (map, standards, outcomes, gates, receipts); `--remote` also checks the GitHub gates. Whether the outcomes, job goals and standards are right is for the owner and verifiers to judge |
 | `verify_plan.py` | Works out what a PR must verify, posts verdicts and computes the `jfactory verified` status |
 | `coord.py` | Runs parallel programs: issue dashboard, launches, reports, verdicts, merges and clean-up |
 | `usage.py` | Reads remaining Claude and Codex usage and picks the model for each tier |

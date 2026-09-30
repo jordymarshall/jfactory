@@ -8,12 +8,13 @@ shows up as a pattern instead of going unnoticed. Findings for a PR:
 - merged without a verified verdict at its final commit when its plan needed one;
 - a verdict that names no standards, when the repository has a standards map;
 - a screen change merged without reviewed screenshots;
-- a description that names no outcomes/ document, or has no "Why it's right" section, when outcomes exist.
+- a description that names no outcomes/<job>.md document, or has no "Why it's right" section, when outcomes exist;
+- anything else the required status would reject today, judged by the gate's own code.
 
-  method_audit.py --repo OWNER/NAME [--limit 20] [--issue]
+  method_audit.py --repo OWNER/NAME [--limit 20] [--since YYYY-MM-DD] [--issue]
 
-It judges every PR against the base branch's current map, which may be stricter than the one the PR merged under;
-read old findings with that in mind. Exit status 1 means findings. --issue opens or updates an issue labelled
+It judges every PR by today's rules and the base branch's current map. --since limits it to recent merges, so a rule
+added later is not applied to PRs merged before it; the report says so either way. Exit status 1 means findings. --issue opens or updates an issue labelled
 jfactory-method-audit with the report.
 """
 import argparse
@@ -28,35 +29,22 @@ LABEL = 'jfactory-method-audit'
 
 
 def audit_pr(pr, config):
-    """Findings for one merged PR, judged against `config`."""
-    result = vp.plan(pr['files'], config)
-    if result['level'] == 'static':
+    """Findings for one merged PR: whatever the required status would reject at its final commit today, judged by
+    the same code as the gate (CI results aside, since CI ran before the merge)."""
+    state, description = vp.evaluate(pr, config)
+    if state == 'success':
         return []
-    findings = []
-    body = pr.get('body') or ''
-    outcomes = [s for s in config.get('_standards', []) if s.startswith('outcomes/')]
-    if outcomes and not any(doc in body for doc in outcomes):
-        findings.append('description names no outcomes/ document')
-    if outcomes and "why it's right" not in body.lower().replace('’', "'"):
-        findings.append('description has no "Why it\'s right" section')
-    if not result['needs_verifier']:
-        return findings
-    verdicts = [v for v in vp.trusted_verdicts(pr) if v.get('head') == pr['headRefOid']]
-    verdict = verdicts[-1] if verdicts else None
-    if not verdict or verdict.get('verdict') != 'verified':
-        return findings + ['merged without a verified verdict at its final commit']
-    if vp.needs_standards(result, config) and not verdict.get('standards'):
-        findings.append('verdict names no standards')
-    if vp.needs_screenshots(result, config) and not verdict.get('screenshots'):
-        findings.append('screen change merged without reviewed screenshots')
-    if not verdict.get('evidence'):
-        findings.append('verdict has no evidence links')
-    return findings
+    if description.startswith('No verdict for head'):
+        description = 'merged without a verified verdict at its final commit'
+    return [description]
 
 
-def report(results, limit):
+def report(results, limit, since=None):
     flagged = [(pr, found) for pr, found in results if found]
-    lines = [f'Method audit of the last {limit} merged PRs: {len(flagged)} with findings.', '']
+    scope = f'the {limit} PRs merged since {since}' if since else f'the last {limit} merged PRs'
+    lines = [f'Method audit of {scope}: {len(flagged)} with findings.',
+             '', 'Each PR is judged by the gate\'s own rules as they are today. A PR merged before a rule existed can show '
+             'it; read those as history, not as a new gap.', '']
     counts = {}
     for _, found in flagged:
         for item in found:
@@ -71,14 +59,27 @@ def report(results, limit):
 
 
 def publish(repo, text, clean):
+    """Open, update or close the audit issue. Repeating the same report adds nothing; a clean run closes it."""
     existing = vp.run('gh', 'issue', 'list', '--repo', repo, '--label', LABEL, '--state', 'open', '--json', 'number',
                       '--jq', '.[0].number // empty').strip()
-    body = vp.body_file(text)
-    if existing:
-        vp.run('gh', 'issue', 'comment', existing, '--repo', repo, '--body-file', body)
-    elif not clean:
+    if not existing:
+        if clean:
+            return 'clean; no issue'
+        vp.run('gh', 'label', 'create', LABEL, '--repo', repo, '--color', 'B60205', '--force',
+               '--description', 'Verification fell short of done means right in merged PRs')
         vp.run('gh', 'issue', 'create', '--repo', repo, '--title', 'Method audit: verification gaps in merged PRs',
-               '--label', LABEL, '--body-file', body)
+               '--label', LABEL, '--body-file', vp.body_file(text))
+        return 'opened'
+    last = vp.run('gh', 'issue', 'view', existing, '--repo', repo, '--json', 'body,comments',
+                  '--jq', '(.comments | last | .body) // .body').strip()
+    if last == text.strip():
+        return 'unchanged'
+    vp.run('gh', 'issue', 'comment', existing, '--repo', repo, '--body-file', vp.body_file(text))
+    if clean:
+        vp.run('gh', 'issue', 'close', existing, '--repo', repo, '--reason', 'completed')
+        return 'closed'
+    return 'updated'
+
 
 
 def main(argv=None):
@@ -87,11 +88,14 @@ def main(argv=None):
     parser.add_argument('--limit', type=int, default=20)
     parser.add_argument('--base', default='main', help='branch whose current map the PRs are judged against')
     parser.add_argument('--issue', action='store_true', help='open or update an issue labelled ' + LABEL)
+    parser.add_argument('--since', help='only PRs merged on or after this date (YYYY-MM-DD), so newer rules are not '
+                                        'applied to older merges')
     args = parser.parse_args(argv)
     try:
         config = vp.load_config(f'origin/{args.base}')
+        search = ['--search', f'merged:>={args.since}'] if args.since else []
         numbers = json.loads(vp.run('gh', 'pr', 'list', '--repo', args.repo, '--state', 'merged', '--base', args.base,
-                                    '--limit', str(args.limit), '--json', 'number'))
+                                    '--limit', str(args.limit), *search, '--json', 'number'))
         results = []
         for item in numbers:
             pr = vp.pr_info(args.repo, item['number'])
@@ -100,7 +104,7 @@ def main(argv=None):
     except vp.Refused as error:
         print(f'REFUSED: {error}', file=sys.stderr)
         return 2
-    text = report(results, len(results))
+    text = report(results, len(results), args.since)
     print(text)
     clean = not any(found for _, found in results)
     if args.issue:
