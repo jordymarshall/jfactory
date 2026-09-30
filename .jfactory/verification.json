@@ -19,7 +19,7 @@
       "verify": "independent"
     },
     "installer": {
-      "paths": ["scripts/install.py", "tests/test_install.py"],
+      "paths": ["scripts/install.py", "tests/test_install.py", "skills/jfactory/.gitignore"],
       "recipe": "Run tests/test_install.py and install into a disposable repository, then run the installed check-upstream.py",
       "suites": ["checks"],
       "verify": "independent"

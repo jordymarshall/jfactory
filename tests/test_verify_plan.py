@@ -296,7 +296,7 @@ class GateTest(unittest.TestCase):
         bins = self.tmp / 'bin'
         bins.mkdir()
         self.env = {**os.environ, 'FAKE_STATE': str(self.state)}
-        for tool in ('gh', 'git'):
+        for tool in ('gh', 'git', 'conductor'):
             exe = bins / tool
             exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE}" {tool} "$@"\n')
             exe.chmod(0o755)
