@@ -131,6 +131,11 @@ class SetupCheckTest(unittest.TestCase):
         # A manual workflow that only mentions the script audits nothing.
         audit.write_text('on: workflow_dispatch\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo method_audit.py\n')
         self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
+        # Scheduled, but only echoes the command.
+        audit.write_text("on:\n  schedule:\n    - cron: '0 7 * * 1'\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n"
+                         "      - run: echo python3 scripts/method_audit.py\n      - name: x\n        run: |\n"
+                         "          echo 'python3 method_audit.py'\n")
+        self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
         audit.unlink()
         self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
 

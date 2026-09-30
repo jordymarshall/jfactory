@@ -112,7 +112,7 @@ def parse_standards(text):
         none = re.match(r'\s*none\b[\s:,.-]*(.*)', cells[1], re.I)
         # Every backticked token in the source column is a repository path, unless the row says none (whose reason
         # may quote code). Paths are canonicalised so `./README.md` and `README.md` are the same source.
-        paths = [] if none else [source_path(p) or ('!' + p) for p in re.findall(r'`([^`\s]+)`', cells[1])]
+        paths = [] if none else [source_path(p) or ('!' + p) for p in re.findall(r'`([^`]+)`', cells[1])]
         rows[name] = {'paths': paths, 'none': none.group(1).strip() if none else None,
                       'check': cells[2] if len(cells) > 2 else ''}
     return rows
