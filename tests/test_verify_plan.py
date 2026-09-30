@@ -337,9 +337,18 @@ class GateTest(unittest.TestCase):
         self.verdict('--screenshots', 'https://shots/briefs-desktop.png', '--screenshots', 'https://shots/briefs-mobile.png')
         self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
         self.assertIn('Screenshots reviewed:', json.loads(self.state.read_text())['prs']['5']['comments'][-1]['body'])
-        # Changes without screens, and repositories that opt out, need none.
+        # Changes without screens, and repositories that opt out, need none. Neither do test-only or prose-only
+        # changes inside a screen feature: they still get the independent review, just not screenshots.
         self.write(files=['cli/run.py'], head='c' * 40, config=screens)
         self.verdict(head='c' * 40)
+        for i, files in enumerate((['app/briefs/save.test.ts'], ['app/briefs/README.md'], ['app/briefs/e2e/flow.ts'])):
+            head = str(i) * 40
+            self.write(files=files, head=head, config=screens)
+            self.assertEqual(verify_plan.plan(files, screens)['screen_features'], [], files)
+            self.verdict(head=head)
+        # A mixed change still needs them.
+        self.assertEqual(verify_plan.plan(['app/briefs/save.test.ts', 'app/briefs/save.ts'], screens)['screen_features'],
+                         ['briefs'])
         self.write(files=['app/briefs/save.ts'], head='d' * 40, config={**screens, 'require_screenshots': False})
         self.verdict(head='d' * 40)
         self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))

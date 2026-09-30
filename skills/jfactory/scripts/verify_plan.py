@@ -111,11 +111,13 @@ def recommend_full_suite(config):
     return 'on-request', f'{timing}, too long and costly to repeat without a reason'
 
 
+PROSE = ('.md', '.mdx', '.txt', '.rst', '.adoc')
+
+
 def static_allowed(path, reason):
     """Agent instructions and test files are never static. The map may mark prose that is only inside a test
     folder static, such as docs/spec/architecture.md, but not a file named as a test (flow.test.txt)."""
-    return reason is None or (reason == 'tests' and not matches(path, TEST_FILES)
-                              and path.lower().endswith(('.md', '.mdx', '.txt', '.rst', '.adoc')))
+    return reason is None or (reason == 'tests' and not matches(path, TEST_FILES) and path.lower().endswith(PROSE))
 
 
 def has_screens(feature, config):
@@ -179,7 +181,7 @@ def load_config(ref=None, root=None):
 
 def plan(files, config, impact=None):
     """Plan a change. `impact` maps suites to the files they executed (from `load_impact`); it only adds suites."""
-    features, static, unmapped, gate, reviewed = set(), [], [], [], {}
+    features, static, unmapped, gate, reviewed, visual = set(), [], [], [], {}, set()
     for path in files:
         if matches(path, GATE_PATHS):
             gate.append(path)
@@ -188,6 +190,9 @@ def plan(files, config, impact=None):
         reason = review_reason(path)
         if hit:
             features |= hit
+            # Only files that can change what users see put a screen in scope: not tests, agent instructions or prose.
+            if not reason and not path.lower().endswith(PROSE):
+                visual |= hit
             if reason:
                 for fid in hit:
                     reviewed.setdefault(fid, reason)
@@ -238,7 +243,7 @@ def plan(files, config, impact=None):
     return {'files': len(files), 'features': sorted(features), 'unmapped': unmapped, 'gate': gate, 'full': full,
             'static_only': static_only, 'suites': sorted(suites), 'level': level,
             'independent_features': independent, 'overridden': overridden,
-            'screen_features': sorted(f for f in features if has_screens(all_features[f], config)),
+            'screen_features': sorted(f for f in visual if has_screens(all_features[f], config)),
             'needs_verifier': needs, 'minutes': minutes, 'untimed_suites': untimed,
             'budget_minutes': config.get('pr_budget_minutes'), 'impact': because, 'shards': shards,
             'wall_minutes': max((cost(b, config)[0] for b in binpack(suites, config, shards)), default=0),
