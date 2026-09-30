@@ -322,6 +322,28 @@ class GateTest(unittest.TestCase):
                                'codex/gpt-6-sol', '--implementer', 'claude/opus-5-5-1m', '--evidence',
                                'https://evidence', *extra, code=code)
 
+    def test_screen_changes_need_reviewed_screenshots(self):
+        screens = {**CONFIG, 'suites': {'browser': {'run': 'true', 'target': 'app'}},
+                   'targets': {'app': {'url': 'http://x', 'ready': 'http://x', 'auth': 'none'}}}
+        self.write(files=['app/briefs/save.ts'], config=screens)
+        self.assertIn('touches screens users see (briefs)', self.verdict(code=2))
+        # A verdict posted without them (for example by hand) still does not count.
+        db = json.loads(self.state.read_text())
+        db['prs']['5']['comments'].append({'authorAssociation': 'OWNER', 'body': '<!-- jfactory-verdict ' + json.dumps(
+            {'head': HEAD, 'verdict': 'verified', 'features': ['auth', 'briefs'], 'full': False,
+             'verifier': 'codex/gpt-6-sol', 'implementer': 'claude/opus-5-5-1m', 'evidence': ['x']}) + ' -->'})
+        self.state.write_text(json.dumps(db))
+        self.assertIn('no screenshots of the changed screens (briefs)', self.run_script('check', '--pr', '5', code=1))
+        self.verdict('--screenshots', 'https://shots/briefs-desktop.png', '--screenshots', 'https://shots/briefs-mobile.png')
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+        self.assertIn('Screenshots reviewed:', json.loads(self.state.read_text())['prs']['5']['comments'][-1]['body'])
+        # Changes without screens, and repositories that opt out, need none.
+        self.write(files=['cli/run.py'], head='c' * 40, config=screens)
+        self.verdict(head='c' * 40)
+        self.write(files=['app/briefs/save.ts'], head='d' * 40, config={**screens, 'require_screenshots': False})
+        self.verdict(head='d' * 40)
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+
     def test_status_follows_verdict_at_current_head(self):
         self.assertIn('failure: No verdict', self.run_script('check', '--pr', '5', code=1))
         self.verdict()

@@ -104,6 +104,16 @@ Run `$VP audit` and fix every FAIL, then the warnings. Then run `$VP plan --file
 
 Install [the change-aware CI job](../templates/jfactory-checks.yml). On PRs it runs `audit`, then the planned suites plus those that recorded coverage selects, across parallel jobs. It runs every suite and records coverage when the owner's `full_suite` choice says so. Add the project's runtime steps, matching the local target's `setup`, and make its `checks` job required.
 
+## Keep the whole suite fast
+
+A whole-suite run should take minutes, not an hour. Measure before changing anything: time each spec file from a whole-suite run's report, and compare the same tests across runs. When the same tests get slower week by week, test data is piling up.
+
+- **Parallel jobs by spec file.** Split spec files across CI jobs, balanced by their measured minutes, and let each job run every viewport for its own files. With one shared account this is safe only when the same spec never runs twice at once, and when specs avoid account-wide sweeps ("archive every brief named X"), fixed primary keys and read-modify-restore of account settings. Fix or isolate those specs first.
+- **One account per concurrent copy, not per test.** Parallel sign-ins to one account are often rate limited, so give each parallel worker or job its own account, seeded by the target's `seed` with the data its specs need. An account per test (hundreds) doesn't help: each needs seeding and a sign-in, jobs are bounded by the runner's CPU and the app instance they share, and every job pays install and build. The floor is the slowest spec file plus setup, so the useful number of jobs is roughly the total minutes divided by the slowest file's.
+- **Small, known data.** Seed what each run needs and clean it up (step 7). Accumulated data slows tests twice over: pages render more, and full-page checks such as accessibility scans walk every element. The same slowdown hits real users with many records, so raise it as a product objective (paging, limits) and test scale deliberately in one journey, instead of by accident in all of them.
+- **Fewer duplicate runs, not fewer checks.** Run layout, accessibility and responsive checks at every viewport. Journeys whose logic doesn't depend on the viewport can run at one, when the owner agrees. Use recorded coverage to find specs that execute the same code with the same assertions before removing any.
+- **Scripted tests don't see the screen.** They check structure and behavior. Add screenshot comparisons (for example Playwright `toHaveScreenshot`) for screens whose content is stable, such as public pages, with baselines generated on the CI runner. Every change to screens users see also gets the verifier's reviewed screenshots ([verification](verification.md)).
+
 ## Keep the map current as the product changes
 
 - **Every PR.** `ci` fails when a tracked file matches no feature, or a feature matches no file. A change to a feature's files always runs that feature's own suites, whatever coverage says, so UI changes keep their journeys. So a new area or a deleted one is mapped in the same PR that creates it. A mapping change is a gate change, so the independent verifier reviews it: the new paths, suites and level must fit what the code does.
