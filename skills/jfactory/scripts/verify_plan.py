@@ -112,6 +112,8 @@ def recommend_full_suite(config):
 
 
 PROSE = ('.md', '.mdx', '.txt', '.rst', '.adoc')
+# Prose that is never rendered as a screen. MDX is excluded: it can be a page (`page.mdx`) with JSX in it.
+TEXT_PROSE = ('.md', '.txt', '.rst', '.adoc')
 
 
 def static_allowed(path, reason):
@@ -190,8 +192,9 @@ def plan(files, config, impact=None):
         reason = review_reason(path)
         if hit:
             features |= hit
-            # Only files that can change what users see put a screen in scope: not tests, agent instructions or prose.
-            if not reason and not path.lower().endswith(PROSE):
+            # Only files that can change what users see put a screen in scope: not tests, agent instructions or
+            # plain-text prose. MDX can be a rendered page, so it counts.
+            if not reason and not path.lower().endswith(TEXT_PROSE):
                 visual |= hit
             if reason:
                 for fid in hit:
@@ -206,6 +209,9 @@ def plan(files, config, impact=None):
     all_features = config.get('features', {})
     if unmapped:
         features = set(all_features)
+        # An unmapped file that could render (a new screen) puts every screen in scope, like every feature.
+        if any(not review_reason(p) and not p.lower().endswith(TEXT_PROSE) for p in unmapped):
+            visual = set(all_features)
     suites = set(config.get('always_suites', []))
     for fid in features:
         suites |= set(all_features[fid].get('suites', []))

@@ -346,6 +346,19 @@ class GateTest(unittest.TestCase):
             self.write(files=files, head=head, config=screens)
             self.assertEqual(verify_plan.plan(files, screens)['screen_features'], [], files)
             self.verdict(head=head)
+        # Rendered MDX is a screen, and so is a new unmapped screen, even alongside its mapping update.
+        self.assertEqual(verify_plan.plan(['app/briefs/page.mdx'], screens)['screen_features'], ['briefs'])
+        new_screen = ['app/new-screen/page.tsx', '.jfactory/verification.json']
+        self.assertEqual(verify_plan.plan(new_screen, screens)['screen_features'], ['auth', 'briefs'])
+        self.write(files=new_screen, head='e' * 40, config=screens)
+        self.assertIn('touches screens users see', self.verdict('--full', head='e' * 40, code=2))
+        self.verdict('--full', '--screenshots', 'https://shots/new.png', head='e' * 40)
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+        # A later head re-checked with --since still needs them.
+        self.write(files=new_screen, head='f' * 40, config=screens)
+        self.assertIn('touches screens users see', self.verdict('--full', '--since', 'e' * 40, head='f' * 40, code=2))
+        # Unmapped docs or tests stay exempt.
+        self.assertEqual(verify_plan.plan(['notes/todo.md', 'tools/x.test.ts'], screens)['screen_features'], [])
         # A mixed change still needs them.
         self.assertEqual(verify_plan.plan(['app/briefs/save.test.ts', 'app/briefs/save.ts'], screens)['screen_features'],
                          ['briefs'])
