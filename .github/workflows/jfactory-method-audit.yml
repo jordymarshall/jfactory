@@ -10,6 +10,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  # Opens, comments on and closes the audit issue, and creates its label on the first run.
   issues: write
 env:
   JFACTORY_DIR: skills/jfactory
@@ -27,4 +28,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         # Findings exit 1 after publishing the issue, so the run shows red until the gap is fixed.
-        run: python3 "$JFACTORY_DIR/scripts/method_audit.py" --repo "$GITHUB_REPOSITORY" --limit 20 --issue
+        run: >-
+          python3 "$JFACTORY_DIR/scripts/method_audit.py" --repo "$GITHUB_REPOSITORY" --limit 50 --issue
+          --since "$(date -u -d '8 days ago' +%Y-%m-%d)"

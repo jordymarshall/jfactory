@@ -390,7 +390,11 @@ class GateTest(unittest.TestCase):
         # With outcomes/ documents, the PR itself must name the ones it serves.
         config['features']['briefs']['journey'] = 'outcomes/save-a-brief.md'
         self.write(files=['app/briefs/save.ts'], head='e' * 40, config=config)
-        self.assertIn('must name the outcomes/ document(s)', self.run_script('check', '--pr', '5', code=1))
+        self.assertIn('needs a "Why it\'s right" section', self.run_script('check', '--pr', '5', code=1))
+        db = json.loads(self.state.read_text())
+        db['prs']['5']['body'] = "## Objective\nSave briefs.\n\n## Why it's right\nIt serves the outcomes.\n"
+        self.state.write_text(json.dumps(db))
+        self.assertIn('must name the outcomes/<job>.md document(s)', self.run_script('check', '--pr', '5', code=1))
         db = json.loads(self.state.read_text())
         db['prs']['5']['body'] = "## Objective\nSave briefs.\n\n## Why it's right\nServes `outcomes/save-a-brief.md`.\n"
         self.state.write_text(json.dumps(db))

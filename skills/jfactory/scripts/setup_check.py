@@ -181,7 +181,11 @@ def check_verification(root, report, states):
         report.add('PASS', f'The jfactory verified workflow is installed: {gate[0].relative_to(root)}')
     else:
         report.add('FAIL', 'No workflow runs `verify_plan.py ... check`; install templates/jfactory-verified.yml')
-    audits = [p for p in workflows.glob('*.y*ml') if 'method_audit.py' in p.read_text()] if workflows.is_dir() else []
+    # An audit counts only if a scheduled workflow actually runs the script, not one that merely mentions it.
+    audits = [p for p in workflows.glob('*.y*ml')
+              if re.search(r'python3?\s+\S*method_audit\.py\b', p.read_text())
+              and re.search(r'(?m)^\s*schedule:\s*$', p.read_text()) and 'cron:' in p.read_text()] \
+        if workflows.is_dir() else []
     if audits:
         report.add('PASS', f'The method audit checks the checkers: {audits[0].relative_to(root)}')
     else:

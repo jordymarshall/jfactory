@@ -127,7 +127,11 @@ class SetupCheckTest(unittest.TestCase):
 
     def test_verified_delivery_needs_the_method_audit(self):
         self.assertIn('PASS: The method audit checks the checkers', self.check('--remote', '--repo', 'o/r'))
-        (self.root / '.github' / 'workflows' / 'jfactory-method-audit.yml').unlink()
+        audit = self.root / '.github' / 'workflows' / 'jfactory-method-audit.yml'
+        # A manual workflow that only mentions the script audits nothing.
+        audit.write_text('on: workflow_dispatch\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo method_audit.py\n')
+        self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
+        audit.unlink()
         self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
 
     def test_complete_setup_passes_with_remote_protection(self):
