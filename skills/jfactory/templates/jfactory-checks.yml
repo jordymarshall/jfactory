@@ -4,10 +4,15 @@
 #
 # On a PR it fails when a tracked file is unmapped, then runs only the suites the change needs: the map's, plus
 # every suite whose recorded coverage executed a changed file. The suites are split across parallel jobs by their
-# recorded minutes. The nightly run executes every suite and records the coverage the next PRs use.
+# recorded minutes. The whole suite runs when the owner's "full_suite" choice in the mapping says so (on request,
+# nightly, on every merge or on every PR); each such run also records the coverage later PRs use.
 name: jfactory checks
 on:
   pull_request:
+    # `labeled` lets adding the full-suite label start the whole suite on an open PR.
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    branches: [main]
   schedule:
     - cron: '0 6 * * *'
   workflow_dispatch:
@@ -17,7 +22,23 @@ permissions:
 env:
   JFACTORY_DIR: .agents/skills/jfactory
 jobs:
+  mode:
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - id: mode
+        env:
+          # JSON keeps each label name exact, commas included.
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: python3 "$JFACTORY_DIR/scripts/verify_plan.py" full-suite --event "$GITHUB_EVENT_NAME" --labels-json "$LABELS" >> "$GITHUB_OUTPUT"
   suites:
+    needs: mode
+    if: needs.mode.outputs.mode != 'skip'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -36,33 +57,48 @@ jobs:
           python-version: '3.11'
       # Project runtime and dependencies go here, matching the local target's "setup" command.
       - name: Fetch the latest recorded coverage
-        if: github.event_name == 'pull_request'
+        if: needs.mode.outputs.mode == 'planned'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          run=$(gh run list --workflow jfactory-checks.yml --branch "${{ github.base_ref }}" --event schedule \
-            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          # Coverage from the newest whole-suite run that completed successfully, on any branch, however many runs
+          # came since. A run still in progress or one that failed may hold only some shards' records, so skip it.
+          # Coverage only adds suites; with none usable the plan falls back to the map.
+          run=""
+          for id in $(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?name=jfactory-impact-1&per_page=100" \
+              --jq '.artifacts[] | select(.expired | not) | .workflow_run.id'); do
+            state=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id" --jq '.status + "/" + (.conclusion // "")')
+            if [ "$state" = "completed/success" ]; then run=$id; break; fi
+          done
           if [ -n "$run" ]; then gh run download "$run" --pattern 'jfactory-impact-*' --dir .jfactory-impact || true; fi
       - name: Run this job's share of the suites the change needs
-        if: github.event_name == 'pull_request'
+        if: needs.mode.outputs.mode == 'planned'
         run: >-
           python3 "$JFACTORY_DIR/scripts/verify_plan.py" ci --base "origin/${{ github.base_ref }}"
           --impact .jfactory-impact --shard "${{ matrix.shard }}/${{ strategy.job-total }}"
       - name: Run this job's share of every suite and record coverage
-        if: github.event_name != 'pull_request'
+        if: needs.mode.outputs.mode == 'full'
         run: >-
           python3 "$JFACTORY_DIR/scripts/verify_plan.py" ci --all
           --shard "${{ matrix.shard }}/${{ strategy.job-total }}" --impact-out "impact/${{ matrix.shard }}.json"
       - uses: actions/upload-artifact@v4
-        if: github.event_name != 'pull_request' && always()
+        if: needs.mode.outputs.mode == 'full' && always()
         with:
           name: jfactory-impact-${{ matrix.shard }}
           path: impact/
           if-no-files-found: ignore
   checks:
-    needs: suites
+    needs: [mode, suites]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Require every parallel job to pass
-        run: test "${{ needs.suites.result }}" = success
+        env:
+          MODE_RESULT: ${{ needs.mode.result }}
+          MODE: ${{ needs.mode.outputs.mode }}
+          SUITES_RESULT: ${{ needs.suites.result }}
+        run: |
+          test "$MODE_RESULT" = success
+          # A skipped run (a schedule or merge when the owner chose otherwise) ran nothing and is not a PR gate.
+          if [ "$MODE" = skip ]; then exit 0; fi
+          test "$SUITES_RESULT" = success
