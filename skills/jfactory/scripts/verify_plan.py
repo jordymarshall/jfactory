@@ -82,6 +82,26 @@ def full_suite_mode(config, event, labels=()):
     return 'planned'
 
 
+def recommend_full_suite(config):
+    """The `full_suite` choice jfactory suggests from the map, with the reason: how long the whole suite takes,
+    whether journeys share one account's data, and how many parallel jobs split it."""
+    defs, targets = config.get('suites', {}), config.get('targets', {})
+    whole = cost(set(defs), config)[0]
+    wall = max((cost(b, config)[0] for b in binpack(set(defs), config, shard_count(config))), default=0)
+    shared = sorted(name for name, t in targets.items() if any(d.get('target') == name for d in defs.values())
+                    and (placeholder(t.get('seed')) or placeholder(t.get('cleanup'))))
+    timing = f'the whole suite takes about {whole} min' + (f' ({wall} min across {shard_count(config)} jobs)'
+                                                          if shard_count(config) > 1 else '')
+    if shared:
+        return 'on-request', (f'{timing}, and journeys share one account on {", ".join(shared)}, so a whole-suite run '
+                              'blocks every other run and piles up data')
+    if whole <= 5:
+        return 'every-pr', f'{timing}, cheap enough for every PR'
+    if wall <= 15:
+        return 'nightly', f'{timing}, affordable once a day with no one waiting on it'
+    return 'on-request', f'{timing}, too long and costly to repeat without a reason'
+
+
 def static_allowed(path, reason):
     """Agent instructions and test files are never static. The map may mark prose that is only inside a test
     folder static, such as docs/spec/architecture.md, but not a file named as a test (flow.test.txt)."""
@@ -433,12 +453,15 @@ def audit(files, config):
     policy = config.get('full_suite')
     if any(d.get('target') for d in defs.values()):
         whole = cost(set(defs), config)[0]
+        advice, why = recommend_full_suite(config)
         if policy is None:
             items.append(('WARN', f'The owner has not chosen when the whole suite (about {whole} min) runs, so it '
-                                  'runs nightly. Ask them and record "full_suite": on-request, nightly, merge or '
-                                  'every-pr (references/mapping.md step 8)'))
+                                  f'runs nightly. jfactory recommends "{advice}": {why}. Ask them and record '
+                                  '"full_suite": on-request, nightly, merge or every-pr (references/mapping.md step 8)'))
         elif policy in FULL_SUITE:
-            items.append(('PASS', f'The whole suite (about {whole} min) runs {FULL_SUITE[policy]}'))
+            items.append(('PASS', f'The whole suite (about {whole} min) runs {FULL_SUITE[policy]}'
+                                  + ('' if policy == advice else f'. jfactory would recommend "{advice}": {why}; '
+                                     'the owner chose otherwise')))
     if policy is not None and policy not in FULL_SUITE:
         items.append(('FAIL', f'"full_suite" is "{policy}"; use one of {", ".join(FULL_SUITE)}'))
     budget = config.get('pr_budget_minutes')

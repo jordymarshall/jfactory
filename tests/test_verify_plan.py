@@ -136,8 +136,28 @@ class PlanTest(unittest.TestCase):
         self.assertIn('PASS: The whole suite (about 44 min) runs only when asked for',
                       text({**journeys, 'full_suite': 'on-request'}))
         self.assertIn('FAIL: "full_suite" is "weekly"', text({**journeys, 'full_suite': 'weekly'}))
+        self.assertIn('jfactory recommends "on-request": the whole suite takes about 44 min, and journeys share one '
+                      'account on app', text(journeys))
+        self.assertIn('jfactory would recommend "on-request"', text({**journeys, 'full_suite': 'nightly'}))
         # A map without journeys has nothing to schedule.
         self.assertNotIn('whole suite', text(CONFIG))
+
+    def test_recommendation_follows_the_suite_cost_and_test_data(self):
+        seeded = {'app': {'url': 'http://x', 'ready': 'http://x', 'auth': 'none', 'seed': 'make seed', 'cleanup': 'make clean'}}
+        def advise(minutes, shards=1, targets=seeded):
+            suites = {'unit': {'run': 'true', 'minutes': 1}, 'e2e': {'run': 'true', 'minutes': minutes - 1, 'target': 'app'}}
+            return verify_plan.recommend_full_suite({'suites': suites, 'targets': targets, 'shards': shards})
+        self.assertEqual(advise(4)[0], 'every-pr')
+        self.assertEqual(advise(12)[0], 'nightly')
+        self.assertEqual(advise(40)[0], 'on-request')
+        # Parallel jobs shorten the wait, so a longer suite still fits a nightly run.
+        e2e = {f'e2e{i}': {'run': 'true', 'minutes': 10, 'target': 'app'} for i in range(4)}
+        self.assertEqual(verify_plan.recommend_full_suite({'suites': e2e, 'targets': seeded, 'shards': 4}),
+                         ('nightly', 'the whole suite takes about 40 min (10 min across 4 jobs), affordable once a day '
+                                     'with no one waiting on it'))
+        # A shared account makes any long whole-suite run block the others, whatever its length.
+        shared = {'app': {'url': 'http://x', 'ready': 'http://x', 'auth': 'none'}}
+        self.assertEqual(advise(12, targets=shared)[0], 'on-request')
 
     def test_plan_estimates_minutes_from_suite_timings(self):
         timed = {**CONFIG, 'suites': {'unit': {'minutes': 2}, 'browser': {'minutes': 40}}, 'pr_budget_minutes': 10}
