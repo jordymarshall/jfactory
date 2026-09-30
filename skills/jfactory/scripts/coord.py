@@ -343,7 +343,28 @@ def tidy_sections(repo, keep=()):
 # archive the workspace once that PR is finished. Names outside the convention, such as the owner's, are never touched.
 PR_ROLES = ('verify', 'build', 'fix')
 PR_ROLE_TIERS = {'verify': 'verify', 'build': 'frontier', 'fix': 'frontier'}
-TIDY_BUDGET = 60  # seconds; the sweep is best-effort and must not hold up the command that runs it
+# One small budget at every call site. The sweep is housekeeping: it must not hold up a verdict, a merge or a sync.
+# Whatever it cannot finish in time, the next command picks up.
+TIDY_BUDGET = 5
+# Conductor's CLI reports a session as "working" or "idle". Only "idle" proves a session has stopped; anything else,
+# including a missing or unfamiliar status, keeps the workspace.
+IDLE = 'idle'
+MAX_PAGES = 50
+REMOTE_RE = [
+    # https://host/owner/name, ssh://git@host:22/owner/name, each with optional user info, port, .git and slash
+    re.compile(r'(?:https?|ssh)://(?:[^@/\s]+@)?([A-Za-z0-9.-]+)(?::[0-9]+)?/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)'
+               r'(?:\.git)?/?'),
+    # git@host:owner/name
+    re.compile(r'[A-Za-z0-9_.-]+@([A-Za-z0-9.-]+):([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?'),
+]
+
+
+class Uncertain(Exception):
+    """This workspace's state could not be established, so it is kept."""
+
+
+def gh_host():
+    return os.environ.get('GH_HOST', 'github.com').lower()
 
 
 def workspace_name(role, repo, pr):
@@ -351,20 +372,78 @@ def workspace_name(role, repo, pr):
 
 
 def convention(repo):
-    return re.compile(rf"^({'|'.join(PR_ROLES)})-{re.escape(repo.split('/')[-1])}-([1-9][0-9]*)$", re.I)
+    """Matches, with fullmatch, exactly the names `launch --role --pr` creates for this repository."""
+    return re.compile(rf"({'|'.join(PR_ROLES)})-(?i:{re.escape(repo.split('/')[-1])})-([1-9][0-9]*)")
+
+
+def repo_identity(url):
+    """(host, owner, name) of an HTTPS, SSH or SCP-style remote, lowercased; None for anything else, including
+    remotes with extra path segments."""
+    if not isinstance(url, str):
+        return None
+    for pattern in REMOTE_RE:
+        match = pattern.fullmatch(url.strip())
+        if match:
+            return tuple(part.lower() for part in match.groups())
+    return None
 
 
 def same_repo(url, repo):
-    url = (url or '').strip().rstrip('/').lower()
-    url = url[:-4] if url.endswith('.git') else url
-    return url.replace(':', '/').endswith('/' + repo.lower())
+    owner, _, name = repo.partition('/')
+    return repo_identity(url) == (gh_host(), owner.lower(), name.lower())
+
+
+def pr_states(repo, numbers, timeout):
+    """PR number -> state (MERGED, CLOSED, OPEN, or None when the PR does not exist), in one GraphQL call."""
+    owner, _, name = repo.partition('/')
+    fields = ' '.join(f'p{n}: pullRequest(number: {n}) {{ state }}' for n in numbers)
+    query = f'query($owner: String!, $name: String!) {{ repository(owner: $owner, name: $name) {{ {fields} }} }}'
+    exe = os.environ.get('JFACTORY_GH', 'gh')
+    try:
+        proc = subprocess.run([exe, 'api', 'graphql', '-f', f'query={query}', '-f', f'owner={owner}', '-f',
+                               f'name={name}'], capture_output=True, text=True, timeout=timeout)
+    except FileNotFoundError:
+        raise Missing('gh is not installed or not on PATH')
+    except subprocess.TimeoutExpired:
+        raise Refused('gh api graphql timed out')
+    # GitHub answers the PRs it found even when another number does not exist, and gh then exits 1.
+    try:
+        found = json.loads(proc.stdout)['data']['repository']
+    except (ValueError, KeyError, TypeError):
+        found = None
+    if not isinstance(found, dict):
+        raise Refused(f'gh could not read PR states: {(proc.stderr or proc.stdout).strip()[:200] or proc.returncode}')
+    states = {}
+    for n in numbers:
+        pr = found.get(f'p{n}')
+        states[n] = pr.get('state') if isinstance(pr, dict) else None
+    return states
+
+
+def pages(*command, timeout):
+    """Every item of a paginated `conductor ... --json` list; raises Uncertain when the set cannot be established."""
+    items, offset = [], 0
+    for _ in range(MAX_PAGES):
+        page = run_json('conductor', *command, '--limit', '100', '--offset', str(offset), '--json', timeout=timeout())
+        data = page.get('data') if isinstance(page, dict) else None
+        if not isinstance(data, list) or not isinstance(page.get('hasMore'), bool) \
+                or not all(isinstance(item, dict) and isinstance(item.get('id'), str) and item['id'] for item in data):
+            raise Uncertain(f'`conductor {" ".join(command[:2])}` returned a list jfactory does not recognise')
+        items += data
+        if not page['hasMore']:
+            return items
+        if not data:
+            raise Uncertain(f'`conductor {" ".join(command[:2])}` reported more items but returned none')
+        offset += len(data)
+    raise Uncertain(f'`conductor {" ".join(command[:2])}` has more than {MAX_PAGES} pages')
 
 
 def archive_merged(repo, budget=TIDY_BUDGET):
     """Archive my convention-named workspaces for `repo` whose PR merged or closed and whose sessions are all idle.
 
-    Best-effort and quiet: returns (archived, notes) and never raises. Without the conductor CLI it does nothing.
-    It never archives the workspace it runs in or a workspace whose name is outside the convention.
+    Best-effort: returns (archived, notes) and never raises. Without the conductor CLI it does nothing. It keeps any
+    workspace whose name, repository, PR state or sessions it cannot establish exactly. A CLI failure or the time
+    budget stops the sweep with one note; the next command continues.
     """
     archived, notes = [], []
     deadline = time.monotonic() + budget
@@ -372,50 +451,60 @@ def archive_merged(repo, budget=TIDY_BUDGET):
     def left():
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise Refused(f'stopped after {budget}s; the next command continues')
+            raise Refused(f'stopped at the {budget}s limit; the next jfactory command continues')
         return remaining
 
     try:
         pattern, here = convention(repo), os.environ.get('CONDUCTOR_WORKSPACE_ID')
-        workspaces, offset = [], 0
-        while True:
-            page = run_json('conductor', 'workspace', 'list', '--mine', '--repo', f'github.com/{repo}',
-                            '--limit', '100', '--offset', str(offset), '--json', timeout=left()) or {}
-            workspaces += page.get('data') or []
-            if not page.get('hasMore'):
-                break
-            offset += 100
-        prs = {}
-        for workspace in workspaces:
-            name, wid = workspace.get('name') or '', workspace.get('id')
-            match = pattern.match(name)
-            if not match or not wid or wid == here or workspace.get('state') == 'archived' \
-                    or not same_repo(workspace.get('repoUrl'), repo):
+        try:
+            listed = pages('workspace', 'list', '--mine', '--repo', f'{gh_host()}/{repo}', timeout=left)
+        except Uncertain as error:
+            raise Refused(str(error))
+        candidates = []
+        for workspace in listed:
+            name = workspace.get('name')
+            match = pattern.fullmatch(name) if isinstance(name, str) else None
+            if match and workspace['id'] != here and workspace.get('state') != 'archived' \
+                    and same_repo(workspace.get('repoUrl'), repo):
+                candidates.append((workspace['id'], name, int(match.group(2))))
+        if not candidates:
+            return archived, notes
+        numbers = sorted({number for _, _, number in candidates})
+        states = {}
+        for start in range(0, len(numbers), 50):
+            states.update(pr_states(repo, numbers[start:start + 50], left()))
+        for wid, name, number in candidates:
+            state = states.get(number)
+            if state not in ('MERGED', 'CLOSED'):
+                if state is None:
+                    notes.append(f'{name} kept: PR #{number} was not found in {repo}')
                 continue
-            number = match.group(2)
             try:
-                if number not in prs:
-                    prs[number] = json.loads(gh(repo, 'pr', 'view', number, '--json', 'state', timeout=left()))['state']
-                if prs[number] not in ('MERGED', 'CLOSED'):
-                    continue
-                sessions = run_json('conductor', 'workspace', 'session', wid, '--limit', '100', '--json',
-                                    timeout=left()) or {}
-                working = [s['id'] for s in sessions.get('data') or []
-                           if run_json('conductor', 'session', 'status', s['id'], '--json', timeout=left())
-                           .get('status') in ('working', 'running')]
-                if working:
-                    notes.append(f'{name} kept: PR #{number} is {prs[number].lower()} but a session is still working')
-                    continue
-                run('conductor', 'workspace', 'archive', wid, timeout=left())
-                archived.append(f'archived workspace {name} (PR #{number} {prs[number].lower()})')
-            except Missing:
-                raise
-            except (Refused, ValueError, KeyError, TypeError, AttributeError) as error:
-                notes.append(f'{name} not archived: {error}')
-                if time.monotonic() >= deadline:
-                    break
-    except Missing:
-        return archived, notes
+                sessions = pages('workspace', 'session', wid, timeout=left)
+                statuses = {}
+                for session in sessions:
+                    try:
+                        reply = run_json('conductor', 'session', 'status', session['id'], '--json', timeout=left())
+                    except ValueError:
+                        reply = None
+                    statuses[session['id']] = reply.get('status') if isinstance(reply, dict) else None
+            except Uncertain as error:
+                notes.append(f'{name} kept: {error}')
+                continue
+            if any(status == 'working' for status in statuses.values()):
+                notes.append(f'{name} kept: PR #{number} is {state.lower()} but a session is still working')
+                continue
+            unknown = {sid: status for sid, status in statuses.items() if status != IDLE}
+            if unknown:
+                notes.append(f'{name} kept: PR #{number} is {state.lower()} but session status '
+                             f'{", ".join(f"{sid}={status!r}" for sid, status in unknown.items())} does not show idle')
+                continue
+            run('conductor', 'workspace', 'archive', wid, timeout=left())
+            archived.append(f'archived workspace {name} (PR #{number} {state.lower()})')
+    except Missing as error:
+        # No conductor CLI, as on a CI runner, means there is nothing to tidy. No gh is worth one line.
+        if str(error).startswith('gh '):
+            notes.append(f'finished workspaces not tidied: {error}')
     except Exception as error:  # noqa: BLE001 -- the sweep must never fail the command that runs it
         notes.append(f'finished workspaces not tidied: {error}')
     return archived, notes
@@ -440,18 +529,13 @@ def cmd_tidy(args):
 
 
 def conductor_project(repo):
-    """The Conductor project whose remote is this repository, or None."""
+    """The Conductor project whose remote is exactly this repository, or None."""
     try:
-        projects, offset = [], 0
-        while True:
-            page = run_json('conductor', 'project', 'list', '--limit', '100', '--offset', str(offset), '--json') or {}
-            projects += page.get('data') or []
-            if not page.get('hasMore'):
-                break
-            offset += 100
-    except (Refused, ValueError, AttributeError):
+        projects = pages('project', 'list', timeout=lambda: 30)
+    except (Refused, Uncertain, ValueError, AttributeError):
         return None
-    return next((p['id'] for p in projects if same_repo(p.get('gitRemote'), repo)), None)
+    matches = [p['id'] for p in projects if same_repo(p.get('gitRemote'), repo)]
+    return matches[0] if len(matches) == 1 else None
 
 
 def cmd_launch_pr(args):
@@ -480,7 +564,7 @@ def cmd_launch_pr(args):
     if not branch:
         branch = json.loads(gh(args.repo, 'pr', 'view', str(args.pr), '--json', 'headRefName'))['headRefName']
     project = args.project_id or conductor_project(args.repo)
-    where = ['--project-id', project] if project else ['--repo-url', f'https://github.com/{args.repo}']
+    where = ['--project-id', project] if project else ['--repo-url', f'https://{gh_host()}/{args.repo}']
     command = ['workspace', 'create', *where, '--branch', branch, '--name', name, '--session-name', name,
                '--agent', agent, '--model', model, '--effort', effort, *(['--fast-mode'] if fast else []),
                '--message-file', args.message_file, '--json']

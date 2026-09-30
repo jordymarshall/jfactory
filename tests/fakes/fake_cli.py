@@ -2,6 +2,7 @@
 """Minimal gh and conductor fakes for coord.py tests. State lives in $FAKE_STATE."""
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -66,13 +67,22 @@ if tool == 'conductor':
         done({'data': [s for s in db.get('sections', []) if s['id'] not in db.get('deleted_sections', [])],
               'offset': 0, 'hasMore': False})
     if args[:2] == ['workspace', 'session']:
-        done({'data': [{'id': args[2].replace('w', 's', 1)}] if args[2].startswith('w') else [], 'hasMore': False})
+        # `workspace_sessions` lists a workspace's session ids; otherwise workspace wN has the one session sN.
+        ids = db.get('workspace_sessions', {}).get(args[2])
+        if ids is None:
+            ids = [args[2].replace('w', 's', 1)] if args[2].startswith('w') else []
+        offset = int(opt('--offset', '0'))
+        limit = min(int(opt('--limit', '100')), db.get('page_size', 100))  # the server may cap a page
+        done({'data': [{'id': i} for i in ids[offset:offset + limit]], 'offset': offset,
+              'hasMore': offset + limit < len(ids)})
     if args[:2] == ['workspace', 'get']:
         done({'id': args[2], 'state': 'archived' if args[2] in db.get('archived', []) else 'ready'})
     if args[:2] == ['section', 'delete']:
         db.setdefault('deleted_sections', []).append(args[2])
         done({'section': {'id': args[2], 'workspaceIds': []}})
     if args[:2] == ['session', 'status']:
+        if args[2] in db.get('raw_status', {}):
+            done(db['raw_status'][args[2]])  # a reply exactly as given, such as '{}' or '{"status": null}'
         if db.get('sessions', {}).get(args[2]) == 'unavailable':
             path.write_text(json.dumps(db))
             sys.stderr.write('status unavailable')
@@ -88,6 +98,22 @@ if tool == 'git' and args[:1] == ['show']:
     done(json.dumps(db.get('config', {'static': ['**/*.md'], 'features': {'all': {'paths': ['**']}}})))
 if tool == 'git' and args[:2] == ['diff', '--name-only']:
     done('\n'.join(db.get('diff', [])))
+if tool == 'gh' and db.get('gh_fail') and (args[:2] in (['pr', 'view'], ['api', 'graphql'])):
+    path.write_text(json.dumps(db))
+    sys.stderr.write('HTTP 502: Bad Gateway')
+    sys.exit(1)
+if tool == 'gh' and args[:2] == ['api', 'graphql']:
+    # Mirrors GitHub: PRs it finds are answered, a missing number is null plus an error, and gh then exits 1.
+    query = next(a[len('query='):] for a in args if a.startswith('query='))
+    numbers = re.findall(r'p(\d+): pullRequest', query)
+    found = {f'p{n}': ({'state': db['prs'][n]['state']} if 'state' in db.get('prs', {}).get(n, {}) else None)
+             for n in numbers}
+    path.write_text(json.dumps(db))
+    reply = {'data': {'repository': found}}
+    if None in found.values():
+        reply['errors'] = [{'type': 'NOT_FOUND'}]
+    sys.stdout.write(json.dumps(reply))
+    sys.exit(1 if 'errors' in reply else 0)
 if tool == 'gh' and args[:1] == ['api'] and args[1].endswith('/files'):
     number = args[1].split('/')[-2]
     done('\n'.join(db['prs'][number].get('files', ['src/x.py'])))

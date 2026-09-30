@@ -1264,12 +1264,12 @@ def cmd_verdict(args):
     tidy_after_verdict(args.repo)
 
 
-def tidy_after_verdict(repo, budget=20):
-    """Archive finished jfactory PR workspaces (coord.archive_merged). The verdict is already posted, so this is
-    time-boxed and can neither fail nor block it."""
+def tidy_after_verdict(repo):
+    """Archive finished jfactory PR workspaces (coord.archive_merged). The verdict is already posted, so this runs
+    within coord.TIDY_BUDGET seconds and can neither fail nor undo it."""
     try:
         import coord
-        coord.sweep(repo, budget)
+        coord.sweep(repo)
     except Exception as error:  # noqa: BLE001
         print(f'Check: finished workspaces not tidied: {error}')
 

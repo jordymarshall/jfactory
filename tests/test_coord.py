@@ -580,5 +580,96 @@ class CoordTest(unittest.TestCase):
         self.assertIn('either', self.coord('launch', '1', 'a', '--role', 'verify', '--pr', '7', ok=False))
         self.assertEqual(len(self.db()['workspaces']), 2)
 
+    # Negative controls from the failed verdict on #37 at 738a135: each case must keep the workspace.
+
+    def test_a_working_session_on_a_later_page_keeps_the_workspace(self):
+        # The server returns two sessions per page here, so the working one is on page two.
+        many = ['s-many-0', 's-many-1', 's-many-2']
+        idle = ['s-idle-0', 's-idle-1', 's-idle-2']
+        self.set_db(prs={'7': {'state': 'MERGED'}, '8': {'state': 'MERGED'}}, page_size=2,
+                    listed=[self.pr_workspace('w-many', 'verify-r-7'), self.pr_workspace('w-idle', 'verify-r-8')],
+                    workspace_sessions={'w-many': many, 'w-idle': idle},
+                    sessions={**{sid: 'idle' for sid in many + idle}, 's-many-2': 'working'})
+        out = self.coord('tidy')
+        self.assertEqual(self.db().get('archived'), ['w-idle'])
+        self.assertIn('verify-r-7 kept: PR #7 is merged but a session is still working', out)
+        offsets = [c[c.index('--offset') + 1] for c in self.db()['calls'] if c[1:3] == ['workspace', 'session']]
+        self.assertEqual(offsets, ['0', '2', '0', '2'])
+
+    def test_repository_identity_is_exact_host_owner_and_name(self):
+        wrong = ['https://gitlab.com/o/r', 'https://gitlab.com/github.com/o/r', 'https://github.com/x/o/r',
+                 'https://github.com.evil.test/o/r', 'https://github.com/o/r/extra', 'git@gitlab.com:o/r.git',
+                 'https://github.com/o/r-other', 'https://github.com/o', None]
+        right = ['git@github.com:o/r.git', 'ssh://git@github.com/o/r', 'https://github.com/O/R/']
+        listed = [self.pr_workspace(f'w-wrong-{i}', 'verify-r-7', url) for i, url in enumerate(wrong)]
+        listed += [self.pr_workspace(f'w-right-{i}', 'verify-r-7', url) for i, url in enumerate(right)]
+        self.set_db(prs={'7': {'state': 'MERGED'}}, listed=listed,
+                    sessions={f"s-{w['id'][2:]}": 'idle' for w in listed})
+        self.coord('tidy')
+        self.assertEqual(self.db()['archived'], ['w-right-0', 'w-right-1', 'w-right-2'])
+        # Project selection uses the same identity: a GitLab project listed first must not be chosen.
+        message = self.tmp / 'm.md'
+        message.write_text('Fix PR 7.')
+        self.set_db(projects=[{'id': 'p-gitlab', 'gitRemote': 'https://gitlab.com/o/r'},
+                              {'id': 'p-nested', 'gitRemote': 'https://gitlab.com/github.com/o/r'},
+                              {'id': 'p-r', 'gitRemote': 'git@github.com:o/r.git'}])
+        self.coord('launch', '--role', 'fix', '--pr', '7', '--branch', 'b', '--message-file', str(message))
+        self.assertEqual(self.db()['workspaces'][-1]['project'], 'p-r')
+
+    def test_only_an_idle_session_status_lets_a_workspace_go(self):
+        replies = {'s-empty': '{}', 's-null': '{"status": null}', 's-unknown': '{"status": "unknown"}',
+                   's-list': '[]', 's-text': 'not json'}
+        listed = [self.pr_workspace(f'w-{kind[2:]}', f'verify-r-{n}') for n, kind in enumerate(replies, 7)]
+        listed.append(self.pr_workspace('w-idle', 'verify-r-20'))
+        self.set_db(prs={str(n): {'state': 'MERGED'} for n in range(7, 21)}, listed=listed, raw_status=replies,
+                    sessions={'s-idle': 'idle'})
+        out = self.coord('tidy')
+        self.assertEqual(self.db()['archived'], ['w-idle'])
+        for n, status in ((7, '{}'), (8, 'None'), (9, "'unknown'")):
+            self.assertIn(f'verify-r-{n} kept', out)
+        self.assertIn("s-unknown='unknown' does not show idle", out)
+        # A malformed session list keeps the workspace too.
+        self.set_db(listed=[self.pr_workspace('w-bad', 'verify-r-7')], workspace_sessions={'w-bad': [None]})
+        self.assertIn('verify-r-7 kept', self.coord('tidy'))
+        self.assertNotIn('w-bad', self.db()['archived'])
+
+    def test_names_must_match_the_convention_exactly(self):
+        near = ['verify-r-7\n', 'verify-r-7 ', ' verify-r-7', 'Verify-r-7', 'verify-r-07', 'verify-r-7-old',
+                'verify-r-7\r', 'verify-r-', 'verify-r-7.']
+        listed = [self.pr_workspace(f'w-near-{i}', name) for i, name in enumerate(near)]
+        listed.append(self.pr_workspace('w-exact', 'verify-r-7'))
+        listed.append(self.pr_workspace('w-case', 'fix-R-7'))  # repository names are case-insensitive on GitHub
+        self.set_db(prs={'7': {'state': 'MERGED'}}, listed=listed,
+                    sessions={f"s-{w['id'][2:]}": 'idle' for w in listed})
+        self.coord('tidy')
+        self.assertEqual(self.db()['archived'], ['w-exact', 'w-case'])
+
+    def test_a_slow_conductor_cannot_hold_up_a_verdict(self):
+        self.start(['a', '--objective', 'x'])
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.coord('sync', '1')
+        self.set_db(conductor_sleep=25)
+        started = time.monotonic()
+        out = self.coord('verdict', '1', 'a', '--head', 'aaa1111', '--verdict', 'verified', '--scopes', 'unit',
+                         '--evidence', 'https://evidence', '--verifier', 'codex/gpt-6.1-sol')
+        elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 12, out)
+        self.assertIn('Posted verified verdict', out)
+        self.assertIn('finished workspaces not tidied', out)
+
+    def test_a_github_failure_is_reported_once_not_per_workspace(self):
+        listed = [self.pr_workspace(f'w-{n}', f'verify-r-{n}') for n in range(1, 13)]
+        self.set_db(prs={str(n): {'state': 'MERGED'} for n in range(1, 13)}, listed=listed, gh_fail=True,
+                    sessions={f's-{n}': 'idle' for n in range(1, 13)})
+        lines = [line for line in self.coord('tidy').splitlines() if 'verify-r-' in line or 'finished workspaces' in line]
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn('HTTP 502', lines[0])
+        self.assertNotIn('archived', self.db())
+        self.env['JFACTORY_GH'] = str(self.tmp / 'no-such-gh')
+        lines = [line for line in self.coord('tidy').splitlines() if 'finished workspaces' in line]
+        self.assertEqual(lines, ['Check: finished workspaces not tidied: gh is not installed or not on PATH'])
+
 if __name__ == '__main__':
     unittest.main()

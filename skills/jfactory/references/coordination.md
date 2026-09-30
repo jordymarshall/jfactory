@@ -163,10 +163,17 @@ Finished workspaces are archived as soon as their unit finishes, not at program 
 
 Conductor records no branch or PR on a workspace and has no archive-on-merge, so jfactory names every workspace it launches for a PR `<role>-<repo name>-<PR number>` (role `verify`, `build` or `fix`) with `coord.py launch --role <role> --pr <number>`. The name is how a later command finds the PR.
 
-jfactory-launched workspaces are archived automatically, the next time any of `sync`, `verdict` (in `coord.py` or `verify_plan.py`), `merge`, `close` or `tidy` runs after their PR merges or closes. Each of these lists your own (`--mine`) workspaces for the repository and archives each whose name follows the convention for that repository, whose PR is merged or closed, and none of whose sessions is still working. It reports what it archived and which finished workspaces it kept because a session is still working; a later run archives those. Nobody has to remember to do it.
+jfactory-launched workspaces are archived automatically, the next time any of `sync`, `verdict` (in `coord.py` or `verify_plan.py`), `merge`, `close` or `tidy` runs after their PR merges or closes. Nobody has to remember to do it. Each of these lists your own (`--mine`) workspaces and archives one only when all of these hold:
 
-- **The owner's workspaces are never touched.** A name outside the convention is never archived, nor is another repository's workspace, another person's, or the workspace the command runs in.
-- **It cannot break the command.** The sweep is best-effort and time-boxed. Without the `conductor` CLI, such as on a CI runner, it does nothing; when Conductor fails, it prints one `Check:` line and the command carries on. A verdict is posted before the sweep starts.
+- its whole name is exactly `<role>-<repo name>-<PR number>`: a lowercase role of `verify`, `build` or `fix`, the repository's name (in any letter case, as GitHub treats it), and a PR number without leading zeros. Nothing may come before or after it, not even a space or a newline;
+- its repository URL, as an HTTPS, SSH or `git@host:owner/name` remote, is exactly this repository on GitHub: same host, owner and name, with nothing extra in the path;
+- GitHub reports that PR as merged or closed;
+- every session in it, read across every page of Conductor's session list, reports `idle`, the only status Conductor gives a stopped session. A session that is `working`, or whose status is missing or unrecognised, keeps the workspace; so does a session list jfactory cannot read completely;
+- it is not the workspace the command runs in.
+
+It reports what it archived and each finished workspace it kept, with the reason; a later run archives those once they are idle. Anything else is left alone, so the owner's workspaces, other people's and other repositories' are never touched.
+
+- **It cannot break or hold up the command.** Every call site gives the sweep the same 5-second budget. At the limit it stops and prints one line, and the next command continues where it left off. A verdict is posted before the sweep starts, so the sweep adds at most a few seconds to it. Without the `conductor` CLI, such as on a CI runner, it does nothing. Without `gh`, or when `gh` or Conductor fails, it prints one `Check:` line for the whole sweep, not one per workspace, and the command carries on.
 - **Archiving is reversible.** Conductor's CLI archives workspaces; it does not delete them. Archived workspaces stay listed under `conductor workspace list --include-archived`.
 
 Archive by hand only a workspace launched outside the convention, such as a usage probe or one created directly with `conductor workspace create`: `conductor workspace archive <workspace id>`, once its work is finished. Archive only workspaces you created for this work. Leave the owner's own workspaces and other coordinators' workspaces alone, even when they look idle.
