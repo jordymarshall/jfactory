@@ -155,6 +155,11 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(verify_plan.recommend_full_suite({'suites': e2e, 'targets': seeded, 'shards': 4}),
                          ('nightly', 'the whole suite takes about 40 min (10 min across 4 jobs), affordable once a day '
                                      'with no one waiting on it'))
+        # An unmeasured suite makes the cost unknown, so the advice stays conservative instead of "cheap".
+        untimed = {'unit': {'run': 'true', 'minutes': 1}, 'e2e': {'run': 'true', 'target': 'app'}}
+        advice = verify_plan.recommend_full_suite({'suites': untimed, 'targets': seeded})
+        self.assertEqual(advice[0], 'on-request')
+        self.assertIn('e2e have no measured minutes', advice[1])
         # A shared account makes any long whole-suite run block the others, whatever its length.
         shared = {'app': {'url': 'http://x', 'ready': 'http://x', 'auth': 'none'}}
         self.assertEqual(advise(12, targets=shared)[0], 'on-request')
@@ -517,6 +522,15 @@ class RunTest(unittest.TestCase):
         self.assertEqual(self.run_script('full-suite', '--event', 'pull_request', '--labels', 'bug').strip(), 'mode=planned')
         self.assertEqual(self.run_script('full-suite', '--event', 'pull_request', '--labels', 'bug,full-suite').strip(),
                          'mode=full')
+        # JSON keeps label names exact: a label containing a comma is one label.
+        self.assertEqual(self.run_script('full-suite', '--event', 'pull_request',
+                                         '--labels-json', '["bug,full-suite"]').strip(), 'mode=planned')
+        self.write_config(full_suite='on-request', full_suite_label='release,full')
+        self.assertEqual(self.run_script('full-suite', '--event', 'pull_request',
+                                         '--labels-json', '["release,full"]').strip(), 'mode=full')
+        self.assertEqual(self.run_script('full-suite', '--event', 'push', '--labels-json', 'null').strip(), 'mode=skip')
+        self.assertIn('JSON array', self.run_script('full-suite', '--event', 'pull_request', '--labels-json', '{"a": 1}',
+                                                    code=2))
 
     def test_ci_runs_only_the_changed_features_suites(self):
         self.change('cli/run.py')

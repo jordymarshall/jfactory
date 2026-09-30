@@ -86,8 +86,12 @@ def recommend_full_suite(config):
     """The `full_suite` choice jfactory suggests from the map, with the reason: how long the whole suite takes,
     whether journeys share one account's data, and how many parallel jobs split it."""
     defs, targets = config.get('suites', {}), config.get('targets', {})
-    whole = cost(set(defs), config)[0]
+    whole, untimed = cost(set(defs), config)
     wall = max((cost(b, config)[0] for b in binpack(set(defs), config, shard_count(config))), default=0)
+    if untimed:
+        return 'on-request', (f'suite(s) {", ".join(untimed)} have no measured minutes, so the whole suite\'s cost is '
+                              'unknown; time them (`ci --suites <name>`) and ask again. Until then, run it only on '
+                              'request')
     shared = sorted(name for name, t in targets.items() if any(d.get('target') == name for d in defs.values())
                     and (placeholder(t.get('seed')) or placeholder(t.get('cleanup'))))
     timing = f'the whole suite takes about {whole} min' + (f' ({wall} min across {shard_count(config)} jobs)'
@@ -851,7 +855,16 @@ def cmd_audit(args):
 
 
 def cmd_full_suite(args):
-    mode = full_suite_mode(load_config(args.config_ref), args.event, args.labels)
+    labels = args.labels
+    if args.labels_json is not None:
+        try:
+            parsed = json.loads(args.labels_json or 'null')
+        except ValueError:
+            raise Refused('--labels-json must be a JSON array of label names')
+        if parsed is not None and not (isinstance(parsed, list) and all(isinstance(x, str) for x in parsed)):
+            raise Refused('--labels-json must be a JSON array of label names')
+        labels = parsed or []
+    mode = full_suite_mode(load_config(args.config_ref), args.event, labels)
     print(f'mode={mode}')
     return 0
 
@@ -1064,6 +1077,7 @@ def main(argv=None):
     p = sub.add_parser('full-suite', help='Print mode=full|planned|skip for a CI run under the owner\'s full_suite choice')
     p.add_argument('--event', required=True, help='The GitHub event: pull_request, push, schedule or workflow_dispatch')
     p.add_argument('--labels', type=listing, default=[], help='Comma-separated PR labels')
+    p.add_argument('--labels-json', help='PR labels as a JSON array, which keeps names that contain commas')
     p.set_defaults(func=cmd_full_suite)
     p = sub.add_parser('ci', help='Run the suites this change needs, after checking the map')
     p.add_argument('--base', default='origin/main')

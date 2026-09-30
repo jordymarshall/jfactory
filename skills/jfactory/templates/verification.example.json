@@ -52,7 +52,7 @@
     },
     "build-and-dependencies": {
       "paths": ["package.json", "package-lock.json", "app/next.config.*", "app/tsconfig.json", "app/e2e/smoke.spec.ts", "app/playwright.config.ts"],
-      "recipe": "Build, run the unit suite and the smoke journey; the nightly run covers every journey",
+      "recipe": "Build, run the unit suite and the smoke journey; journeys the change does not select run only in a whole-suite run (full_suite)",
       "suites": ["unit", "smoke"],
       "verify": "independent"
     },
