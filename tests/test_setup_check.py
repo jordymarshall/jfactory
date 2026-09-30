@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'skills' / 'jfactory' / 'scripts' / 'setup_check.py'
 sys.path.insert(0, str(SCRIPT.parent))
+import setup_check  # noqa: E402
 import verify_plan  # noqa: E402
 TEMPLATE = ROOT / 'skills' / 'jfactory' / 'templates' / 'setup-record.md'
 WORKFLOW = ROOT / 'skills' / 'jfactory' / 'templates' / 'jfactory-verified.yml'
@@ -138,6 +139,43 @@ class SetupCheckTest(unittest.TestCase):
         self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
         audit.unlink()
         self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
+
+    def test_only_an_executed_audit_command_counts(self):
+        head = "on:\n  schedule:\n    - cron: '0 7 * * 1'\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n"
+        script = '.agents/skills/jfactory/scripts/method_audit.py --repo o/r'
+        runs = {
+            # Operators inside comments or quoted text start no command.
+            f'      - run: |\n          # prepare; python3 {script}\n          echo no-audit\n': False,
+            f"      - run: echo 'To audit; python3 {script}'\n": False,
+            f'      - run: echo "a && python3 {script}"\n': False,
+            f'      - run: echo python3 {script}\n': False,
+            f"      - run: echo ';' python3 {script}\n": False,
+            f"      - run: |\n          echo 'Example:\n          python3 {script}\n          '\n": False,
+            f'      - run: |\n          cat <<EOF\n          python3 {script}\n          EOF\n': False,
+            f"      - run: |\n          echo 'unclosed\n          python3 {script}\n": False,
+            f'      - run: echo a\\;python3 {script}\n': False,
+            # A here-document ends only at a line that is exactly its delimiter (<<- strips leading tabs only).
+            f'      - run: |\n          cat <<EOF\n           EOF\n          python3 {script}\n          EOF\n': False,
+            f'      - run: |\n          cat <<EOF\n          EOF \n          python3 {script}\n          EOF\n': False,
+            f'      - run: |\n          cat <<-EOF\n           EOF\n          python3 {script}\n          EOF\n': False,
+            f'      - run: |\n          cat <<EOF\n          text\n          EOF\n          python3 {script}\n': True,
+            f'      - run: |\n          cat <<-EOF\n          text\n          \t\tEOF\n          python3 {script}\n': True,
+            # Real invocations, however they are written.
+            f'      - run: python3 {script}\n': True,
+            f"      - run: 'python3 {script}'\n": True,
+            f'      - run: "python3 {script}"\n': True,
+            f'      - run: |\n          set -e\n          cd x && GH_TOKEN=t python3 -u {script} # weekly\n': True,
+            f'      - run: >-\n          python3\n          {script}\n': True,
+            f'      - run: |\n          python3 \\\n            {script}\n': True,
+        }
+        for run, expected in runs.items():
+            self.assertEqual(setup_check.runs_method_audit(head + run), expected, run)
+        # End to end: a false closing delimiter cannot make setup report an executing audit.
+        audit = self.root / '.github' / 'workflows' / 'jfactory-method-audit.yml'
+        for false_end in (' EOF', 'EOF '):
+            audit.write_text(head + f'      - run: |\n          cat <<EOF\n          {false_end}\n          python3 {script}\n'
+                                    '          EOF\n')
+            self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
 
     def test_complete_setup_passes_with_remote_protection(self):
         out = self.check('--remote', '--repo', 'o/r')
