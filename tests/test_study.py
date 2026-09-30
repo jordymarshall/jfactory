@@ -1,6 +1,8 @@
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from threading import Thread
@@ -94,6 +96,82 @@ class StudyTests(unittest.TestCase):
         (self.folder / 'artifacts' / 'steps').symlink_to(self.folder / 'moved')
         with self.assertRaisesRegex(ValueError, 'must not be symlinks'):
             study.step(self.folder, ['click', 'x'], self.fake_browser([]))
+
+    def test_step_never_writes_through_a_planted_capture_link(self):
+        sentinel = self.root / 'outside.txt'
+        sentinel.write_text('keep me')
+        (self.folder / 'artifacts' / 'steps').mkdir()
+        leaf = self.folder / 'artifacts/steps/001.png'
+        leaf.symlink_to(sentinel)
+        calls = []
+        with self.assertRaisesRegex(ValueError, 'not a link'):
+            study.step(self.folder, ['open', 'https://example.com'], self.fake_browser(calls))
+        self.assertEqual(calls, [])
+        self.assertFalse((self.folder / 'steps.json').exists())
+        leaf.unlink()
+        leaf.mkdir()
+        with self.assertRaisesRegex(ValueError, 'not a link'):
+            study.step(self.folder, ['open', 'https://example.com'], self.fake_browser(calls))
+        self.assertEqual(calls, [])
+        leaf.rmdir()
+        # A link planted while the action runs is replaced, not written through.
+        capture = self.fake_browser(calls)
+
+        def plant(folder, args):
+            if args[0] == 'click':
+                leaf.symlink_to(sentinel)
+            return capture(folder, args)
+        study.step(self.folder, ['click', 'Open item'], plant)
+        self.assertEqual(sentinel.read_text(), 'keep me')
+        self.assertFalse(leaf.is_symlink())
+        self.assertEqual(leaf.read_bytes(), b'png')
+        self.assertEqual(sorted(p.name for p in leaf.parent.iterdir()), ['001.png'])
+
+    def test_trail_refuses_redirected_capture_directories(self):
+        study.step(self.folder, ['open', 'https://example.com'], self.fake_browser([]))
+        study.note(self.folder, 1, 'seen')
+        study.walkthrough(self.folder)
+        for moved in ('artifacts/steps', 'artifacts'):
+            with self.subTest(moved=moved):
+                outside = self.root / ('outside-' + moved.replace('/', '-'))
+                (self.folder / moved).rename(outside)
+                (self.folder / moved).symlink_to(outside, target_is_directory=True)
+                with self.assertRaisesRegex(ValueError, 'must not be symlinks'):
+                    study.walkthrough(self.folder)
+                (self.folder / moved).unlink()
+                outside.rename(self.folder / moved)
+        # A path that passes through a link below the study is refused too.
+        (self.folder / 'artifacts/steps/sub').symlink_to(self.root, target_is_directory=True)
+        (self.root / '001.png').write_bytes(b'png')
+        steps = json.loads((self.folder / 'steps.json').read_text())
+        steps[0]['screenshot'] = 'artifacts/steps/sub/001.png'
+        study.write_json(self.folder / 'steps.json', steps)
+        with self.assertRaisesRegex(ValueError, 'Step\\(s\\) 1 have no screenshot'):
+            study.walkthrough(self.folder)
+
+    def test_serve_prints_the_page_the_study_has(self):
+        self.assertEqual(study.review_urls(self.folder, 8000), ['http://127.0.0.1:8000/walkthrough.html'])
+        study.step(self.folder, ['open', 'https://example.com'], self.fake_browser([]))
+        self.assertEqual(study.review_urls(self.folder, 8000), ['http://127.0.0.1:8000/steps.html'])
+        study.note(self.folder, 1, 'seen')
+        study.walkthrough(self.folder)
+        process = subprocess.Popen([sys.executable, str(SCRIPT), 'serve', str(self.folder)],
+                                   stdout=subprocess.PIPE, text=True)
+        try:
+            url = process.stdout.readline().strip()
+            self.assertTrue(url.endswith('/steps.html'), url)
+            with urlopen(url) as response:
+                self.assertEqual(response.status, 200)
+        finally:
+            process.terminate()
+            process.wait()
+            process.stdout.close()
+        self.report()
+        study.render(self.folder)
+        self.assertEqual(study.review_urls(self.folder, 8000),
+                         ['http://127.0.0.1:8000/steps.html', 'http://127.0.0.1:8000/walkthrough.html'])
+        (self.folder / 'steps.html').unlink()
+        self.assertEqual(study.review_urls(self.folder, 8000), ['http://127.0.0.1:8000/walkthrough.html'])
 
     def test_private_distinct_sessions_and_no_overwrite(self):
         second = study.init(self.root, 'other', 'https://example.com', 'Other study')

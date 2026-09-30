@@ -105,6 +105,13 @@ def browser(folder, args):
     return subprocess.run(command, cwd=folder, env=cli_environment(folder)).returncode
 
 
+def capture_directory(folder):
+    for directory in (folder / 'artifacts', folder / 'artifacts' / 'steps'):
+        if directory.is_symlink():
+            raise ValueError('Study capture directories must not be symlinks')
+    return folder / 'artifacts' / 'steps'
+
+
 def step(folder, args, run=None):
     """Perform one browser action, then capture what the user now sees. Every action gets a screenshot, so a
     walkthrough can't skip the moments between the states someone chose to capture."""
@@ -115,16 +122,21 @@ def step(folder, args, run=None):
     log_path = folder / 'steps.json'
     steps = json.loads(log_path.read_text()) if log_path.exists() else []
     number = len(steps) + 1
-    for directory in (folder / 'artifacts', folder / 'artifacts' / 'steps'):
-        if directory.is_symlink():
-            raise ValueError('Study capture directories must not be symlinks')
-    (folder / 'artifacts' / 'steps').mkdir(mode=0o700, exist_ok=True)
+    capture_directory(folder).mkdir(mode=0o700, exist_ok=True)
     shot = f'artifacts/steps/{number:03d}.png'
+    if (folder / shot).is_symlink() or ((folder / shot).exists() and not (folder / shot).is_file()):
+        raise ValueError(f'{shot} must be absent or a regular file, not a link or directory')
     started = datetime.now(timezone.utc)
     code = run(folder, list(args))
     seconds = round((datetime.now(timezone.utc) - started).total_seconds(), 2)
-    captured = run(folder, ['screenshot', f'--filename={shot}'])
-    ok = not captured and (folder / shot).is_file() and not (folder / shot).is_symlink()
+    # Capture to a fresh name, then rename over the leaf, so nothing is written through a planted link.
+    fresh = folder / f'artifacts/steps/{number:03d}-{uuid.uuid4().hex}.png'
+    captured = run(folder, ['screenshot', f'--filename={fresh.relative_to(folder)}'])
+    ok = not captured and fresh.is_file() and not fresh.is_symlink()
+    if ok:
+        os.replace(fresh, folder / shot)
+    elif fresh.is_symlink() or fresh.is_file():
+        fresh.unlink()
     # Record the action either way: it happened, and the trail must not hide it.
     steps.append({'step': number, 'action': ' '.join(args), 'exit': code, 'seconds': seconds,
                   'at': started.isoformat(), 'screenshot': shot if ok else None, 'note': ''})
@@ -155,11 +167,14 @@ def walkthrough(folder):
     steps = json.loads((folder / 'steps.json').read_text()) if (folder / 'steps.json').exists() else []
     if not steps:
         raise ValueError('No steps recorded; drive the journey with `study.py step`')
-    shots = (folder / 'artifacts' / 'steps').resolve()
+    shots = capture_directory(folder)
     missing = []
     for s in steps:
-        path = (folder / s['screenshot']).resolve() if s.get('screenshot') else None
-        if not path or not path.is_relative_to(shots) or not path.is_file() or (folder / s['screenshot']).is_symlink():
+        path, linked = folder, False
+        for part in Path(s.get('screenshot') or '').parts:
+            path = path / part
+            linked = linked or path.is_symlink()
+        if not s.get('screenshot') or linked or not path.resolve().is_relative_to(shots) or not path.is_file():
             missing.append(str(s['step']))
     if missing:
         raise ValueError('Step(s) ' + ', '.join(missing) + ' have no screenshot inside artifacts/steps; walk the journey '
@@ -337,6 +352,14 @@ def review_server(folder, port=0):
     return ThreadingHTTPServer(('127.0.0.1', port), ReviewHandler)
 
 
+def review_urls(folder, port):
+    folder = Path(folder).resolve()
+    base = f'http://127.0.0.1:{port}/'
+    report = (folder / 'walkthrough.html').exists()
+    trail = (folder / 'steps.html').exists() or ((folder / 'steps.json').exists() and not report)
+    return [base + 'steps.html'] * trail + [base + 'walkthrough.html'] * (report or not trail)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
@@ -388,7 +411,7 @@ def main():
             return browser(args.study, ['show', f'--port={args.port}', f'--host={args.host}'])
         elif args.command == 'serve':
             with review_server(args.study, args.port) as server:
-                print(f'http://127.0.0.1:{server.server_port}/walkthrough.html', flush=True)
+                print('\n'.join(review_urls(args.study, server.server_port)), flush=True)
                 try:
                     server.serve_forever()
                 except KeyboardInterrupt:
