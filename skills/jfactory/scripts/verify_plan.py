@@ -32,6 +32,42 @@ GATE_PATHS = ['.jfactory/**', '.github/workflows/**', '.github/rulesets/**']
 TRUSTED = {'OWNER', 'MEMBER', 'COLLABORATOR'}
 # Each feature declares how much proof its changes need. Unknown values fall back to the strictest level.
 LEVELS = ('independent', 'ci')
+# Everything inside a test folder counts, fixtures and helpers included: an extra review costs less than a gap.
+# Prose the map marks static inside such a folder is the one exception (see `static_allowed`).
+TEST_FOLDERS = ['**/e2e/**', '**/tests/**', '**/test/**', '**/__tests__/**', '**/spec/**', '**/cypress/**',
+                '**/testdata/**']
+# Files named as tests or test configuration are tests wherever they live, whatever their extension.
+TEST_FILES = ['**/*.test.*', '**/*.spec.*', '**/*.cy.*', '**/*_test.*', '**/*_spec.rb', '**/test_*.py',
+              '**/conftest.py', '**/pytest.ini', '**/.rspec', '**/playwright.config.*', '**/vitest.config.*',
+              '**/jest.config.*', '**/cypress.config.*', '**/karma.conf.*', '**/.mocharc.js', '**/.mocharc.cjs',
+              '**/.mocharc.mjs', '**/.mocharc.json', '**/.mocharc.jsonc', '**/.mocharc.yml', '**/.mocharc.yaml']
+# Files that decide what agents do and what the checks prove. A change to one always needs the independent
+# verifier, whatever its feature's level: a PR must not be able to weaken a test or an instruction with only
+# those same tests watching.
+ALWAYS_REVIEW = {
+    'agent instructions': ['**/AGENTS.md', '**/CLAUDE.md', '**/GEMINI.md', '**/SKILL.md', 'skills/**/*.md',
+                           '**/.agents/**', '**/.claude/**', '**/.cursor/**', '**/.codex/**', '**/.cursorrules',
+                           '**/.windsurfrules', '**/.clinerules', '**/.clinerules/**', '**/.github/copilot-instructions.md'],
+    'tests': TEST_FOLDERS + TEST_FILES,
+}
+
+
+def review_reason(path):
+    """Why a changed file always needs the independent verifier, or None."""
+    return next((kind for kind, patterns in ALWAYS_REVIEW.items() if matches(path, patterns)), None)
+
+
+def static_allowed(path, reason):
+    """Agent instructions and test files are never static. The map may mark prose that is only inside a test
+    folder static, such as docs/spec/architecture.md, but not a file named as a test (flow.test.txt)."""
+    return reason is None or (reason == 'tests' and not matches(path, TEST_FILES)
+                              and path.lower().endswith(('.md', '.mdx', '.txt', '.rst', '.adoc')))
+
+
+def has_screens(feature, config):
+    """A feature users see: one with a journey suite against a running app, or marked `"screens": true`."""
+    defs = config.get('suites', {})
+    return feature.get('screens') is True or any(defs.get(s, {}).get('target') for s in feature.get('suites', []))
 
 
 class Refused(Exception):
@@ -89,15 +125,19 @@ def load_config(ref=None, root=None):
 
 def plan(files, config, impact=None):
     """Plan a change. `impact` maps suites to the files they executed (from `load_impact`); it only adds suites."""
-    features, static, unmapped, gate = set(), [], [], []
+    features, static, unmapped, gate, reviewed = set(), [], [], [], {}
     for path in files:
         if matches(path, GATE_PATHS):
             gate.append(path)
             continue
         hit = {fid for fid, f in config.get('features', {}).items() if matches(path, f['paths'])}
+        reason = review_reason(path)
         if hit:
             features |= hit
-        elif matches(path, config.get('static', [])):
+            if reason:
+                for fid in hit:
+                    reviewed.setdefault(fid, reason)
+        elif matches(path, config.get('static', [])) and static_allowed(path, reason):
             static.append(path)
         else:
             unmapped.append(path)
@@ -124,9 +164,14 @@ def plan(files, config, impact=None):
             if hits and suite not in suites:
                 because[suite] = hits
                 suites.add(suite)
-    # A change needs an independent verdict unless every affected feature is low risk (`ci`).
+    # A change needs an independent verdict unless every affected feature is low risk (`ci`). Screens users see,
+    # tests and agent instructions always need one, whatever the map says.
     # Unmapped files and gate changes are `full`, which always needs one.
-    independent = sorted(f for f in features if all_features[f].get('verify', 'independent') != 'ci')
+    for fid in features:
+        if fid not in reviewed and has_screens(all_features[fid], config):
+            reviewed[fid] = 'screens users see'
+    independent = sorted(f for f in features if all_features[f].get('verify', 'independent') != 'ci' or f in reviewed)
+    overridden = {f: reviewed[f] for f in sorted(features) if f in reviewed and all_features[f].get('verify') == 'ci'}
     if full or independent:
         level = 'independent'
     elif features:
@@ -138,7 +183,7 @@ def plan(files, config, impact=None):
     shards = shard_count(config)
     return {'files': len(files), 'features': sorted(features), 'unmapped': unmapped, 'gate': gate, 'full': full,
             'static_only': static_only, 'suites': sorted(suites), 'level': level,
-            'independent_features': independent,
+            'independent_features': independent, 'overridden': overridden,
             'needs_verifier': needs, 'minutes': minutes, 'untimed_suites': untimed,
             'budget_minutes': config.get('pr_budget_minutes'), 'impact': because, 'shards': shards,
             'wall_minutes': max((cost(b, config)[0] for b in binpack(suites, config, shards)), default=0),
@@ -256,6 +301,9 @@ def render_plan(result):
     for fid in result['features']:
         recipe = result['recipes'].get(fid)
         lines.append(f"- `{fid}`" + (f": {recipe}" if recipe else ''))
+    if result['overridden']:
+        lines += ['', 'Marked `ci` but reviewed anyway: ' + ', '.join(
+            f'`{fid}` ({why})' for fid, why in result['overridden'].items())]
     if result['unmapped']:
         lines += ['', 'Unmapped: ' + ', '.join(f'`{p}`' for p in result['unmapped'][:20])]
     if result['gate']:
@@ -291,6 +339,21 @@ def audit(files, config):
                               'paths or to static (references/mapping.md)'))
     else:
         items.append(('PASS', f'Every tracked file maps to a feature, the gate or static ({len(features)} features)'))
+    unstatic = [p for p in unmapped if matches(p, config.get('static', []))]
+    if unstatic:
+        items.append(('FAIL', f'Static patterns cover tests or agent instructions, which always need review: '
+                              f'{", ".join(unstatic[:8])}. Map them to the feature they check or steer'))
+    for fid, f in features.items():
+        if f.get('verify') != 'ci':
+            continue
+        if has_screens(f, config):
+            items.append(('WARN', f'Feature {fid} is marked ci but has screens users see, so every change to it gets '
+                                  'the independent verifier anyway. Set "verify": "independent"'))
+            continue
+        kinds = sorted({review_reason(p) for p in files if matches(p, f['paths']) and review_reason(p)})
+        if kinds:
+            items.append(('WARN', f'Feature {fid} is marked ci, but changes to its {" and ".join(kinds)} always get '
+                                  'the independent verifier'))
     empty = [fid for fid, f in features.items() if not any(matches(p, f['paths']) for p in files)]
     if empty:
         items.append(('FAIL', f'Feature(s) {", ".join(empty)} match no tracked file; the code moved or was removed. '

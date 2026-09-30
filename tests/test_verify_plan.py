@@ -21,7 +21,7 @@ CONFIG = {
         'briefs': {'paths': ['app/briefs/**'], 'recipe': 'verify/briefs.md', 'suites': ['browser']},
         'auth': {'paths': ['app/auth.ts'], 'suites': ['browser']},
         'cli': {'paths': ['cli/**'], 'suites': ['cli']},
-        'tests': {'paths': ['tests/**'], 'suites': ['unit'], 'verify': 'ci'},
+        'lint': {'paths': ['lint/**'], 'suites': ['unit'], 'verify': 'ci'},
         'tooling': {'paths': ['tools/**'], 'suites': ['unit'], 'verify': 'ci'},
     },
 }
@@ -38,21 +38,80 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(docs['suites'], ['static', 'unit'])
         unknown = verify_plan.plan(['cli/run.py', 'lib/new.py'], CONFIG)
         self.assertTrue(unknown['full'])
-        self.assertEqual(unknown['features'], ['auth', 'briefs', 'cli', 'tests', 'tooling'])
+        self.assertEqual(unknown['features'], ['auth', 'briefs', 'cli', 'lint', 'tooling'])
         self.assertEqual(unknown['unmapped'], ['lib/new.py'])
 
     def test_risk_levels_decide_whether_a_verifier_is_needed(self):
-        low = verify_plan.plan(['tests/test_a.py', 'tools/x.py', 'docs/a.md'], CONFIG)
+        low = verify_plan.plan(['lint/rules.py', 'tools/x.py', 'docs/a.md'], CONFIG)
         self.assertEqual((low['level'], low['needs_verifier']), ('ci', False))
-        mixed = verify_plan.plan(['tests/test_a.py', 'app/auth.ts'], CONFIG)
+        mixed = verify_plan.plan(['lint/rules.py', 'app/auth.ts'], CONFIG)
         self.assertEqual((mixed['level'], mixed['needs_verifier'], verify_plan.required_features(mixed)),
                          ('independent', True, ['auth']))
-        unknown = verify_plan.plan(['tests/test_a.py', 'lib/new.py'], CONFIG)
+        unknown = verify_plan.plan(['lint/rules.py', 'lib/new.py'], CONFIG)
         self.assertTrue(unknown['needs_verifier'])
-        self.assertIn('tests', verify_plan.required_features(unknown))
+        self.assertIn('lint', verify_plan.required_features(unknown))
         gate = verify_plan.plan(['.jfactory/verification.json'], CONFIG)
         self.assertEqual(gate['level'], 'independent')
         self.assertEqual(verify_plan.plan(['docs/a.md'], CONFIG)['level'], 'static')
+
+    def test_tests_instructions_and_screens_always_need_the_verifier(self):
+        # A `ci` feature stays CI-only for its ordinary code: the negative control.
+        self.assertEqual(verify_plan.plan(['tools/x.py'], CONFIG)['level'], 'ci')
+        for path, why in (('tools/x.test.ts', 'tests'), ('tools/e2e/flow.ts', 'tests'),
+                          ('tools/AGENTS.md', 'agent instructions'), ('tools/skill/SKILL.md', 'agent instructions')):
+            result = verify_plan.plan([path], CONFIG)
+            self.assertEqual((result['level'], result['independent_features'], result['overridden']),
+                             ('independent', ['tooling'], {'tooling': why}), path)
+        # Nested agent-rule folders and other test runners' files count too (verifier findings on #30).
+        nested = {'static': ['**/*.md'], 'features': {'internal': {
+            'paths': ['packages/**', 'src/**', 'cypress/**', 'cypress.config.ts', 'spec/**', 'pkg/**', '.*'],
+            'verify': 'ci'}}}
+        for path in ('packages/web/.claude/rules/security.md', 'packages/web/.cursor/rules/style.mdc',
+                     'packages/web/.agents/skills/review/references/policy.md', 'packages/web/.cursorrules',
+                     'cypress.config.ts', 'cypress/support/component.ts', 'src/components/Nav.cy.tsx',
+                     'src/models/user_spec.rb', 'spec/support/auth.rb', '.mocharc.yml', '.clinerules/general.md',
+                     'packages/web/.clinerules/security.md', 'spec/fixtures/users.yml', 'spec/factories.rb',
+                     'packages/core/spec/fixtures/users.yml', 'src/runtime/spec/format.ts', 'pkg/testdata/golden.json',
+                     'src/test/java/AppTest.java', '.mocharc.mjs', 'packages/core/.mocharc.mjs'):
+            self.assertEqual(verify_plan.plan([path], nested)['level'], 'independent', path)
+        for path in ('src/lib/format.ts', 'src/app/api/health/route.ts', 'packages/web/src/specification.ts',
+                     'src/generated/api_spec.json'):
+            self.assertEqual(verify_plan.plan([path], nested)['level'], 'ci', path)
+        # Prose that only names a spec stays static.
+        for path in ('docs/spec/architecture.md', 'docs/api_spec.md', 'docs/.mocharc.md'):
+            self.assertTrue(verify_plan.plan([path], {**nested, 'static': ['docs/**']})['static_only'], path)
+        loose = {**nested, 'features': {}}
+        self.assertEqual(verify_plan.plan(['packages/web/.claude/rules/security.md'], loose)['unmapped'],
+                         ['packages/web/.claude/rules/security.md'])
+        self.assertTrue(verify_plan.plan(['packages/web/docs/guide.md'], loose)['static_only'])
+        self.assertEqual(verify_plan.plan(['.clinerules/general.md'], loose)['unmapped'], ['.clinerules/general.md'])
+        # Test code inside a static folder is never static; prose there may be.
+        docs = {'static': ['docs/**'], 'features': {}}
+        self.assertEqual(verify_plan.plan(['docs/tests/flow.test.ts'], docs)['unmapped'], ['docs/tests/flow.test.ts'])
+        self.assertTrue(verify_plan.plan(['docs/tests/README.md'], docs)['static_only'])
+        self.assertTrue(verify_plan.plan(['docs/tests/README.txt'], docs)['static_only'])
+        for path in ('docs/tests/flow.test.txt', 'docs/flow.test.txt'):
+            self.assertEqual(verify_plan.plan([path], docs)['unmapped'], [path])
+        self.assertIn('Marked `ci` but reviewed anyway: `tooling` (tests)',
+                      verify_plan.render_plan(verify_plan.plan(['tools/x.test.ts'], CONFIG)))
+        # Instructions are never static, even when a static pattern covers all Markdown.
+        root = verify_plan.plan(['AGENTS.md'], CONFIG)
+        self.assertEqual((root['unmapped'], root['full']), (['AGENTS.md'], True))
+        self.assertTrue(verify_plan.plan(['docs/a.md'], CONFIG)['static_only'])
+        screens = {**CONFIG, 'suites': {'journey': {'target': 'app'}, 'unit': {}},
+                   'features': {**CONFIG['features'],
+                                'shell': {'paths': ['app/shell/**'], 'suites': ['journey'], 'verify': 'ci'},
+                                'copy': {'paths': ['app/copy/**'], 'suites': ['unit'], 'verify': 'ci', 'screens': True}}}
+        for path, fid in (('app/shell/nav.tsx', 'shell'), ('app/copy/en.json', 'copy')):
+            result = verify_plan.plan([path], screens)
+            self.assertEqual((result['level'], result['overridden']), ('independent', {fid: 'screens users see'}))
+        self.assertEqual(verify_plan.plan(['tools/x.py'], screens)['level'], 'ci')
+        text = '\n'.join(f'{level}: {t}' for level, t in verify_plan.audit(
+            ['app/shell/nav.tsx', 'app/copy/en.json', 'tools/x.py', 'tools/x.test.ts', 'AGENTS.md'], screens))
+        self.assertIn('WARN: Feature shell is marked ci but has screens users see', text)
+        self.assertIn('WARN: Feature copy is marked ci but has screens users see', text)
+        self.assertIn('WARN: Feature tooling is marked ci, but changes to its tests always get', text)
+        self.assertIn('FAIL: Static patterns cover tests or agent instructions, which always need review: AGENTS.md', text)
 
     def test_plan_estimates_minutes_from_suite_timings(self):
         timed = {**CONFIG, 'suites': {'unit': {'minutes': 2}, 'browser': {'minutes': 40}}, 'pr_budget_minutes': 10}
@@ -71,7 +130,7 @@ class PlanTest(unittest.TestCase):
         self.assertIn('browser', verify_plan.plan(['lib/new.py'], narrow)['suites'])
 
     def test_audit_finds_map_gaps_and_cost_problems(self):
-        files = ['app/briefs/a.ts', 'app/auth.ts', 'cli/run.py', 'tests/test_a.py', 'tools/x.py', 'docs/a.md']
+        files = ['app/briefs/a.ts', 'app/auth.ts', 'cli/run.py', 'lint/rules.py', 'tools/x.py', 'docs/a.md']
         config = {**CONFIG, 'full_suites': ['unit'], 'pr_budget_minutes': 10,
                   'suites': {s: {'run': f'echo {s}', 'minutes': 1} for s in ['unit', 'static', 'browser', 'cli']}}
         levels = lambda items: [level for level, _ in items]
@@ -293,15 +352,17 @@ class GateTest(unittest.TestCase):
         self.assertIn('same model family', self.run_script('check', '--pr', '5', code=1))
 
     def test_low_risk_change_passes_without_verifier_but_mixed_does_not(self):
-        self.write(files=['tests/test_a.py'])
+        self.write(files=['lint/rules.py'])
         self.assertIn('success: Low-risk change', self.run_script('check', '--pr', '5'))
-        self.write(files=['tests/test_a.py', 'app/briefs/save.ts'])
+        self.write(files=['lint/rules.test.py'])
+        self.assertIn('No verdict', self.run_script('check', '--pr', '5', code=1))
+        self.write(files=['lint/rules.py', 'app/briefs/save.ts'])
         self.assertIn('No verdict', self.run_script('check', '--pr', '5', code=1))
         self.verdict('--features', 'briefs')
         self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
 
     def test_non_static_pr_must_state_its_objective(self):
-        self.write(files=['tests/test_a.py'])
+        self.write(files=['lint/rules.py'])
         db = json.loads(self.state.read_text())
         db['prs']['5']['body'] = 'Fixes things.'
         self.state.write_text(json.dumps(db))
