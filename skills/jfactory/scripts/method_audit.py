@@ -72,10 +72,12 @@ def publish(repo, text, clean):
         return 'opened'
     last = vp.run('gh', 'issue', 'view', existing, '--repo', repo, '--json', 'body,comments',
                   '--jq', '(.comments | last | .body) // .body').strip()
-    if last == text.strip():
+    if last != text.strip():
+        vp.run('gh', 'issue', 'comment', existing, '--repo', repo, '--body-file', vp.body_file(text))
+    elif not clean:
         return 'unchanged'
-    vp.run('gh', 'issue', 'comment', existing, '--repo', repo, '--body-file', vp.body_file(text))
     if clean:
+        # Close even when this report was already posted: an earlier close may have failed after its comment.
         vp.run('gh', 'issue', 'close', existing, '--repo', repo, '--reason', 'completed')
         return 'closed'
     return 'updated'

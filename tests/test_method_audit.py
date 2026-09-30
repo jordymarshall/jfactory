@@ -78,6 +78,11 @@ class PublishTest(unittest.TestCase):
         self.assertEqual(method_audit.publish('o/r', 'gap B', False), 'updated')
         self.assertEqual(method_audit.publish('o/r', 'clean now', True), 'closed')
         self.assertIn(('issue', 'close'), self.calls)
+        # A close that failed after its comment is retried on the next clean run, without a duplicate comment.
+        self.last, self.calls = 'clean now', []
+        self.assertEqual(method_audit.publish('o/r', 'clean now', True), 'closed')
+        self.assertNotIn(('issue', 'comment'), self.calls)
+        self.assertIn(('issue', 'close'), self.calls)
 
 
 if __name__ == '__main__':
