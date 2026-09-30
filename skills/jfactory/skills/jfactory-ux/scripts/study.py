@@ -127,23 +127,33 @@ def step(folder, args, run=None):
     if (folder / shot).is_symlink() or ((folder / shot).exists() and not (folder / shot).is_file()):
         raise ValueError(f'{shot} must be absent or a regular file, not a link or directory')
     started = datetime.now(timezone.utc)
-    code = run(folder, list(args))
-    seconds = round((datetime.now(timezone.utc) - started).total_seconds(), 2)
+    entry = {'step': number, 'action': ' '.join(args), 'exit': None, 'seconds': None, 'at': started.isoformat(),
+             'screenshot': None, 'note': ''}
+    try:
+        entry['exit'] = run(folder, list(args))
+    finally:
+        # Record the action before anything else can fail: it happened, and the trail must not hide it. The
+        # screenshot stays null, which blocks rendering, until the capture below is published.
+        entry['seconds'] = round((datetime.now(timezone.utc) - started).total_seconds(), 2)
+        steps.append(entry)
+        write_json(log_path, steps)
     # Capture to a fresh name, then rename over the leaf, so nothing is written through a planted link.
     fresh = folder / f'artifacts/steps/{number:03d}-{uuid.uuid4().hex}.png'
-    captured = run(folder, ['screenshot', f'--filename={fresh.relative_to(folder)}'])
-    ok = not captured and fresh.is_file() and not fresh.is_symlink()
-    if ok:
+    try:
+        captured = run(folder, ['screenshot', f'--filename={fresh.relative_to(folder)}'])
+        if captured or not fresh.is_file() or fresh.is_symlink():
+            raise ValueError('the screenshot command failed')
         os.replace(fresh, folder / shot)
-    elif fresh.is_symlink() or fresh.is_file():
-        fresh.unlink()
-    # Record the action either way: it happened, and the trail must not hide it.
-    steps.append({'step': number, 'action': ' '.join(args), 'exit': code, 'seconds': seconds,
-                  'at': started.isoformat(), 'screenshot': shot if ok else None, 'note': ''})
+    except Exception as error:
+        try:
+            if fresh.is_symlink() or fresh.is_file():
+                fresh.unlink()
+        except OSError:
+            pass
+        raise ValueError(f'Step {number} ran, but its screenshot was not captured ({error}); the trail will not '
+                         'render until the session is fixed and the journey is walked again') from error
+    entry['screenshot'] = shot
     write_json(log_path, steps)
-    if not ok:
-        raise ValueError(f'Step {number} ran, but its screenshot was not captured; the trail will not render until the '
-                         'session is fixed and the journey is walked again')
     return number, shot
 
 

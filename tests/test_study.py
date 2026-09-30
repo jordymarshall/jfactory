@@ -127,6 +127,41 @@ class StudyTests(unittest.TestCase):
         self.assertEqual(leaf.read_bytes(), b'png')
         self.assertEqual(sorted(p.name for p in leaf.parent.iterdir()), ['001.png'])
 
+    def test_an_action_is_recorded_whatever_fails_after_it(self):
+        study.step(self.folder, ['open', 'https://example.com'], self.fake_browser([]))
+        leaf = self.folder / 'artifacts/steps/002.png'
+        capture = self.fake_browser([])
+
+        def obstruct(folder, args):
+            if args[0] == 'click':
+                leaf.mkdir()  # publication of the fresh capture will fail
+            return capture(folder, args)
+        real_unlink = Path.unlink
+
+        def failing_unlink(path, *a, **k):
+            raise PermissionError('cleanup failed too')
+        Path.unlink = failing_unlink
+        try:
+            with self.assertRaisesRegex(ValueError, 'Step 2 ran, but its screenshot was not captured'):
+                study.step(self.folder, ['click', 'Open item'], obstruct)
+        finally:
+            Path.unlink = real_unlink
+        leaf.rmdir()
+
+        def crash(folder, args):
+            raise RuntimeError('browser died mid-action')
+        with self.assertRaisesRegex(RuntimeError, 'browser died'):
+            study.step(self.folder, ['fill', 'Name', 'x'], crash)
+        study.step(self.folder, ['click', 'Save item'], self.fake_browser([]))
+        steps = json.loads((self.folder / 'steps.json').read_text())
+        self.assertEqual([(s['action'], s['screenshot']) for s in steps], [
+            ('open https://example.com', 'artifacts/steps/001.png'), ('click Open item', None),
+            ('fill Name x', None), ('click Save item', 'artifacts/steps/004.png')])
+        for n in (1, 2, 3, 4):
+            study.note(self.folder, n, 'seen')
+        with self.assertRaisesRegex(ValueError, 'Step\\(s\\) 2, 3 have no screenshot'):
+            study.walkthrough(self.folder)
+
     def test_trail_refuses_redirected_capture_directories(self):
         study.step(self.folder, ['open', 'https://example.com'], self.fake_browser([]))
         study.note(self.folder, 1, 'seen')
