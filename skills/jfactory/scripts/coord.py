@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -68,20 +69,29 @@ def now():
     return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
 
 
-def run(tool, *args, stdin=None):
+class Missing(Refused):
+    """The CLI is not installed, such as `conductor` on a CI runner."""
+
+
+def run(tool, *args, stdin=None, timeout=None):
     exe = os.environ.get(f'JFACTORY_{tool.upper()}', tool)
-    proc = subprocess.run([exe, *args], input=stdin, capture_output=True, text=True)
+    try:
+        proc = subprocess.run([exe, *args], input=stdin, capture_output=True, text=True, timeout=timeout)
+    except FileNotFoundError:
+        raise Missing(f'{tool} is not installed or not on PATH')
+    except subprocess.TimeoutExpired:
+        raise Refused(f'{tool} {" ".join(args[:3])} timed out')
     if proc.returncode:
         raise Refused(f'{tool} {" ".join(args[:3])} failed: {proc.stderr.strip() or proc.stdout.strip()}')
     return proc.stdout
 
 
-def run_json(tool, *args):
-    return json.loads(run(tool, *args) or 'null')
+def run_json(tool, *args, timeout=None):
+    return json.loads(run(tool, *args, timeout=timeout) or 'null')
 
 
-def gh(repo, *args):
-    return run('gh', *args, '--repo', repo)
+def gh(repo, *args, timeout=None):
+    return run('gh', *args, '--repo', repo, timeout=timeout)
 
 
 def body_file(text):
@@ -328,11 +338,163 @@ def tidy_sections(repo, keep=()):
     return changes, notes
 
 
+# Workspaces jfactory launches for a PR are named `<role>-<repo name>-<PR number>`, such as `verify-loopcraft-102`.
+# Conductor records no branch or PR on a workspace, so the name is what lets any later command find the PR and
+# archive the workspace once that PR is finished. Names outside the convention, such as the owner's, are never touched.
+PR_ROLES = ('verify', 'build', 'fix')
+PR_ROLE_TIERS = {'verify': 'verify', 'build': 'frontier', 'fix': 'frontier'}
+TIDY_BUDGET = 60  # seconds; the sweep is best-effort and must not hold up the command that runs it
+
+
+def workspace_name(role, repo, pr):
+    return f"{role}-{repo.split('/')[-1]}-{pr}"
+
+
+def convention(repo):
+    return re.compile(rf"^({'|'.join(PR_ROLES)})-{re.escape(repo.split('/')[-1])}-([1-9][0-9]*)$", re.I)
+
+
+def same_repo(url, repo):
+    url = (url or '').strip().rstrip('/').lower()
+    url = url[:-4] if url.endswith('.git') else url
+    return url.replace(':', '/').endswith('/' + repo.lower())
+
+
+def archive_merged(repo, budget=TIDY_BUDGET):
+    """Archive my convention-named workspaces for `repo` whose PR merged or closed and whose sessions are all idle.
+
+    Best-effort and quiet: returns (archived, notes) and never raises. Without the conductor CLI it does nothing.
+    It never archives the workspace it runs in or a workspace whose name is outside the convention.
+    """
+    archived, notes = [], []
+    deadline = time.monotonic() + budget
+
+    def left():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise Refused(f'stopped after {budget}s; the next command continues')
+        return remaining
+
+    try:
+        pattern, here = convention(repo), os.environ.get('CONDUCTOR_WORKSPACE_ID')
+        workspaces, offset = [], 0
+        while True:
+            page = run_json('conductor', 'workspace', 'list', '--mine', '--repo', f'github.com/{repo}',
+                            '--limit', '100', '--offset', str(offset), '--json', timeout=left()) or {}
+            workspaces += page.get('data') or []
+            if not page.get('hasMore'):
+                break
+            offset += 100
+        prs = {}
+        for workspace in workspaces:
+            name, wid = workspace.get('name') or '', workspace.get('id')
+            match = pattern.match(name)
+            if not match or not wid or wid == here or workspace.get('state') == 'archived' \
+                    or not same_repo(workspace.get('repoUrl'), repo):
+                continue
+            number = match.group(2)
+            try:
+                if number not in prs:
+                    prs[number] = json.loads(gh(repo, 'pr', 'view', number, '--json', 'state', timeout=left()))['state']
+                if prs[number] not in ('MERGED', 'CLOSED'):
+                    continue
+                sessions = run_json('conductor', 'workspace', 'session', wid, '--limit', '100', '--json',
+                                    timeout=left()) or {}
+                working = [s['id'] for s in sessions.get('data') or []
+                           if run_json('conductor', 'session', 'status', s['id'], '--json', timeout=left())
+                           .get('status') in ('working', 'running')]
+                if working:
+                    notes.append(f'{name} kept: PR #{number} is {prs[number].lower()} but a session is still working')
+                    continue
+                run('conductor', 'workspace', 'archive', wid, timeout=left())
+                archived.append(f'archived workspace {name} (PR #{number} {prs[number].lower()})')
+            except Missing:
+                raise
+            except (Refused, ValueError, KeyError, TypeError, AttributeError) as error:
+                notes.append(f'{name} not archived: {error}')
+                if time.monotonic() >= deadline:
+                    break
+    except Missing:
+        return archived, notes
+    except Exception as error:  # noqa: BLE001 -- the sweep must never fail the command that runs it
+        notes.append(f'finished workspaces not tidied: {error}')
+    return archived, notes
+
+
+def sweep(repo, budget=TIDY_BUDGET):
+    """Run `archive_merged` and print its result; used after the commands where work already happens."""
+    archived, notes = archive_merged(repo, budget)
+    for line in archived:
+        print('Tidied: ' + line)
+    for note in notes:
+        print('Check: ' + note)
+
+
 def cmd_tidy(args):
     changes, notes = tidy_sections(args.repo)
+    archived, archive_notes = archive_merged(args.repo)
+    changes, notes = archived + changes, archive_notes + notes
     print('Changed: ' + ('; '.join(changes) if changes else 'nothing'))
     for note in notes:
         print('Check: ' + note)
+
+
+def conductor_project(repo):
+    """The Conductor project whose remote is this repository, or None."""
+    try:
+        projects, offset = [], 0
+        while True:
+            page = run_json('conductor', 'project', 'list', '--limit', '100', '--offset', str(offset), '--json') or {}
+            projects += page.get('data') or []
+            if not page.get('hasMore'):
+                break
+            offset += 100
+    except (Refused, ValueError, AttributeError):
+        return None
+    return next((p['id'] for p in projects if same_repo(p.get('gitRemote'), repo)), None)
+
+
+def cmd_launch_pr(args):
+    """Launch a reviewer, builder or fixer for one PR in a workspace named by the convention."""
+    if args.role not in PR_ROLES:
+        raise Refused(f"--role must be one of {', '.join(PR_ROLES)} for a PR workspace, not {args.role!r}")
+    if not args.pr or args.pr < 1:
+        raise Refused('--pr must be the pull request number the workspace works on')
+    if not args.message_file:
+        raise Refused('--message-file is required: the first message is the agent\'s whole context')
+    name = workspace_name(args.role, args.repo, args.pr)
+    if args.name and args.name != name:
+        raise Refused(f'Workspace name {args.name!r} breaks the <role>-<repo>-<pr> convention ({name}); '
+                      'jfactory could not find its PR to archive it after the PR finishes')
+    if not convention(args.repo).match(name):
+        raise Refused(f'{name!r} does not follow the <role>-<repo>-<pr> convention')
+    (agent, model, effort, fast), _ = usage.POLICY[PR_ROLE_TIERS[args.role]]
+    agent, model, effort = args.agent or agent, args.model or model, args.effort or effort or 'medium'
+    catalog = {a['agent']: a for a in run_json('conductor', 'model', '--json')['agents']}
+    if agent not in catalog or model not in catalog[agent]['models']:
+        raise Refused(f'{agent}/{model} is not offered by Conductor; run `conductor model`')
+    if effort not in catalog[agent]['efforts']:
+        raise Refused(f'Effort {effort} is not offered for {agent}')
+    fast = fast and not (args.agent or args.model) and model in catalog[agent].get('fastModeModels', [])
+    branch = args.branch
+    if not branch:
+        branch = json.loads(gh(args.repo, 'pr', 'view', str(args.pr), '--json', 'headRefName'))['headRefName']
+    project = args.project_id or conductor_project(args.repo)
+    where = ['--project-id', project] if project else ['--repo-url', f'https://github.com/{args.repo}']
+    command = ['workspace', 'create', *where, '--branch', branch, '--name', name, '--session-name', name,
+               '--agent', agent, '--model', model, '--effort', effort, *(['--fast-mode'] if fast else []),
+               '--message-file', args.message_file, '--json']
+    if args.dry_run:
+        print(f'Would launch {name} on {agent}/{model} ({effort}) from {branch}: conductor {" ".join(command)}')
+        return
+    created = run_json('conductor', *command)
+    workspace = created.get('workspace', created)
+    wid = workspace.get('id') or created.get('workspaceId')
+    session = created.get('session') or created.get('firstSession') or {}
+    print(wid)
+    print(f"Launched {name} on {agent}/{model} ({effort}) from {branch}: "
+          f"{session.get('deepLink') or workspace.get('deepLink') or created.get('deepLink') or ''}".rstrip())
+    print(f'It is archived automatically once PR #{args.pr} merges or closes and its sessions are idle.')
 
 
 def verdict_at_head(state, unit):
@@ -456,6 +618,14 @@ If a report says the program is on hold, stop at a safe boundary, push your work
 
 
 def cmd_launch(args):
+    if args.program is None or args.role or args.pr:
+        if args.program is not None or args.unit:
+            raise Refused('Use either `launch <issue> <unit>` for a program unit or `launch --role --pr` for a PR')
+        if not args.role or not args.pr:
+            raise Refused('launch needs <issue> <unit>, or --role verify|build|fix with --pr')
+        return cmd_launch_pr(args)
+    if not args.unit or not args.brief:
+        raise Refused('launch <issue> <unit> needs --brief')
     state = load(args.repo, args.program)
     fold_reports(state)
     refresh_prs(state, args.repo)
@@ -600,6 +770,8 @@ def cmd_sync(args):
     slots = max(state['limit'] - running, 0)
     if ready and not held(state):
         print(f"Ready to launch ({slots} free slots): {', '.join(ready)}")
+    if not args.dry_run and not args.keep_workspaces:
+        sweep(args.repo)
 
 
 def cmd_set(args):
@@ -679,6 +851,7 @@ def cmd_merge(args):
                                      f"{unit['head'][:7]} on a {basis}.")
     save(args.repo, args.program, state)
     print(f'Queued auto-merge for #{unit["pr"]} at {unit["head"][:7]}')
+    sweep(args.repo)
 
 
 def cmd_gate(args):
@@ -723,6 +896,11 @@ def cmd_close(args):
         notes += tidy_notes
         for change in tidied:
             print('Tidied: ' + change)
+    if not args.keep_workspaces:
+        archived, archive_notes = archive_merged(args.repo)
+        notes += archive_notes
+        for change in archived:
+            print('Tidied: ' + change)
     for note in notes:
         print('Check: ' + note)
     print('This coordinator workspace stays open; archive it once the owner has read the result.')
@@ -760,10 +938,17 @@ def main(argv=None):
     p = sub.add_parser('brief', help='Check a task contract for required fields')
     p.add_argument('brief')
     p.set_defaults(func=cmd_brief)
-    p = sub.add_parser('launch', help='Create a Conductor workspace for a unit')
-    p.add_argument('program', type=int)
-    p.add_argument('unit')
-    p.add_argument('--brief', required=True)
+    p = sub.add_parser('launch', help='Create a Conductor workspace for a program unit, or with --role and --pr '
+                                      'for one PR (named <role>-<repo>-<pr> and archived automatically)')
+    p.add_argument('program', type=int, nargs='?')
+    p.add_argument('unit', nargs='?')
+    p.add_argument('--brief', help='Program unit: the task contract')
+    p.add_argument('--role', help='PR workspace: verify, build or fix')
+    p.add_argument('--pr', type=int, help='PR workspace: the pull request number')
+    p.add_argument('--branch', help='PR workspace: branch to start from; defaults to the PR head branch')
+    p.add_argument('--message-file', help='PR workspace: the first message')
+    p.add_argument('--project-id', help='PR workspace: Conductor project; looked up from the repository when omitted')
+    p.add_argument('--name', help='PR workspace: refused unless it is <role>-<repo>-<pr>')
     p.add_argument('--agent')
     p.add_argument('--model')
     p.add_argument('--effort')
@@ -825,7 +1010,7 @@ def main(argv=None):
     p.add_argument('--units', type=listing, default=[])
     p.add_argument('--answer')
     p.set_defaults(func=cmd_gate)
-    p = sub.add_parser('tidy', help='Delete finished Program sidebar sections')
+    p = sub.add_parser('tidy', help='Archive finished PR workspaces and delete finished Program sidebar sections')
     p.set_defaults(func=cmd_tidy)
     p = sub.add_parser('close', help='Close a finished program, archive its workspaces and delete its section')
     p.add_argument('program', type=int)

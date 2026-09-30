@@ -18,6 +18,7 @@ Serves outcomes 1 and 2 in [README.md](README.md). Feature: `coordination` (`coo
 | Workers' questions block merge until resolved | `tests/test_coord.py` `test_worker_question_becomes_gate_that_blocks_merge_until_resolved` |
 | Reviews use another model family and retries are capped | `tests/test_coord.py` `test_review_needs_other_family_and_retries_are_capped` |
 | Finished workspaces are archived and sections tidied | `tests/test_coord.py` `test_sync_archives_finished_workspaces_once_their_sessions_stop`, `test_tidy_deletes_only_finished_program_sections` |
+| Workspaces launched for a PR archive themselves once it merges or closes, without touching the owner's | `tests/test_coord.py` `test_launch_names_a_pr_workspace_by_convention`, `test_tidy_archives_only_idle_convention_workspaces_whose_pr_finished`, `test_sync_verdict_merge_and_close_archive_finished_pr_workspaces`, `test_missing_or_failing_conductor_never_fails_verdict_sync_or_merge`, `test_workspace_tidy_is_time_boxed` |
 | Models are chosen by tier and remaining usage | `tests/test_usage.py` |
 
 ## Quality rubric

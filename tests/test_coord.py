@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -26,7 +27,8 @@ class CoordTest(unittest.TestCase):
             exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE}" {tool} "$@"\n')
             exe.chmod(0o755)
         self.env = {**os.environ, 'FAKE_STATE': str(self.state), 'JFACTORY_GH': str(bins / 'gh'),
-                    'JFACTORY_CONDUCTOR': str(bins / 'conductor'), 'JFACTORY_GIT': str(bins / 'git')}
+                    'JFACTORY_CONDUCTOR': str(bins / 'conductor'), 'JFACTORY_GIT': str(bins / 'git'),
+                    'CONDUCTOR_WORKSPACE_ID': 'w-here'}
         self.brief = self.tmp / 'brief.md'
         self.brief.write_text(BRIEF)
 
@@ -464,6 +466,119 @@ class CoordTest(unittest.TestCase):
         self.assertIn('no verified verdict', self.coord('merge', '1', 'a', ok=False))
         self.assertEqual(self.db()['merged'], ['7'])
 
+
+    # Workspaces launched for one PR are named <role>-<repo>-<pr> and archived once that PR is finished.
+
+    def pr_workspace(self, wid, name, repo_url='https://github.com/o/r'):
+        return {'id': wid, 'name': name, 'state': 'ready', 'repoUrl': repo_url, 'creatorName': 'Owner'}
+
+    def test_tidy_archives_only_idle_convention_workspaces_whose_pr_finished(self):
+        other = 'https://github.com/o/r-other'
+        self.set_db(prs={'7': {'state': 'MERGED'}, '8': {'state': 'OPEN'}, '9': {'state': 'CLOSED'}},
+                    listed=[self.pr_workspace('w-merged', 'verify-r-7'),
+                            self.pr_workspace('w-closed', 'build-r-9', 'https://github.com/o/r.git'),
+                            self.pr_workspace('w-busy', 'fix-r-7'),
+                            self.pr_workspace('w-open', 'verify-r-8'),
+                            self.pr_workspace('w-here', 'verify-r-7'),
+                            self.pr_workspace('w-owner', 'Owner notes on r-7'),
+                            self.pr_workspace('w-short', 'verify-lc-7'),
+                            self.pr_workspace('w-review', 'review-r-7'),
+                            self.pr_workspace('w-other', 'verify-r-7', other),
+                            self.pr_workspace('w-othername', 'verify-r-other-7', other)],
+                    sessions={**{s: 'idle' for s in ('s-merged', 's-closed', 's-open', 's-here', 's-owner', 's-short',
+                                                     's-review', 's-other', 's-othername')}, 's-busy': 'working'})
+        out = self.coord('tidy')
+        self.assertEqual(self.db()['archived'], ['w-merged', 'w-closed'])
+        self.assertIn('archived workspace verify-r-7 (PR #7 merged)', out)
+        self.assertIn('fix-r-7 kept: PR #7 is merged but a session is still working', out)
+        listing = next(c for c in self.db()['calls'] if c[1:3] == ['workspace', 'list'])
+        self.assertIn('--mine', listing)
+        self.set_db(sessions={'s-busy': 'idle'})
+        self.coord('tidy')
+        self.assertEqual(self.db()['archived'], ['w-merged', 'w-closed', 'w-busy'])
+
+    def test_sync_verdict_merge_and_close_archive_finished_pr_workspaces(self):
+        self.start(['a', '--objective', 'x'])
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        prs = {'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}}
+        self.set_db(prs=prs, sessions={'s1': 'idle'})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        steps = [('sync', '1'),
+                 ('verdict', '1', 'a', '--head', 'aaa1111', '--verdict', 'verified', '--scopes', 'unit',
+                  '--evidence', 'https://evidence', '--verifier', 'codex/gpt-6.1-sol'),
+                 ('merge', '1', 'a'),
+                 ('close', '1')]
+        for number, step in enumerate(steps, 20):
+            prs = self.db()['prs']
+            prs[str(number)] = {'state': 'MERGED'}
+            if step[0] == 'close':
+                prs['7']['state'] = 'MERGED'
+            self.set_db(prs=prs, sessions={**self.db()['sessions'], f's-{number}': 'idle'},
+                        listed=self.db().get('listed', []) + [self.pr_workspace(f'w-{number}', f'verify-r-{number}')])
+            out = self.coord(*step)
+            self.assertIn(f'w-{number}', self.db().get('archived', []), f'{step[0]} did not archive: {out}')
+            self.assertIn(f'archived workspace verify-r-{number}', out)
+
+    def test_missing_or_failing_conductor_never_fails_verdict_sync_or_merge(self):
+        self.start(['a', '--objective', 'x'])
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'},
+                         '20': {'state': 'MERGED'}},
+                    listed=[self.pr_workspace('w-20', 'verify-r-20')], sessions={'s-20': 'idle'})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        verdict = ('verdict', '1', 'a', '--head', 'aaa1111', '--verdict', 'verified', '--scopes', 'unit',
+                   '--evidence', 'https://evidence', '--verifier', 'codex/gpt-6.1-sol')
+        fake = self.env['JFACTORY_CONDUCTOR']
+        self.env['JFACTORY_CONDUCTOR'] = str(self.tmp / 'no-such-conductor')
+        for step in (('sync', '1'), verdict, ('merge', '1', 'a'), ('tidy',)):
+            out = self.coord(*step)
+            self.assertNotIn('Traceback', out)
+            self.assertNotIn('finished workspaces not tidied', out)  # no conductor CLI: skipped quietly
+        self.env['JFACTORY_CONDUCTOR'] = fake
+        self.set_db(conductor_fail=True)
+        for step in (('sync', '1'), verdict, ('merge', '1', 'a')):
+            out = self.coord(*step)
+            self.assertIn('finished workspaces not tidied', out)
+        self.assertEqual(self.db()['merged'], ['7', '7'])
+        self.assertEqual(len([c for c in self.db()['prs']['7']['comments'] if 'jfactory-verdict' in c['body']]), 2)
+        self.assertNotIn('archived', self.db())
+
+    def test_workspace_tidy_is_time_boxed(self):
+        sys.path.insert(0, str(COORD.parent))
+        import coord
+        from unittest import mock
+        self.set_db(conductor_sleep=5, prs={'7': {'state': 'MERGED'}},
+                    listed=[self.pr_workspace('w-7', 'verify-r-7')], sessions={'s-7': 'idle'})
+        with mock.patch.dict(os.environ, self.env):
+            started = time.monotonic()
+            archived, notes = coord.archive_merged('o/r', budget=1)
+        self.assertLess(time.monotonic() - started, 4)
+        self.assertEqual(archived, [])
+        self.assertIn('timed out', ' '.join(notes))
+
+    def test_launch_names_a_pr_workspace_by_convention(self):
+        message = self.tmp / 'verify.md'
+        message.write_text('Verify PR 7 at its head.')
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
+        out = self.coord('launch', '--role', 'verify', '--pr', '7', '--message-file', str(message))
+        self.assertEqual(out.splitlines()[0], 'w1')
+        workspace = self.db()['workspaces'][0]
+        self.assertEqual((workspace['name'], workspace['branch'], workspace['agent'], workspace['model'],
+                          workspace['effort'], workspace['repo_url'], workspace['project']),
+                         ('verify-r-7', 'feat/a', 'codex', 'gpt-6.1-sol', 'high', 'https://github.com/o/r', None))
+        self.set_db(projects=[{'id': 'p-other', 'gitRemote': 'https://github.com/o/r-other'},
+                              {'id': 'p-r', 'gitRemote': 'https://github.com/o/r'}])
+        self.coord('launch', '--role', 'fix', '--pr', '7', '--branch', 'feat/a', '--message-file', str(message))
+        workspace = self.db()['workspaces'][1]
+        self.assertEqual((workspace['name'], workspace['agent'], workspace['project'], workspace['repo_url']),
+                         ('fix-r-7', 'claude', 'p-r', None))
+        self.assertIn('--role must be one of verify, build, fix',
+                      self.coord('launch', '--role', 'review', '--pr', '7', '--message-file', str(message), ok=False))
+        self.assertIn('breaks the <role>-<repo>-<pr> convention',
+                      self.coord('launch', '--role', 'verify', '--pr', '7', '--name', 'verify-lc-7',
+                                 '--message-file', str(message), ok=False))
+        self.assertIn('either', self.coord('launch', '1', 'a', '--role', 'verify', '--pr', '7', ok=False))
+        self.assertEqual(len(self.db()['workspaces']), 2)
 
 if __name__ == '__main__':
     unittest.main()

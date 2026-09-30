@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 path = Path(os.environ['FAKE_STATE'])
@@ -22,6 +23,18 @@ def done(out=''):
 
 
 if tool == 'conductor':
+    if db.get('conductor_sleep'):
+        time.sleep(db['conductor_sleep'])
+    if db.get('conductor_fail'):
+        path.write_text(json.dumps(db))
+        sys.stderr.write('conductor: service unavailable')
+        sys.exit(1)
+    if args[:2] == ['workspace', 'list']:
+        # `listed` holds workspaces other than those this fake created; archived ones drop out of the list.
+        done({'data': [w for w in db.get('listed', []) if w['id'] not in db.get('archived', [])],
+              'offset': 0, 'hasMore': False})
+    if args[:2] == ['project', 'list']:
+        done({'data': db.get('projects', []), 'offset': 0, 'hasMore': False})
     if args[:1] == ['model']:
         done({'agents': [{'agent': 'claude', 'models': ['opus-5-5-1m', 'sonnet-5-1m'],
                           'efforts': ['low', 'medium', 'high', 'max'], 'fastModeModels': ['opus-5-5-1m']},
@@ -30,6 +43,7 @@ if tool == 'conductor':
     if args[:2] == ['workspace', 'create']:
         n = len(db.setdefault('workspaces', [])) + 1
         db['workspaces'].append({'name': opt('--name'), 'branch': opt('--branch'), 'agent': opt('--agent'),
+                                 'project': opt('--project-id'), 'repo_url': opt('--repo-url'),
                                  'model': opt('--model'), 'effort': opt('--effort'),
                                  'fast': '--fast-mode' in args, 'message': Path(opt('--message-file')).read_text()})
         # Mirrors the observed Conductor response shape.

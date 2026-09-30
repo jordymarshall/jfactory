@@ -1261,6 +1261,17 @@ def cmd_verdict(args):
             + (f'\n\n{args.note}' if args.note else ''))
     run('gh', 'pr', 'comment', str(args.pr), '--repo', args.repo, '--body-file', body_file(text))
     print(f'Posted {args.verdict} verdict for #{args.pr} at {args.head[:7]}')
+    tidy_after_verdict(args.repo)
+
+
+def tidy_after_verdict(repo, budget=20):
+    """Archive finished jfactory PR workspaces (coord.archive_merged). The verdict is already posted, so this is
+    time-boxed and can neither fail nor block it."""
+    try:
+        import coord
+        coord.sweep(repo, budget)
+    except Exception as error:  # noqa: BLE001
+        print(f'Check: finished workspaces not tidied: {error}')
 
 
 def shard_arg(value):

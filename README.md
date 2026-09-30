@@ -349,6 +349,8 @@ In [Conductor](https://www.conductor.build), ask one agent to coordinate:
 8. **Merge one at a time.** `coord.py merge` queues protected auto-merge pinned to the PR's current commit: after a verified verdict at that commit, or on GitHub's required CI alone when every change is low-risk. Overlapping units merge one at a time, and dependent workers update from main and re-check after each merge.
 9. **Close.** Once every unit is merged, done or abandoned, `coord.py close` closes the issue, archives the program's workspaces and removes its sidebar section.
 
+Finished workspaces archive themselves. A reviewer or fixer launched for one PR with `coord.py launch --role verify|build|fix --pr N` is named `<role>-<repo>-<N>`, such as `verify-loopcraft-102`. The next `sync`, `verdict`, `merge`, `close` or `tidy` after that PR merges or closes archives it once its sessions are idle. Workspaces with other names, such as yours, are never touched, and archived workspaces can be restored from `conductor workspace list --include-archived`.
+
 ### Guards `coord.py` enforces
 
 | Refuses to | Unless |
