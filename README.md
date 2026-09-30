@@ -76,6 +76,7 @@ The sections below explain each step in depth.
 - **Proof, not claims.** Every result says what was checked, how, on which commit, and what is still unproven. "It works" without evidence doesn't count as done.
 - **Checks sized to the change.** A PR runs the checks for what it touched, including every browser journey that executes changed shared code, split across parallel jobs. The full browser suite runs when you chose at setup, for example only on the final PR of a major feature, and records what each journey executes.
 - **A second opinion from a different AI.** A verifier from a different model family (for example GPT checking Claude's work) re-checks each high-risk change before it can merge. Low-risk changes need only passing CI.
+- **Someone actually looks at the screen.** Scripted tests check structure, not appearance. When a PR changes screens users see, the verifier captures each changed screen at every target viewport and reviews the images with a vision-capable model; `jfactory verified` rejects a verdict without them.
 - **Safe automatic merging.** Verified PRs merge themselves through GitHub's protected auto-merge. Missing proof keeps the PR open. Merging deploys to staging at most; production only when you ask.
 - **A record you can trust.** jfactory keeps five things apart: what you decided, what the agent assumed, what exists, what was verified, and what you accepted.
 

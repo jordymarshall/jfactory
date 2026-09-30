@@ -407,6 +407,22 @@ class CoordTest(unittest.TestCase):
         self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
         self.assertIn('Ready to launch (3 free slots): r (--stack-on a)', self.coord('sync', '1'))
 
+    def test_verdict_passes_screenshots_for_screen_changes(self):
+        self.start(['a', '--objective', 'x'])
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        config = {'suites': {'journey': {'run': 'true', 'target': 'app'}},
+                  'targets': {'app': {'url': 'http://x', 'ready': 'http://x', 'auth': 'none'}},
+                  'features': {'app': {'paths': ['src/**'], 'suites': ['journey']}}}
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a', 'files': ['src/x.tsx']}},
+                    config=config)
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.coord('sync', '1')
+        verdict = ('verdict', '1', 'a', '--head', 'aaa1111', '--verdict', 'verified', '--scopes', 'unit',
+                   '--evidence', 'https://evidence', '--verifier', 'codex/gpt-6-sol')
+        self.assertIn('touches screens users see', self.coord(*verdict, ok=False))
+        self.coord(*verdict, '--screenshots', 'https://shots/desktop.png', '--screenshots', 'https://shots/mobile.png')
+        self.assertIn('https://shots/mobile.png', self.db()['prs']['7']['comments'][-1]['body'])
+
     def test_verdict_needs_a_known_implementer(self):
         self.start(['a', '--objective', 'x'])
         self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})

@@ -322,6 +322,50 @@ class GateTest(unittest.TestCase):
                                'codex/gpt-6-sol', '--implementer', 'claude/opus-5-5-1m', '--evidence',
                                'https://evidence', *extra, code=code)
 
+    def test_screen_changes_need_reviewed_screenshots(self):
+        screens = {**CONFIG, 'suites': {'browser': {'run': 'true', 'target': 'app'}},
+                   'targets': {'app': {'url': 'http://x', 'ready': 'http://x', 'auth': 'none'}}}
+        self.write(files=['app/briefs/save.ts'], config=screens)
+        self.assertIn('touches screens users see (briefs)', self.verdict(code=2))
+        # A verdict posted without them (for example by hand) still does not count.
+        db = json.loads(self.state.read_text())
+        db['prs']['5']['comments'].append({'authorAssociation': 'OWNER', 'body': '<!-- jfactory-verdict ' + json.dumps(
+            {'head': HEAD, 'verdict': 'verified', 'features': ['auth', 'briefs'], 'full': False,
+             'verifier': 'codex/gpt-6-sol', 'implementer': 'claude/opus-5-5-1m', 'evidence': ['x']}) + ' -->'})
+        self.state.write_text(json.dumps(db))
+        self.assertIn('no screenshots of the changed screens (briefs)', self.run_script('check', '--pr', '5', code=1))
+        self.verdict('--screenshots', 'https://shots/briefs-desktop.png', '--screenshots', 'https://shots/briefs-mobile.png')
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+        self.assertIn('Screenshots reviewed:', json.loads(self.state.read_text())['prs']['5']['comments'][-1]['body'])
+        # Changes without screens, and repositories that opt out, need none. Neither do test-only or prose-only
+        # changes inside a screen feature: they still get the independent review, just not screenshots.
+        self.write(files=['cli/run.py'], head='c' * 40, config=screens)
+        self.verdict(head='c' * 40)
+        for i, files in enumerate((['app/briefs/save.test.ts'], ['app/briefs/README.md'], ['app/briefs/e2e/flow.ts'])):
+            head = str(i) * 40
+            self.write(files=files, head=head, config=screens)
+            self.assertEqual(verify_plan.plan(files, screens)['screen_features'], [], files)
+            self.verdict(head=head)
+        # Rendered MDX is a screen, and so is a new unmapped screen, even alongside its mapping update.
+        self.assertEqual(verify_plan.plan(['app/briefs/page.mdx'], screens)['screen_features'], ['briefs'])
+        new_screen = ['app/new-screen/page.tsx', '.jfactory/verification.json']
+        self.assertEqual(verify_plan.plan(new_screen, screens)['screen_features'], ['auth', 'briefs'])
+        self.write(files=new_screen, head='e' * 40, config=screens)
+        self.assertIn('touches screens users see', self.verdict('--full', head='e' * 40, code=2))
+        self.verdict('--full', '--screenshots', 'https://shots/new.png', head='e' * 40)
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+        # A later head re-checked with --since still needs them.
+        self.write(files=new_screen, head='f' * 40, config=screens)
+        self.assertIn('touches screens users see', self.verdict('--full', '--since', 'e' * 40, head='f' * 40, code=2))
+        # Unmapped docs or tests stay exempt.
+        self.assertEqual(verify_plan.plan(['notes/todo.md', 'tools/x.test.ts'], screens)['screen_features'], [])
+        # A mixed change still needs them.
+        self.assertEqual(verify_plan.plan(['app/briefs/save.test.ts', 'app/briefs/save.ts'], screens)['screen_features'],
+                         ['briefs'])
+        self.write(files=['app/briefs/save.ts'], head='d' * 40, config={**screens, 'require_screenshots': False})
+        self.verdict(head='d' * 40)
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+
     def test_status_follows_verdict_at_current_head(self):
         self.assertIn('failure: No verdict', self.run_script('check', '--pr', '5', code=1))
         self.verdict()

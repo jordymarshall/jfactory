@@ -66,6 +66,11 @@ def review_reason(path):
     return next((kind for kind, patterns in ALWAYS_REVIEW.items() if matches(path, patterns)), None)
 
 
+def needs_screenshots(result, config):
+    """A verdict on a change to screens users see must link screenshots that a vision-capable model reviewed."""
+    return bool(result['screen_features']) and config.get('require_screenshots', True)
+
+
 def full_suite_mode(config, event, labels=()):
     """What a CI run executes under the owner's `full_suite` choice: `full` (every suite), `planned` (the suites
     this change needs) or `skip` (nothing; for example a nightly schedule when the owner chose on-request)."""
@@ -106,11 +111,15 @@ def recommend_full_suite(config):
     return 'on-request', f'{timing}, too long and costly to repeat without a reason'
 
 
+PROSE = ('.md', '.mdx', '.txt', '.rst', '.adoc')
+# Prose that is never rendered as a screen. MDX is excluded: it can be a page (`page.mdx`) with JSX in it.
+TEXT_PROSE = ('.md', '.txt', '.rst', '.adoc')
+
+
 def static_allowed(path, reason):
     """Agent instructions and test files are never static. The map may mark prose that is only inside a test
     folder static, such as docs/spec/architecture.md, but not a file named as a test (flow.test.txt)."""
-    return reason is None or (reason == 'tests' and not matches(path, TEST_FILES)
-                              and path.lower().endswith(('.md', '.mdx', '.txt', '.rst', '.adoc')))
+    return reason is None or (reason == 'tests' and not matches(path, TEST_FILES) and path.lower().endswith(PROSE))
 
 
 def has_screens(feature, config):
@@ -174,7 +183,7 @@ def load_config(ref=None, root=None):
 
 def plan(files, config, impact=None):
     """Plan a change. `impact` maps suites to the files they executed (from `load_impact`); it only adds suites."""
-    features, static, unmapped, gate, reviewed = set(), [], [], [], {}
+    features, static, unmapped, gate, reviewed, visual = set(), [], [], [], {}, set()
     for path in files:
         if matches(path, GATE_PATHS):
             gate.append(path)
@@ -183,6 +192,10 @@ def plan(files, config, impact=None):
         reason = review_reason(path)
         if hit:
             features |= hit
+            # Only files that can change what users see put a screen in scope: not tests, agent instructions or
+            # plain-text prose. MDX can be a rendered page, so it counts.
+            if not reason and not path.lower().endswith(TEXT_PROSE):
+                visual |= hit
             if reason:
                 for fid in hit:
                     reviewed.setdefault(fid, reason)
@@ -196,6 +209,9 @@ def plan(files, config, impact=None):
     all_features = config.get('features', {})
     if unmapped:
         features = set(all_features)
+        # An unmapped file that could render (a new screen) puts every screen in scope, like every feature.
+        if any(not review_reason(p) and not p.lower().endswith(TEXT_PROSE) for p in unmapped):
+            visual = set(all_features)
     suites = set(config.get('always_suites', []))
     for fid in features:
         suites |= set(all_features[fid].get('suites', []))
@@ -233,6 +249,7 @@ def plan(files, config, impact=None):
     return {'files': len(files), 'features': sorted(features), 'unmapped': unmapped, 'gate': gate, 'full': full,
             'static_only': static_only, 'suites': sorted(suites), 'level': level,
             'independent_features': independent, 'overridden': overridden,
+            'screen_features': sorted(f for f in visual if has_screens(all_features[f], config)),
             'needs_verifier': needs, 'minutes': minutes, 'untimed_suites': untimed,
             'budget_minutes': config.get('pr_budget_minutes'), 'impact': because, 'shards': shards,
             'wall_minutes': max((cost(b, config)[0] for b in binpack(suites, config, shards)), default=0),
@@ -806,6 +823,9 @@ def evaluate(pr, config, ci_check=None):
         return 'failure', 'Verdict misses features: ' + ', '.join(missing)[:100]
     if not verdict.get('evidence'):
         return 'failure', 'Verdict has no evidence links'
+    if needs_screenshots(result, config) and not verdict.get('screenshots'):
+        return 'failure', ('Verdict has no screenshots of the changed screens (' + ', '.join(result['screen_features'])[:80]
+                           + ')')
     if verdict.get('since') and not any(v.get('head') == verdict['since'] for v in verdicts):
         return 'failure', f"Verdict re-checks changes since {verdict['since'][:7]}, which has no earlier verdict"
     refusal = same_family_refusal(verdict.get('verifier'), verdict.get('implementer'),
@@ -1031,12 +1051,17 @@ def cmd_verdict(args):
             'the full feature map (--full)' if result['full'] else 'features: ' + ', '.join(missing)))
     if args.since and not any(v.get('head') == args.since for v in trusted_verdicts(pr)):
         raise Refused(f'No earlier verdict at {args.since[:7]} on PR #{args.pr}; --since must name the head of one')
+    if args.verdict == 'verified' and needs_screenshots(result, config) and not args.screenshots:
+        raise Refused('This change touches screens users see (' + ', '.join(result['screen_features']) + '). Capture '
+                      'each changed screen at the target viewports, review the images with a vision-capable model '
+                      'against the objective, and link them with --screenshots')
     if args.verdict == 'verified':
         refusal = ci_refusal(args.repo, args.head)
         if refusal:
             raise Refused(refusal)
     record = {'head': args.head, 'verdict': args.verdict, 'features': sorted(features), 'full': args.full,
               'verifier': args.verifier, 'implementer': args.implementer, 'evidence': args.evidence,
+              **({'screenshots': args.screenshots} if args.screenshots else {}),
               'at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
               **({'since': args.since} if args.since else {})}
     text = (f"<!-- jfactory-verdict {json.dumps(record)} -->\n**Verification {args.verdict}** at `{args.head[:7]}` "
@@ -1044,7 +1069,9 @@ def cmd_verdict(args):
             + (f" Re-checked the changes since the verdict at `{args.since[:7]}`." if args.since else '')
             + "\n\nFeatures: "
             f"{'full feature map' if args.full else ', '.join(features) or 'none'}\n\nEvidence:\n"
-            + '\n'.join(f'- {e}' for e in args.evidence) + (f'\n\n{args.note}' if args.note else ''))
+            + '\n'.join(f'- {e}' for e in args.evidence)
+            + (('\n\nScreenshots reviewed:\n' + '\n'.join(f'- {s}' for s in args.screenshots)) if args.screenshots else '')
+            + (f'\n\n{args.note}' if args.note else ''))
     run('gh', 'pr', 'comment', str(args.pr), '--repo', args.repo, '--body-file', body_file(text))
     print(f'Posted {args.verdict} verdict for #{args.pr} at {args.head[:7]}')
 
@@ -1110,6 +1137,8 @@ def main(argv=None):
     p.add_argument('--features', type=listing, default=[])
     p.add_argument('--full', action='store_true')
     p.add_argument('--evidence', action='append', default=[], required=True)
+    p.add_argument('--screenshots', action='append', default=[],
+                   help='Link to screenshots of a changed screen, reviewed by a vision-capable model; repeat per link')
     p.add_argument('--since', help='Head of this PR\'s earlier verdict; this one re-checked only the changes since')
     p.add_argument('--note')
     p.set_defaults(func=cmd_verdict)
