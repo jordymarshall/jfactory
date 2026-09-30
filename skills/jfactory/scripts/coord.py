@@ -636,7 +636,8 @@ def cmd_verdict(args):
                              *(['--since', args.since] if args.since else []),
                              *(['--features', ','.join(args.features)] if args.features else []),
                              *[a for link in args.screenshots for a in ('--screenshots', link)],
-                             *[a for doc in args.standards for a in ('--standards', doc)]])
+                             *[a for doc in args.standards for a in ('--standards', doc)],
+                             *[a for link in args.walkthrough for a in ('--walkthrough', link)]])
     if code:
         raise Refused('PR verdict was not posted; see the message above')
     state['ledger'].append({'pr': unit['pr'], 'head': head, 'verdict': args.verdict, 'scopes': args.scopes,
@@ -807,6 +808,8 @@ def main(argv=None):
                    help='Link to reviewed screenshots of a changed screen; required when the change touches screens')
     p.add_argument('--standards', action='append', default=[],
                    help='A source in .jfactory/standards.md the change was checked against; required with a standards map')
+    p.add_argument('--walkthrough', action='append', default=[],
+                   help='Link to a step-by-step walkthrough of a changed journey; required when the change touches screens')
     p.set_defaults(func=cmd_verdict)
     p = sub.add_parser('merge', help='Queue protected auto-merge for a verified unit')
     p.add_argument('program', type=int)

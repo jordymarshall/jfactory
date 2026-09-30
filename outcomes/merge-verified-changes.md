@@ -14,6 +14,7 @@ Serves outcome 2 in [README.md](README.md). Feature: `coordination` (`verify_pla
 | Goal | How it's proven |
 | --- | --- |
 | A verdict counts only at the current head, from another model family, with CI green | `tests/test_verify_plan.py` `test_status_follows_verdict_at_current_head`, `test_verdict_refuses_stale_head_same_family_and_missing_coverage`, `test_recorded_owner_decision_allows_same_family` |
+| Screen changes need a step-by-step walkthrough, with a screenshot and a note after every action | `tests/test_study.py` `test_every_step_captures_what_the_user_now_sees`; `tests/test_verify_plan.py` `test_screen_changes_need_reviewed_screenshots` |
 | Screen changes need screenshots a vision-capable model reviewed | `tests/test_verify_plan.py` `test_screen_changes_need_reviewed_screenshots` |
 | Verdicts name the standards and job documents they checked | `tests/test_verify_plan.py` `test_verdicts_name_the_standards_and_journeys_they_checked` |
 | Tests, agent instructions, screens and source-of-truth documents always get the independent verifier | `tests/test_verify_plan.py` `test_tests_instructions_and_screens_always_need_the_verifier`, `test_standards_and_journey_documents_are_always_reviewed` |

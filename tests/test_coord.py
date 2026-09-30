@@ -436,7 +436,9 @@ class CoordTest(unittest.TestCase):
         verdict = ('verdict', '1', 'a', '--head', 'aaa1111', '--verdict', 'verified', '--scopes', 'unit',
                    '--evidence', 'https://evidence', '--verifier', 'codex/gpt-6-sol')
         self.assertIn('touches screens users see', self.coord(*verdict, ok=False))
-        self.coord(*verdict, '--screenshots', 'https://shots/desktop.png', '--screenshots', 'https://shots/mobile.png')
+        self.assertIn('step by step', self.coord(*verdict, '--screenshots', 'https://shots/desktop.png', ok=False))
+        self.coord(*verdict, '--screenshots', 'https://shots/desktop.png', '--screenshots', 'https://shots/mobile.png',
+                   '--walkthrough', 'https://trail/desktop.html')
         self.assertIn('https://shots/mobile.png', self.db()['prs']['7']['comments'][-1]['body'])
 
     def test_verdict_needs_a_known_implementer(self):

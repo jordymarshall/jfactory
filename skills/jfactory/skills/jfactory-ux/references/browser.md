@@ -31,6 +31,24 @@ python3 "$UX" browser "$STUDY" snapshot
 
 Keep success captures deliberately; failure-only screenshot/trace defaults do not produce a UX review packet. Use screenshots for layout and visible state, snapshots for controls/semantics, and traces plus video for action sequences. Inspect images through the host's image viewer. If video playback is unavailable, extract and inspect timestamped frames with a video tool; disclose that this does not measure smoothness.
 
+## Step-by-step walkthroughs
+
+A verifier uses a changed journey the way a person would: one action, then look at the screen, then decide the next action. The helper makes every action leave a screenshot, so the trail has no gaps:
+
+```sh
+python3 "$UX" step "$STUDY" open https://preview.example.com/briefs
+python3 "$UX" note "$STUDY" 1 "Briefs list, first 40 briefs, Load more below the last row"
+python3 "$UX" step "$STUDY" click "getByRole('button', { name: 'Load more briefs', exact: true })"
+python3 "$UX" note "$STUDY" 2 "80 briefs listed; focus moved to brief 041; button still visible above the composer"
+python3 "$UX" step "$STUDY" resize 390 844
+python3 "$UX" note "$STUDY" 3 "Phone width: rows reflow to one column; nothing clipped; composer pinned at the bottom"
+python3 "$UX" walkthrough "$STUDY"
+```
+
+`step` runs one action (any CLI command except captures, recordings and close), then saves `artifacts/steps/NNN.png` and logs the action, its duration and exit status in `steps.json`. A step whose screenshot fails is still logged, without a screenshot, and the trail won't render until the journey is walked again in a working session. `python3 "$UX" serve "$STUDY"` serves `steps.html` with its screenshots. Open each screenshot and look at it before the next action; `note` records what it shows, including anything wrong. `walkthrough` writes `steps.html` and `steps.md` and refuses while any step has no note. Walk each changed journey at every target viewport. Upload the trail and link it from the verdict with `--walkthrough`.
+
+The actor and the judge can be different models. Today the verifier itself picks each action, a few seconds a step. A faster action picker, such as a decisions endpoint that chooses the next action from the visible controls in a fraction of a second, can drive `step` instead, as long as the verifier still looks at every screenshot, writes the notes and judges the result.
+
 ## Sign into a subscribed app
 
 On a machine with a visible browser, use `open <url> --headed` and let the owner sign in themselves, including MFA. Reuse that study's dedicated profile. Stop trace/video capture before authentication, then start capture after confirming the expected account. Avoid recording login forms, credentials or account-management pages. The CLI may still save snapshots/console output, so the entire study is private.
@@ -81,6 +99,6 @@ python3 "$UX" browser "$STUDY" close
 
 Open `walkthrough.html` locally with its neighboring artifacts. Do not expose it through a public preview without reviewing private content and authorization. Trace Viewer can open the trace locally using an available Playwright installation. Keep login state out of the review packet. Remove a profile only after closing its session and when the owner no longer needs it; do not run global `kill-all` or `close-all` in a multi-agent workspace.
 
-The CLI blocks `file://` navigation. To inspect the walkthrough through it, run `python3 "$UX" serve "$STUDY"` in an owned terminal session, then navigate to the printed loopback URL. The server exposes only the walkthrough and artifacts, not the profile or scope files. It is reachable on that machine only; a Mac cannot use a cloud localhost URL directly. Stop that owned server when finished. Private captures remain sensitive even on localhost; do not tunnel or publish the server as an incidental review step.
+The CLI blocks `file://` navigation. To inspect the walkthrough through it, run `python3 "$UX" serve "$STUDY"` in an owned terminal session, then navigate to the printed loopback URL: `steps.html` for a step trail, `walkthrough.html` for a report, or both. The server exposes only those pages, `steps.md` and artifacts, not the profile or scope files. It is reachable on that machine only; a Mac cannot use a cloud localhost URL directly. Stop that owned server when finished. Private captures remain sensitive even on localhost; do not tunnel or publish the server as an incidental review step.
 
 The helper is a study driver, not a deterministic app verifier. Convert stable expectations into the repository's actual tests and use jfactory's [verification contract](../../../references/verification.md) for completion claims. Browser exploration can reveal a problem without proving a regression test exists.
