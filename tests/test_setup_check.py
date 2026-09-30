@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'skills' / 'jfactory' / 'scripts' / 'setup_check.py'
 sys.path.insert(0, str(SCRIPT.parent))
+import setup_check  # noqa: E402
 import verify_plan  # noqa: E402
 TEMPLATE = ROOT / 'skills' / 'jfactory' / 'templates' / 'setup-record.md'
 WORKFLOW = ROOT / 'skills' / 'jfactory' / 'templates' / 'jfactory-verified.yml'
@@ -55,11 +56,15 @@ class SetupCheckTest(unittest.TestCase):
         (self.root / '.jfactory' / 'standards.md').write_text(standards())
         (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(
             {'static': ['README.md'], 'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**',
-                                                                    '.github/**']}}}))
+                                                                    '.github/**', 'outcomes/**']}}}))
         (self.root / '.jfactory' / 'coordination.json').write_text(json.dumps(
             {'merge_deploys': 'staging', 'release': RELEASE}))
         (self.root / '.github' / 'workflows').mkdir(parents=True)
         shutil.copy(WORKFLOW, self.root / '.github' / 'workflows' / 'jfactory-verified.yml')
+        shutil.copy(ROOT / 'skills' / 'jfactory' / 'templates' / 'jfactory-method-audit.yml',
+                    self.root / '.github' / 'workflows' / 'jfactory-method-audit.yml')
+        (self.root / 'outcomes').mkdir()
+        (self.root / 'outcomes' / 'README.md').write_text('# Outcomes\n')
         (self.root / 'src').mkdir()
         (self.root / 'src' / 'app.py').write_text('')
         subprocess.run(['git', '-C', str(self.root), 'add', '-A'], check=True)
@@ -117,6 +122,60 @@ class SetupCheckTest(unittest.TestCase):
         write()
         (self.root / '.jfactory' / 'standards.md').unlink()
         self.assertIn('No standards map', self.check('--remote', '--repo', 'o/r', code=1))
+        (self.root / '.jfactory' / 'standards.md').write_text(standards())
+        (self.root / 'outcomes' / 'README.md').unlink()
+        self.assertIn('No outcomes/README.md', self.check('--remote', '--repo', 'o/r', code=1))
+
+    def test_verified_delivery_needs_the_method_audit(self):
+        self.assertIn('PASS: The method audit checks the checkers', self.check('--remote', '--repo', 'o/r'))
+        audit = self.root / '.github' / 'workflows' / 'jfactory-method-audit.yml'
+        # A manual workflow that only mentions the script audits nothing.
+        audit.write_text('on: workflow_dispatch\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo method_audit.py\n')
+        self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
+        # Scheduled, but only echoes the command.
+        audit.write_text("on:\n  schedule:\n    - cron: '0 7 * * 1'\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n"
+                         "      - run: echo python3 scripts/method_audit.py\n      - name: x\n        run: |\n"
+                         "          echo 'python3 method_audit.py'\n")
+        self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
+        audit.unlink()
+        self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
+
+    def test_only_an_executed_audit_command_counts(self):
+        head = "on:\n  schedule:\n    - cron: '0 7 * * 1'\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n"
+        script = '.agents/skills/jfactory/scripts/method_audit.py --repo o/r'
+        runs = {
+            # Operators inside comments or quoted text start no command.
+            f'      - run: |\n          # prepare; python3 {script}\n          echo no-audit\n': False,
+            f"      - run: echo 'To audit; python3 {script}'\n": False,
+            f'      - run: echo "a && python3 {script}"\n': False,
+            f'      - run: echo python3 {script}\n': False,
+            f"      - run: echo ';' python3 {script}\n": False,
+            f"      - run: |\n          echo 'Example:\n          python3 {script}\n          '\n": False,
+            f'      - run: |\n          cat <<EOF\n          python3 {script}\n          EOF\n': False,
+            f"      - run: |\n          echo 'unclosed\n          python3 {script}\n": False,
+            f'      - run: echo a\\;python3 {script}\n': False,
+            # A here-document ends only at a line that is exactly its delimiter (<<- strips leading tabs only).
+            f'      - run: |\n          cat <<EOF\n           EOF\n          python3 {script}\n          EOF\n': False,
+            f'      - run: |\n          cat <<EOF\n          EOF \n          python3 {script}\n          EOF\n': False,
+            f'      - run: |\n          cat <<-EOF\n           EOF\n          python3 {script}\n          EOF\n': False,
+            f'      - run: |\n          cat <<EOF\n          text\n          EOF\n          python3 {script}\n': True,
+            f'      - run: |\n          cat <<-EOF\n          text\n          \t\tEOF\n          python3 {script}\n': True,
+            # Real invocations, however they are written.
+            f'      - run: python3 {script}\n': True,
+            f"      - run: 'python3 {script}'\n": True,
+            f'      - run: "python3 {script}"\n': True,
+            f'      - run: |\n          set -e\n          cd x && GH_TOKEN=t python3 -u {script} # weekly\n': True,
+            f'      - run: >-\n          python3\n          {script}\n': True,
+            f'      - run: |\n          python3 \\\n            {script}\n': True,
+        }
+        for run, expected in runs.items():
+            self.assertEqual(setup_check.runs_method_audit(head + run), expected, run)
+        # End to end: a false closing delimiter cannot make setup report an executing audit.
+        audit = self.root / '.github' / 'workflows' / 'jfactory-method-audit.yml'
+        for false_end in (' EOF', 'EOF '):
+            audit.write_text(head + f'      - run: |\n          cat <<EOF\n          {false_end}\n          python3 {script}\n'
+                                    '          EOF\n')
+            self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
 
     def test_complete_setup_passes_with_remote_protection(self):
         out = self.check('--remote', '--repo', 'o/r')
@@ -195,14 +254,14 @@ class SetupCheckTest(unittest.TestCase):
     def test_risk_levels_are_reported(self):
         self.assertIn('WARN: 1 feature(s) have no risk level', self.check('--remote', '--repo', 'o/r'))
         (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(
-            {'static': ['README.md'], 'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**', '.github/**'],
+            {'static': ['README.md'], 'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**', '.github/**', 'outcomes/**'],
                                                            'verify': 'independent'}}}))
         self.assertIn('Risk levels set: 1 independent, 0 CI-only', self.check('--remote', '--repo', 'o/r'))
 
     def mapping(self, **extra):
         (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(
             {'static': ['README.md'], 'always_suites': ['unit'], **extra,
-             'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**', '.github/**'], 'verify': 'independent',
+             'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**', '.github/**', 'outcomes/**'], 'verify': 'independent',
                                   'suites': ['e2e-app']}}}))
 
     def test_per_pr_cost_must_fit_the_budget(self):

@@ -157,6 +157,29 @@ def journey_proofs(text):
     return rows
 
 
+def outcome_files(config):
+    """The specific outcome documents a PR can name: files under outcomes/, not the folder itself."""
+    return [s for s in config.get('_standards', []) if s.startswith('outcomes/') and not s.endswith('/')]
+
+
+WHY_SECTION = re.compile(r'(?im)^\s*(#{1,6}\s*|\*\*|__)?\s*why\s+it[\'\u2019]s\s+right\b')
+
+
+def why_its_right_problem(body, config):
+    """With outcome documents, a PR that isn't static names the specific ones it serves in a "Why it's right"
+    section. Returns what is missing, or None."""
+    files = outcome_files(config)
+    if not files:
+        return None
+    body = body or ''
+    if not WHY_SECTION.search(body):
+        return 'PR description needs a "Why it\'s right" section (templates/objective.md)'
+    if not any(doc in body for doc in files):
+        return ('PR description must name the outcomes/<job>.md document(s) this change serves in its "Why it\'s right" '
+                'section')
+    return None
+
+
 def needs_standards(result, config):
     """With a standards map, a verdict on any change that isn't static names the standards it checked."""
     return bool(config.get('_standards')) and result['level'] != 'static'
@@ -785,7 +808,7 @@ def git_files(base):
 
 def pr_info(repo, number):
     pr = json.loads(run('gh', 'pr', 'view', str(number), '--repo', repo, '--json',
-                        'headRefOid,baseRefName,comments,isCrossRepository,body'))
+                        'headRefOid,baseRefName,comments,isCrossRepository,body,title'))
     files = run('gh', 'api', f'repos/{repo}/pulls/{number}/files', '--paginate', '--jq', '.[].filename')
     pr['files'] = [line for line in files.splitlines() if line]
     return pr
@@ -933,6 +956,10 @@ def evaluate(pr, config, ci_check=None):
     if current_verdicts and current_verdicts[-1].get('verdict') in ('failed', 'blocked'):
         # Done means right: a reviewer who found this change wrong vetoes it, even where no verdict was required.
         return 'failure', f"Latest verdict at {pr['headRefOid'][:7]} is {current_verdicts[-1]['verdict']}"
+    if result['level'] != 'static' and config.get('require_objective', True):
+        problem = why_its_right_problem(pr.get('body'), config)
+        if problem:
+            return 'failure', problem
     if not result['needs_verifier']:
         if result['level'] == 'ci':
             return 'success', 'Low-risk change (verify: ci); required CI checks apply'
