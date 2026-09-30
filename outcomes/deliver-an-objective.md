@@ -13,8 +13,8 @@ Serves outcomes 1 and 2 in [README.md](README.md). Feature: `agent-instructions`
 
 | Goal | How it's proven |
 | --- | --- |
-| The agent keeps working until every criterion passes or is precisely blocked | Eval "Component fixtures pass, full-app auth unavailable"; eval "User requests continuation after the agreed objective is complete" (model trials) |
-| "Done" always carries evidence; stale or failed receipts can't be reused | `tests/test_evidence.py` `test_new_failure_does_not_reuse_old_success`, `test_changed_source_and_task_invalidate_proof` |
+| The agent keeps working until the change is right (criteria, job goals, standards and outcomes) or is precisely blocked | Eval "Component fixtures pass, full-app auth unavailable"; eval "User requests continuation after the agreed objective is complete" (model trials) |
+| "Done" means right and always carries evidence; stale or failed receipts can't be reused | `tests/test_evidence.py` `test_new_failure_does_not_reuse_old_success`, `test_changed_source_and_task_invalidate_proof` |
 | Judgment criteria are scored against a rubric by another model family | `tests/test_evidence.py` `test_judgment_needs_rubric_independent_judge_and_inspected_artifacts` |
 | Every PR states its objective, and each criterion names the job goal it serves | `tests/test_verify_plan.py` `test_non_static_pr_must_state_its_objective`; objective template review by the verifier |
 | The final message names the actual evidence, PR and commit | Eval "Agent implemented scene audio behavior and is about to say only 'confirmed'" (model trial) |

@@ -42,8 +42,8 @@ You stay in charge of three things: what gets built, product decisions the agent
 
 **Every request after that,** for example *"Let users save items and find them later"*:
 
-4. **Objective.** The agent writes what "done" means as observable criteria, each with the evidence that proves it. It also chooses which loops the work needs (product, UX, engineering) and asks you only about undecided choices. 📋 Instructed. 🔒 For any change that isn't static, the PR can't pass `jfactory verified` unless the PR description starts with it: the first non-empty line must be a heading that starts with the word Objective (any level, such as `## Objective`) or an `Objective:` line (bold allowed), followed by the objective or a link to its issue. The check confirms it's there and not trivially short. Whether it's a good objective is up to the agent and the verifier. The check re-runs when you edit the PR description.
-5. **Loop.** It implements, runs the real check, reads the result and fixes, until every criterion passes. It never weakens a criterion to finish. 📋 Instructed
+4. **Objective.** The agent writes what "done" means as observable criteria, each with the evidence that proves it and the job goal it serves. Done means right: meeting the criteria while missing the job's goals, the standards or the outcomes is not done. It also chooses which loops the work needs (product, UX, engineering) and asks you only about undecided choices. 📋 Instructed. 🔒 For any change that isn't static, the PR can't pass `jfactory verified` unless the PR description starts with it: the first non-empty line must be a heading that starts with the word Objective (any level, such as `## Objective`) or an `Objective:` line (bold allowed), followed by the objective or a link to its issue. The check confirms it's there and not trivially short. Whether it's a good objective is up to the agent and the verifier. The check re-runs when you edit the PR description.
+5. **Loop.** It implements, runs the real check, reads the result and fixes, until the change is right: every criterion passes, the jobs' standing goals hold, the standards are met and the outcomes are served. It never weakens a criterion to finish. 📋 Instructed
 6. **PR and plan.** It opens a PR. `verify_plan.py` reads the changed files and decides:
    - **docs only:** static checks;
    - **low-risk areas:** CI only;
@@ -73,7 +73,7 @@ The sections below explain each step in depth.
 ## What you get
 
 - **No more "keep going".** Give the agent a bounded outcome and it works through implementation, testing and fixing on its own, stopping only for decisions that genuinely need you.
-- **Proof, not claims.** Every result says what was checked, how, on which commit, and what is still unproven. "It works" without evidence doesn't count as done.
+- **Done means right.** A change is done only when it's right: it serves your outcomes, keeps the goals of every job it touches, meets your standards and meets its own criteria, each proven. Passing checks alone isn't done, and neither is "it works" without evidence. Every result says what was checked, against what, on which commit, and what is still unproven.
 - **Checks sized to the change.** A PR runs the checks for what it touched, including every browser journey that executes changed shared code, split across parallel jobs. The full browser suite runs when you chose at setup, for example only on the final PR of a major feature, and records what each journey executes.
 - **A second opinion from a different AI.** A verifier from a different model family (for example GPT checking Claude's work) re-checks each high-risk change before it can merge. Low-risk changes need only passing CI.
 - **Checked against your own standards.** Setup records the business outcomes (`outcomes/README.md`), where each standard lives (brand and voice, design system, UX principles, accessibility, performance, security, conventions, definition of done), and one document per job to be done (`outcomes/<job>.md`), with how each goal is proven. Verifiers check every change against them and name what they checked; a document never gets edited to match broken behavior.
@@ -85,7 +85,7 @@ The sections below explain each step in depth.
 
 jfactory has two kinds of parts, and anything important gets both:
 
-- **Instructions the agent reads.** They tell it how to work: agree what "done" means, prove it properly, open a PR. They are guidance. An agent can still miss or misread them.
+- **Instructions the agent reads.** They tell it how to work: agree what "done" means (right, not just passing), prove it properly, open a PR. They are guidance. An agent can still miss or misread them.
 - **Checks that enforce the rules.** Scripts and GitHub settings that refuse to proceed unless the rules were actually followed. They work whether or not the agent cooperates.
 
 For example, the instructions say "get a model from another family to verify your work". The scripts refuse a verdict for an old commit or from the same family. When the repository's ruleset requires the `jfactory verified` check (setup asks you to turn this on), GitHub refuses to merge a high-risk change until a valid verdict exists.
@@ -119,7 +119,7 @@ Work moves through four connected feedback loops. They are not ceremonies. The a
 | --- | --- | --- | --- |
 | Product | Who is this for, what problem are we solving, what would success look like? | An agreed objective: your decisions, the agent's assumptions, acceptance criteria and non-goals | The setup interview; a product review in each substantial objective |
 | UX (design) | Can someone understand and complete the task in the running product? What can we learn from other apps? | Review findings and `judgment` scores for your app; research findings as proposals | The `jfactory-ux` skill |
-| Engineering | Does the implementation behave correctly, including saved data and side effects? | A PR whose criteria pass at the required evidence scopes | The objective, the implement-check-fix loop, verification |
+| Engineering | Does the implementation behave correctly, including saved data and side effects? | A PR verified as right: its criteria pass at the required scopes, and its job goals, standards and outcomes hold | The objective, the implement-check-fix loop, verification |
 | Workflow improvement | Where did the agent's method fail, and what stops it happening again? | A new check, rule or skill, tested with evals | The correction ladder and evals |
 
 ### How a request is routed

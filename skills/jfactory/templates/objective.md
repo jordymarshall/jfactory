@@ -45,7 +45,7 @@ For a `judgment` criterion, write the rubric before building. Give each point so
 
 ## Review and stop
 - **Checkpoint:** <when the owner reviews>
-- **Stop conditions:** <when to stop, e.g. the criteria pass>
+- **Stop conditions:** <when to stop. Done means right: every criterion passes, the touched jobs' standing goals still hold, the standards are met and the outcomes are served, each proven at the current commit. Passing checks alone is not a stop condition.>
 - **Merge and release policy:** <what merging does; production needs an owner request and follows the `release` procedure in .jfactory/coordination.json>
 
 ## Status

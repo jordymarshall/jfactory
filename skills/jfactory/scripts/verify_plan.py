@@ -419,7 +419,7 @@ def render_plan(result):
         head = 'Static-only change: CI static checks are required; no independent verifier is needed.'
     elif result['level'] == 'ci':
         head = (f"CI-only change: {len(result['features'])} low-risk feature(s); passing CI is required and no "
-                'independent verifier is needed.')
+                'independent verifier is needed. The change must still be right: CI is its evidence, not its finish line.')
     elif result['unmapped']:
         head = (f"Full verification required: {len(result['unmapped'])} changed file(s) are not mapped to a "
                 'feature. Map them in .jfactory/verification.json; `ci` refuses to run until they are.')

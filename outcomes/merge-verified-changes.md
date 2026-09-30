@@ -6,7 +6,7 @@ Serves outcome 2 in [README.md](README.md). Feature: `coordination` (`verify_pla
 
 - **User:** the owner, who no longer reviews every PR by hand.
 - **Trigger:** an agent's PR is ready.
-- **Outcome they want:** only changes that were proven, at their exact commit, by an independent reviewer who checked them against the project's standards, can merge.
+- **Outcome they want:** only changes that are right can merge: proven at their exact commit, by an independent reviewer, against their criteria, their jobs' goals, the standards and the outcomes. Passing checks alone never merges.
 - **Not in scope:** releasing production.
 
 ## Goals and how each is proven

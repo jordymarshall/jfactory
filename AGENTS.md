@@ -5,9 +5,11 @@
 jfactory is a portable engineering methodology and toolset for coding agents, not an application. It is for the owner first, then any developer who points their coding agent at this repository. It removes four pains:
 
 - babysitting agents with "keep going" (the primary one);
-- agents claiming done without evidence;
+- agents calling work done when it isn't right: unproven, or proven only against checks that miss the outcomes, the job goals or the standards;
 - reviewing every PR by hand;
 - coordinating many agents in parallel.
+
+The principle behind all of it: done means right. Work that passes its checks but misses the outcomes, the job goals or the standards is not done.
 
 Success is measured in this order:
 

@@ -14,4 +14,4 @@ Name each source as a backticked repository path (`docs/brand.md`, or `docs/bran
 | Performance and scale | `REPLACE: budgets, or none and why` | CI timings; deliberate scale journeys |
 | Security, privacy and data | `REPLACE: policy or requirements` | Verifier: access boundaries and data handling in the diff |
 | Engineering conventions | `REPLACE: conventions document and lint/type config` | CI lint, type and unit checks |
-| Definition of done | `REPLACE: where acceptance criteria live` | Verifier: every criterion at its required scope |
+| Definition of done | `REPLACE: where acceptance criteria live`; done means right | Verifier: the change is right, not only passing: criteria at their scopes, the jobs' standing goals, these standards and the outcomes, each proven |

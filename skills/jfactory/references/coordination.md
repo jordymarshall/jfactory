@@ -70,7 +70,7 @@ Sessions in one workspace share its checkout, branch, running processes and port
 
 State, once, before any worker starts:
 
-- The program objective and a countable done condition, for example "these three outcomes are merged, each with its required application evidence at the merged revision."
+- The program objective and a countable done condition, for example "these three outcomes are merged, each verified as right (criteria, job goals, standards and outcomes) with its required application evidence at the merged revision."
 - The units. One unit is one coherent objective delivered as one PR with its own evidence. Name dependencies and each unit's owned paths.
 - Each unit's verification standard: its acceptance criteria and the evidence scopes that define verified (`add --requires`, such as `application,unit`). Application evidence comes from the PR preview or staging. Workers loop until the standard passes; the coordinator merges without asking again once it does.
 - The concurrency limit (default three), the model policy (see [model selection](models.md), including the usage check before each launch batch), wall-clock or spend limits, and what merging deploys (`init --merge-deploys` or `.jfactory/coordination.json`). `merge` refuses unless merges reach staging or nothing; production releases stay a deliberate owner action.

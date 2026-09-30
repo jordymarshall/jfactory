@@ -6,7 +6,7 @@ Serves outcome 1 in [README.md](README.md). Feature: `setup-check` in `.jfactory
 
 - **User:** an owner or developer adopting jfactory in an existing or empty repository.
 - **Trigger:** "Setup jfactory".
-- **Outcome they want:** a repository their agents can work in unattended, with gates that make "done" mean proven, after answering only product questions.
+- **Outcome they want:** a repository their agents can work in unattended, with gates that make "done" mean right and proven, after answering only product questions.
 - **Not in scope:** choosing the product's direction or building a feature during setup.
 
 ## Goals and how each is proven

@@ -1,6 +1,10 @@
 # Verification contract
 
-Choose evidence from the claim, not from whichever test is easiest to run. Engineering correctness, experience quality, customer value and agent-workflow effectiveness are separate conclusions.
+Choose evidence from the claim, not from whichever test is easiest to run.
+
+**Done means right.** A change is done only when it is right: it serves the outcomes in `outcomes/README.md` and crosses none of its non-goals, keeps every standing goal of the jobs it touches (`outcomes/<job>.md`), meets the standards map (`.jfactory/standards.md`) and meets its own criteria, each proven at the current commit. Green CI, passing tests, an approved review or a completed checklist is evidence toward done, never done by itself. Done but not right is not done: keep working, or report it as not done.
+
+Engineering correctness, experience quality, customer value and agent-workflow effectiveness need different evidence, and each one that applies must hold. Proving one does not stand in for another: correct code with a confusing experience, or a polished screen that doesn't serve the outcome, is not done.
 
 ## Objective contract
 
@@ -15,7 +19,7 @@ Write the objective before substantial implementation, in the task location name
 
 For example, "make saving good" is incomplete. "A signed-in customer saves an item, sees it after reload and in a new session, and receives a recoverable error if saving fails" identifies observable behavior. The tests must exercise the real application's auth/storage boundary for that claim. An additional customer interview may still be needed to determine whether saving solves the right problem.
 
-Work through unresolved criteria autonomously. Use failed checks and observations to choose the next correction. Keep the original acceptance standard visible when a proposal changes it; an agent cannot mark a requirement done by deleting its failing assertion. Stop dependent work for a material unresolved decision, inaccessible required service or exhausted agreed budget; continue feasible independent work. Once criteria and required reviews pass, deliver under the recorded PR policy and stop at the agreed boundary.
+Work through unresolved criteria, and anything that is not yet right against the job goals, standards and outcomes, autonomously. Use failed checks and observations to choose the next correction. Keep the original acceptance standard visible when a proposal changes it; an agent cannot mark a requirement done by deleting its failing assertion. Stop dependent work for a material unresolved decision, inaccessible required service or exhausted agreed budget; continue feasible independent work. Once criteria and required reviews pass, deliver under the recorded PR policy and stop at the agreed boundary.
 
 ## Required scopes
 

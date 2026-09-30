@@ -2,6 +2,8 @@
 
 The product loop sets the destination. The UX loop studies and improves the path a customer takes. The engineering loop makes the agreed behavior work. Workflow evals improve how the agent performs that work.
 
+**Done means right.** A change is done only when it is right: it serves the outcomes in `outcomes/README.md` and crosses none of its non-goals, keeps every standing goal of the jobs it touches (`outcomes/<job>.md`), meets the standards map (`.jfactory/standards.md`) and meets its own criteria, each proven at the current commit. Green CI, passing tests, an approved review or a completed checklist is evidence toward done, never done by itself. Done but not right is not done: keep working, or report it as not done. The loops exist to make work right; each one's evidence counts only toward that.
+
 ```mermaid
 flowchart TD
     P[Product: agree on customer outcome and acceptance] --> U[UX: research or inspect the task and choose an experience]
@@ -10,7 +12,7 @@ flowchart TD
     V -->|Friction or defect| E
     V --> R[Review preview, evidence and PR]
     R -->|Experience or value needs changing| P
-    R -->|Verified and required decisions settled| A[Protected auto-merge under standing policy]
+    R -->|Right: criteria, job goals, standards and outcomes proven; decisions settled| A[Protected auto-merge under standing policy]
     E -. Recurring agent failure .-> W[Workflow eval and structural improvement]
     V -. Recurring research failure .-> W
     W -. Improve how the next iteration runs .-> E
@@ -26,7 +28,7 @@ For example, to let a user save an item and find it later:
 2. UX research examines organization, feedback and recovery in approved apps, then proposes a flow for our customer.
 3. Engineering implements it and checks save, reload and independent readback.
 4. UX review checks navigation, feedback, loading/errors, focus, motion and relevant devices in the running application.
-5. The owner receives a walkthrough and PR, tries the task and accepts it or gives specific feedback. Protected auto-merge can land technically verified work before this feedback; required product decisions must be settled before it is queued.
+5. The owner receives a walkthrough and PR, tries the task and accepts it or gives specific feedback. Protected auto-merge lands only work verified as right: its criteria, the standing goals of its jobs, the standards and the outcomes, each proven. Technically correct work that misses any of them is not done and does not merge. Required product decisions must be settled before it is queued; the owner's feedback afterwards refines the product, it doesn't finish unfinished work.
 
 Workflow evals are separate experiments on the agent's methods. Passing an app test does not prove a skill makes good decisions. A skill eval does not prove an app works. Inspect actual tool use and artifacts; compare variants on equivalent isolated tasks where practical. Prefer a deterministic test, type or CI check for repeated mechanical errors.
 

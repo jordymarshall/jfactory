@@ -1,12 +1,12 @@
 # Set up and use protected auto-merge
 
-The default delivery preference is a non-draft PR followed by auto-merge once verification is complete. Honor the target repository's owner-approved policy. A standing authorization covers subsequent in-scope PRs; do not ask again each time. Merely installing this skill in another owner's repository does not grant merge or production permissions.
+The default delivery preference is a non-draft PR followed by auto-merge once the change is verified as right. Honor the target repository's owner-approved policy. A standing authorization covers subsequent in-scope PRs; do not ask again each time. Merely installing this skill in another owner's repository does not grant merge or production permissions.
 
 ## Default policy: verified work merges itself, production does not
 
 This is jfactory's default unless the owner records otherwise:
 
-- **Verified means the agreed standard passed.** Before implementation, each objective records its acceptance criteria and the evidence scopes each criterion requires (see the [verification contract](verification.md)). The agent works until every criterion passes at those scopes on the PR's current head. For application criteria, use the PR preview or staging, not production. Then it queues auto-merge without asking again. Missing, failed or stale proof keeps the PR open. Never weaken the standard to reach a merge.
+- **Verified means right, proven.** Before implementation, each objective records its acceptance criteria, the job goals they add, change or rely on, and the evidence scopes each requires (see the [verification contract](verification.md)). The agent works until the change is right at the PR's current head: every criterion passes at its scopes, the standing goals of the jobs it touches still hold, it meets the standards map, and it serves the outcomes without crossing a non-goal. A passing test suite alone is not verified. For application criteria, use the PR preview or staging, not production. Then it queues auto-merge without asking again. Missing, failed or stale proof keeps the PR open. Never weaken the standard to reach a merge.
 - **Merging deploys at most to staging.** The base branch should deploy to a staging target, or nowhere. If merging currently releases production, auto-merge stays off until the release path is reconfigured, with the owner's authorization, so merges reach staging or nothing. There is no auto-merge exception for merge-to-production.
 - **Production is a deliberate owner action.** Release to production only when the owner asks for that release. A merge, green CI, a verified verdict or a standing auto-merge authorization is not a production request. Setup records the repository's release procedure, and the agent follows it on request, as described in [production releases](release.md).
 

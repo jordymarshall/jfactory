@@ -4,7 +4,7 @@ The business level for jfactory itself. The product brief in [AGENTS.md](../AGEN
 
 ## Customer
 
-The owner first, then any developer who points their coding agent at this repository. They want agents to work for hours without being told "keep going", without claiming done unproven, without every PR needing a human review, and without chaos when many run at once.
+The owner first, then any developer who points their coding agent at this repository. They want agents to work for hours without being told "keep going", without calling work done that isn't right (unproven, or right only by its own checks), without every PR needing a human review, and without chaos when many run at once.
 
 ## Outcomes and measures
 
