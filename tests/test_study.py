@@ -29,6 +29,47 @@ class StudyTests(unittest.TestCase):
                  'findings': [], 'unknowns': ['No customer study']}
         study.write_json(self.folder / 'report.json', value)
 
+    def fake_browser(self, calls, fail_screenshot=False):
+        def run(folder, args):
+            calls.append(args)
+            if args[0] == 'screenshot':
+                if fail_screenshot:
+                    return 1
+                (folder / args[1].split('=', 1)[1]).write_bytes(b'png')
+            return 0
+        return run
+
+    def test_every_step_captures_what_the_user_now_sees(self):
+        calls = []
+        run = self.fake_browser(calls)
+        self.assertEqual(study.step(self.folder, ['open', 'https://example.com'], run), (1, 'artifacts/steps/001.png'))
+        study.step(self.folder, ['click', "getByRole('button', { name: 'Load more' })"], run)
+        self.assertEqual([c[0] for c in calls], ['open', 'screenshot', 'click', 'screenshot'])
+        steps = json.loads((self.folder / 'steps.json').read_text())
+        self.assertEqual([s['screenshot'] for s in steps], ['artifacts/steps/001.png', 'artifacts/steps/002.png'])
+        self.assertTrue(all((self.folder / s['screenshot']).is_file() for s in steps))
+        # The trail refuses to render until someone looked at, and described, every step.
+        with self.assertRaisesRegex(ValueError, 'no note for step\\(s\\) 1, 2'):
+            study.walkthrough(self.folder)
+        study.note(self.folder, 1, 'Briefs list, 40 rows, header readable')
+        with self.assertRaisesRegex(ValueError, 'no note for step\\(s\\) 2'):
+            study.walkthrough(self.folder)
+        with self.assertRaisesRegex(ValueError, 'says what the screenshot shows'):
+            study.note(self.folder, 2, '   ')
+        study.note(self.folder, 2, '80 rows; <b>focus</b> on brief 041')
+        html = study.walkthrough(self.folder).read_text()
+        self.assertIn('&lt;b&gt;focus&lt;/b&gt;', html)
+        self.assertIn('artifacts/steps/002.png', html)
+        self.assertIn('2. **click', (self.folder / 'steps.md').read_text())
+
+    def test_step_refuses_non_actions_and_a_missing_screenshot(self):
+        with self.assertRaisesRegex(ValueError, 'one user action'):
+            study.step(self.folder, ['screenshot'], self.fake_browser([]))
+        with self.assertRaisesRegex(ValueError, 'screenshot was not captured'):
+            study.step(self.folder, ['click', 'x'], self.fake_browser([], fail_screenshot=True))
+        with self.assertRaisesRegex(ValueError, 'No steps recorded'):
+            study.walkthrough(self.folder)
+
     def test_private_distinct_sessions_and_no_overwrite(self):
         second = study.init(self.root, 'other', 'https://example.com', 'Other study')
         first_id = json.loads((self.folder / 'study.json').read_text())['session']

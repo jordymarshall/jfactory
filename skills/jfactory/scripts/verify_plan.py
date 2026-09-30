@@ -918,6 +918,8 @@ def evaluate(pr, config, ci_check=None):
         return 'failure', 'Verdict has no evidence links'
     if needs_standards(result, config) and not verdict.get('standards'):
         return 'failure', f'Verdict does not name the standards it checked the change against ({STANDARDS})'
+    if needs_screenshots(result, config) and config.get('require_walkthrough', True) and not verdict.get('walkthrough'):
+        return 'failure', 'Verdict has no step-by-step walkthrough of the changed screens (study.py step, note, walkthrough)'
     if needs_screenshots(result, config) and not verdict.get('screenshots'):
         return 'failure', ('Verdict has no screenshots of the changed screens (' + ', '.join(result['screen_features'])[:80]
                            + ')')
@@ -1152,6 +1154,11 @@ def cmd_verdict(args):
     unknown = [s for s in args.standards if s.split('#')[0] not in config.get('_standards', [])]
     if unknown:
         raise Refused(f'--standards {", ".join(unknown)} is not a source in {STANDARDS}')
+    if (args.verdict == 'verified' and needs_screenshots(result, config) and config.get('require_walkthrough', True)
+            and not args.walkthrough):
+        raise Refused('This change touches screens users see. Use each changed journey step by step (jfactory-ux '
+                      '`study.py step` for every action, look at each screenshot, `study.py note` what it shows, then '
+                      '`study.py walkthrough`) at every target viewport, and link the trail with --walkthrough')
     if args.verdict == 'verified' and needs_screenshots(result, config) and not args.screenshots:
         raise Refused('This change touches screens users see (' + ', '.join(result['screen_features']) + '). Capture '
                       'each changed screen at the target viewports, review the images with a vision-capable model '
@@ -1163,6 +1170,7 @@ def cmd_verdict(args):
     record = {'head': args.head, 'verdict': args.verdict, 'features': sorted(features), 'full': args.full,
               'verifier': args.verifier, 'implementer': args.implementer, 'evidence': args.evidence,
               **({'screenshots': args.screenshots} if args.screenshots else {}),
+              **({'walkthrough': args.walkthrough} if args.walkthrough else {}),
               **({'standards': args.standards} if args.standards else {}),
               'at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
               **({'since': args.since} if args.since else {})}
@@ -1173,6 +1181,7 @@ def cmd_verdict(args):
             f"{'full feature map' if args.full else ', '.join(features) or 'none'}\n\nEvidence:\n"
             + '\n'.join(f'- {e}' for e in args.evidence)
             + (('\n\nChecked against standards:\n' + '\n'.join(f'- `{s}`' for s in args.standards)) if args.standards else '')
+            + (('\n\nStep-by-step walkthrough:\n' + '\n'.join(f'- {w}' for w in args.walkthrough)) if args.walkthrough else '')
             + (('\n\nScreenshots reviewed:\n' + '\n'.join(f'- {s}' for s in args.screenshots)) if args.screenshots else '')
             + (f'\n\n{args.note}' if args.note else ''))
     run('gh', 'pr', 'comment', str(args.pr), '--repo', args.repo, '--body-file', body_file(text))
@@ -1244,6 +1253,8 @@ def main(argv=None):
                    help='Link to screenshots of a changed screen, reviewed by a vision-capable model; repeat per link')
     p.add_argument('--standards', action='append', default=[],
                    help=f'A source in {STANDARDS} the change was checked against; repeat per document')
+    p.add_argument('--walkthrough', action='append', default=[],
+                   help='Link to a step-by-step walkthrough (study.py walkthrough) of a changed journey; repeat per viewport')
     p.add_argument('--since', help='Head of this PR\'s earlier verdict; this one re-checked only the changes since')
     p.add_argument('--note')
     p.set_defaults(func=cmd_verdict)
