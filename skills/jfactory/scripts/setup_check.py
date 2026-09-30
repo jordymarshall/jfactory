@@ -12,7 +12,6 @@ Exit status: 0 complete, 1 something must be fixed, 3 consistent but blocked on 
 import argparse
 import json
 import re
-import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -245,25 +244,76 @@ def run_blocks(text):
 
 
 def shell_commands(script):
-    """Each simple command in a shell script as its words. Comments and quoted text stay inside their words, so an
-    operator written in a comment or a string never starts a command."""
-    commands = []
-    for line in script.replace('\\\n', ' ').splitlines():
-        lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
-        lexer.whitespace_split = True
-        try:
-            words = list(lexer)
-        except ValueError:  # unbalanced quotes: nothing here runs as written
-            continue
-        current = []
-        for word in words:
-            if word and set(word) <= set(';&|()'):
-                commands.append(current)
-                current = []
-            else:
-                current.append(word)
-        commands.append(current)
-    return [c for c in commands if c]
+    """Each simple command in a shell script as its words, read the way the shell reads them: quotes and backslashes
+    keep operators literal, a quoted string may span lines, and comments and here-document bodies run nothing. A
+    script with an unclosed quote fails before running, so it yields no commands."""
+    commands, words, word, heredocs = [], [], None, []
+    i, n = 0, len(script)
+
+    def finish_word():
+        nonlocal word
+        if word is not None:
+            words.append(word)
+            word = None
+
+    def finish_command():
+        nonlocal words
+        finish_word()
+        if words:
+            commands.append(words)
+        words = []
+
+    while i < n:
+        c = script[i]
+        if c == '\\':
+            if script[i + 1:i + 2] != '\n':
+                word = (word or '') + script[i + 1:i + 2]
+            i += 2
+        elif c == "'":
+            end = script.find("'", i + 1)
+            if end < 0:
+                return []
+            word, i = (word or '') + script[i + 1:end], end + 1
+        elif c == '"':
+            j, text = i + 1, ''
+            while j < n and script[j] != '"':
+                if script[j] == '\\' and j + 1 < n:
+                    j += 1
+                text, j = text + script[j], j + 1
+            if j >= n:
+                return []
+            word, i = (word or '') + text, j + 1
+        elif c == '#' and word is None:
+            end = script.find('\n', i)
+            i = n if end < 0 else end
+        elif c == '<' and script.startswith('<<', i) and not script.startswith('<<<', i):
+            finish_word()
+            match = re.compile(r'<<(-?)[ \t]*([\'"]?)([^\s\'";&|()<>]+)\2').match(script, i)
+            if not match:
+                return []
+            heredocs.append(match.group(3))
+            i = match.end()
+        elif c == '\n':
+            finish_command()
+            i += 1
+            for delimiter in heredocs:
+                while i < n:
+                    end = script.find('\n', i)
+                    line = script[i:n if end < 0 else end]
+                    i = n if end < 0 else end + 1
+                    if line.strip() == delimiter:
+                        break
+            heredocs = []
+        elif c in ' \t':
+            finish_word()
+            i += 1
+        elif c in ';&|()`':
+            finish_command()
+            i += 1
+        else:
+            word, i = (word or '') + c, i + 1
+    finish_command()
+    return commands
 
 
 def runs_method_audit(text):

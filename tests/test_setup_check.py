@@ -149,6 +149,11 @@ class SetupCheckTest(unittest.TestCase):
             f"      - run: echo 'To audit; python3 {script}'\n": False,
             f'      - run: echo "a && python3 {script}"\n': False,
             f'      - run: echo python3 {script}\n': False,
+            f"      - run: echo ';' python3 {script}\n": False,
+            f"      - run: |\n          echo 'Example:\n          python3 {script}\n          '\n": False,
+            f'      - run: |\n          cat <<EOF\n          python3 {script}\n          EOF\n': False,
+            f"      - run: |\n          echo 'unclosed\n          python3 {script}\n": False,
+            f'      - run: echo a\\;python3 {script}\n': False,
             # Real invocations, however they are written.
             f'      - run: python3 {script}\n': True,
             f"      - run: 'python3 {script}'\n": True,
