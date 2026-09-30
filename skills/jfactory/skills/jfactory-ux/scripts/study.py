@@ -115,17 +115,23 @@ def step(folder, args, run=None):
     log_path = folder / 'steps.json'
     steps = json.loads(log_path.read_text()) if log_path.exists() else []
     number = len(steps) + 1
+    for directory in (folder / 'artifacts', folder / 'artifacts' / 'steps'):
+        if directory.is_symlink():
+            raise ValueError('Study capture directories must not be symlinks')
     (folder / 'artifacts' / 'steps').mkdir(mode=0o700, exist_ok=True)
     shot = f'artifacts/steps/{number:03d}.png'
     started = datetime.now(timezone.utc)
     code = run(folder, list(args))
     seconds = round((datetime.now(timezone.utc) - started).total_seconds(), 2)
     captured = run(folder, ['screenshot', f'--filename={shot}'])
-    if captured or not (folder / shot).is_file():
-        raise ValueError(f'Step {number} ran, but its screenshot was not captured; fix the session before continuing')
+    ok = not captured and (folder / shot).is_file() and not (folder / shot).is_symlink()
+    # Record the action either way: it happened, and the trail must not hide it.
     steps.append({'step': number, 'action': ' '.join(args), 'exit': code, 'seconds': seconds,
-                  'at': started.isoformat(), 'screenshot': shot, 'note': ''})
+                  'at': started.isoformat(), 'screenshot': shot if ok else None, 'note': ''})
     write_json(log_path, steps)
+    if not ok:
+        raise ValueError(f'Step {number} ran, but its screenshot was not captured; the trail will not render until the '
+                         'session is fixed and the journey is walked again')
     return number, shot
 
 
@@ -149,7 +155,16 @@ def walkthrough(folder):
     steps = json.loads((folder / 'steps.json').read_text()) if (folder / 'steps.json').exists() else []
     if not steps:
         raise ValueError('No steps recorded; drive the journey with `study.py step`')
-    unseen = [str(s['step']) for s in steps if not s.get('note')]
+    shots = (folder / 'artifacts' / 'steps').resolve()
+    missing = []
+    for s in steps:
+        path = (folder / s['screenshot']).resolve() if s.get('screenshot') else None
+        if not path or not path.is_relative_to(shots) or not path.is_file() or (folder / s['screenshot']).is_symlink():
+            missing.append(str(s['step']))
+    if missing:
+        raise ValueError('Step(s) ' + ', '.join(missing) + ' have no screenshot inside artifacts/steps; walk the journey '
+                         'again in a working session')
+    unseen = [str(s['step']) for s in steps if not str(s.get('note') or '').strip()]
     if unseen:
         raise ValueError('Look at each screenshot and note what it shows first; no note for step(s) ' + ', '.join(unseen))
     study = json.loads((folder / 'study.json').read_text())
@@ -266,7 +281,8 @@ def review_server(folder, port=0):
         def send_head(self):
             name = unquote(urlsplit(self.path).path).lstrip('/')
             path = (folder / name).resolve()
-            if not path.is_file() or not (path == folder / 'walkthrough.html' or path.is_relative_to(folder / 'artifacts')):
+            if not path.is_file() or not (path in (folder / 'walkthrough.html', folder / 'steps.html', folder / 'steps.md')
+                                          or path.is_relative_to(folder / 'artifacts')):
                 self.send_error(404)
                 return None
             size = path.stat().st_size

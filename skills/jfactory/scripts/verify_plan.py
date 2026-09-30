@@ -190,6 +190,12 @@ def needs_screenshots(result, config):
     return bool(result['screen_features']) and config.get('require_screenshots', True)
 
 
+def needs_walkthrough(result, config):
+    """A verdict on a change to screens users see links a step-by-step walkthrough. Its own opt-out, separate from
+    screenshots."""
+    return bool(result['screen_features']) and config.get('require_walkthrough', True)
+
+
 def full_suite_mode(config, event, labels=()):
     """What a CI run executes under the owner's `full_suite` choice: `full` (every suite), `planned` (the suites
     this change needs) or `skip` (nothing; for example a nightly schedule when the owner chose on-request)."""
@@ -986,7 +992,7 @@ def evaluate(pr, config, ci_check=None):
         if not named or any(n is None or not (n in valid or any(n.startswith(v) for v in valid if v.endswith('/')))
                             for n in named):
             return 'failure', f'Verdict does not name the standards it checked the change against ({STANDARDS})'
-    if needs_screenshots(result, config) and config.get('require_walkthrough', True) and not verdict.get('walkthrough'):
+    if needs_walkthrough(result, config) and not verdict.get('walkthrough'):
         return 'failure', 'Verdict has no step-by-step walkthrough of the changed screens (study.py step, note, walkthrough)'
     if needs_screenshots(result, config) and not verdict.get('screenshots'):
         return 'failure', ('Verdict has no screenshots of the changed screens (' + ', '.join(result['screen_features'])[:80]
@@ -1224,8 +1230,7 @@ def cmd_verdict(args):
         source_path(s).startswith(v) for v in valid if v.endswith('/'))))]
     if unknown:
         raise Refused(f'--standards {", ".join(unknown)} is not a source in {STANDARDS}')
-    if (args.verdict == 'verified' and needs_screenshots(result, config) and config.get('require_walkthrough', True)
-            and not args.walkthrough):
+    if args.verdict == 'verified' and needs_walkthrough(result, config) and not args.walkthrough:
         raise Refused('This change touches screens users see. Use each changed journey step by step (jfactory-ux '
                       '`study.py step` for every action, look at each screenshot, `study.py note` what it shows, then '
                       '`study.py walkthrough`) at every target viewport, and link the trail with --walkthrough')

@@ -65,10 +65,35 @@ class StudyTests(unittest.TestCase):
     def test_step_refuses_non_actions_and_a_missing_screenshot(self):
         with self.assertRaisesRegex(ValueError, 'one user action'):
             study.step(self.folder, ['screenshot'], self.fake_browser([]))
-        with self.assertRaisesRegex(ValueError, 'screenshot was not captured'):
-            study.step(self.folder, ['click', 'x'], self.fake_browser([], fail_screenshot=True))
         with self.assertRaisesRegex(ValueError, 'No steps recorded'):
             study.walkthrough(self.folder)
+        # A failed capture still records the action, and the trail refuses to render around it.
+        study.step(self.folder, ['open', 'https://example.com'], self.fake_browser([]))
+        with self.assertRaisesRegex(ValueError, 'screenshot was not captured'):
+            study.step(self.folder, ['click', 'Open item'], self.fake_browser([], fail_screenshot=True))
+        study.step(self.folder, ['click', 'Save item'], self.fake_browser([]))
+        steps = json.loads((self.folder / 'steps.json').read_text())
+        self.assertEqual([s['action'] for s in steps], ['open https://example.com', 'click Open item', 'click Save item'])
+        for n in (1, 2, 3):
+            study.note(self.folder, n, 'seen')
+        with self.assertRaisesRegex(ValueError, 'Step\\(s\\) 2 have no screenshot'):
+            study.walkthrough(self.folder)
+
+    def test_trail_validates_what_it_renders(self):
+        study.step(self.folder, ['open', 'https://example.com'], self.fake_browser([]))
+        steps = json.loads((self.folder / 'steps.json').read_text())
+        steps[0]['note'] = '   '
+        study.write_json(self.folder / 'steps.json', steps)
+        with self.assertRaisesRegex(ValueError, 'no note for step\\(s\\) 1'):
+            study.walkthrough(self.folder)
+        steps[0].update(note='seen', screenshot='study.json')
+        study.write_json(self.folder / 'steps.json', steps)
+        with self.assertRaisesRegex(ValueError, 'no screenshot inside artifacts/steps'):
+            study.walkthrough(self.folder)
+        (self.folder / 'artifacts' / 'steps').rename(self.folder / 'moved')
+        (self.folder / 'artifacts' / 'steps').symlink_to(self.folder / 'moved')
+        with self.assertRaisesRegex(ValueError, 'must not be symlinks'):
+            study.step(self.folder, ['click', 'x'], self.fake_browser([]))
 
     def test_private_distinct_sessions_and_no_overwrite(self):
         second = study.init(self.root, 'other', 'https://example.com', 'Other study')
@@ -126,6 +151,22 @@ class StudyTests(unittest.TestCase):
                      ['open', '--profile=/tmp/other'], ['open', '--config=other.json']):
             with self.assertRaises(ValueError):
                 study.browser(self.folder, args)
+
+    def test_review_server_serves_the_step_trail(self):
+        study.step(self.folder, ['open', 'https://example.com'], self.fake_browser([]))
+        study.note(self.folder, 1, 'Landing page, readable')
+        study.walkthrough(self.folder)
+        server = study.review_server(self.folder)
+        Thread(target=server.serve_forever, daemon=True).start()
+        base = f'http://127.0.0.1:{server.server_port}'
+        try:
+            for path, text in (('/steps.html', b'Landing page, readable'), ('/steps.md', b'Landing page, readable'),
+                               ('/artifacts/steps/001.png', b'png')):
+                with urlopen(base + path) as response:
+                    self.assertIn(text, response.read())
+        finally:
+            server.shutdown()
+            server.server_close()
 
     def test_review_server_serves_evidence_but_not_profile_or_traversal(self):
         self.report()

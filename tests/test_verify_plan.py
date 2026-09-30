@@ -346,6 +346,11 @@ class GateTest(unittest.TestCase):
         posted = json.loads(self.state.read_text())['prs']['5']['comments'][-1]['body']
         self.assertIn('Screenshots reviewed:', posted)
         self.assertIn('Step-by-step walkthrough:', posted)
+        # Turning screenshots off does not turn the walkthrough off.
+        self.write(files=['app/briefs/save.ts'], head='9' * 40, config={**screens, 'require_screenshots': False})
+        self.assertIn('step by step', self.verdict(head='9' * 40, code=2))
+        self.verdict('--walkthrough', 'https://trail/b.html', head='9' * 40)
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
         # Changes without screens, and repositories that opt out, need none. Neither do test-only or prose-only
         # changes inside a screen feature: they still get the independent review, just not screenshots.
         self.write(files=['cli/run.py'], head='c' * 40, config=screens)
@@ -371,7 +376,7 @@ class GateTest(unittest.TestCase):
         # A mixed change still needs them.
         self.assertEqual(verify_plan.plan(['app/briefs/save.test.ts', 'app/briefs/save.ts'], screens)['screen_features'],
                          ['briefs'])
-        self.write(files=['app/briefs/save.ts'], head='d' * 40, config={**screens, 'require_screenshots': False})
+        self.write(files=['app/briefs/save.ts'], head='d' * 40, config={**screens, 'require_screenshots': False, 'require_walkthrough': False})
         self.verdict(head='d' * 40)
         self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
 

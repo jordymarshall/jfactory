@@ -37,13 +37,15 @@ A verifier uses a changed journey the way a person would: one action, then look 
 
 ```sh
 python3 "$UX" step "$STUDY" open https://preview.example.com/briefs
+python3 "$UX" note "$STUDY" 1 "Briefs list, first 40 briefs, Load more below the last row"
 python3 "$UX" step "$STUDY" click "getByRole('button', { name: 'Load more briefs', exact: true })"
 python3 "$UX" note "$STUDY" 2 "80 briefs listed; focus moved to brief 041; button still visible above the composer"
 python3 "$UX" step "$STUDY" resize 390 844
+python3 "$UX" note "$STUDY" 3 "Phone width: rows reflow to one column; nothing clipped; composer pinned at the bottom"
 python3 "$UX" walkthrough "$STUDY"
 ```
 
-`step` runs one action (any CLI command except captures, recordings and close), then saves `artifacts/steps/NNN.png` and logs the action, its duration and exit status in `steps.json`. Open each screenshot and look at it before the next action; `note` records what it shows, including anything wrong. `walkthrough` writes `steps.html` and `steps.md` and refuses while any step has no note. Walk each changed journey at every target viewport. Upload the trail and link it from the verdict with `--walkthrough`.
+`step` runs one action (any CLI command except captures, recordings and close), then saves `artifacts/steps/NNN.png` and logs the action, its duration and exit status in `steps.json`. A step whose screenshot fails is still logged, without a screenshot, and the trail won't render until the journey is walked again in a working session. `python3 "$UX" serve "$STUDY"` serves `steps.html` with its screenshots. Open each screenshot and look at it before the next action; `note` records what it shows, including anything wrong. `walkthrough` writes `steps.html` and `steps.md` and refuses while any step has no note. Walk each changed journey at every target viewport. Upload the trail and link it from the verdict with `--walkthrough`.
 
 The actor and the judge can be different models. Today the verifier itself picks each action, a few seconds a step. A faster action picker, such as a decisions endpoint that chooses the next action from the visible controls in a fraction of a second, can drive `step` instead, as long as the verifier still looks at every screenshot, writes the notes and judges the result.
 
