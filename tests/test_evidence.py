@@ -185,6 +185,21 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)['status'], 'failed')
         self.assertNotEqual(self.check().returncode, 0)
 
+    def test_contrast_refuses_an_assertion_message_echoed_by_an_import_error(self):
+        # Found by the PR #45 verifier: the base lacks the helper the new test imports, and the traceback echoes the
+        # one-line test, assertion message included, so a plain search of the output matched.
+        self.regression_fixture()
+        (self.root / 'helper.py').write_text('total = 9\n')
+        (self.root / 'test_cart.py').write_text('import helper; assert helper.total == 9, "expected total 9"\n')
+        result = self.contrast('--keep', 'test_cart.py', expect='expected total 9')
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn('failed before asserting anything', json.loads(result.stdout)['base_reason'])
+        self.assertNotEqual(self.check().returncode, 0)
+        # Without the setup-error marker, the echoed source line alone still doesn't count.
+        (self.root / 'test_cart.py').write_text('import cart; assert cart.total() == 18.0 or exit(1), "expected 18.0"\n')
+        result = self.contrast('--keep', 'test_cart.py', expect='expected 18')
+        self.assertIn('outside lines that echo the test source', json.loads(result.stdout)['base_reason'])
+
     def test_contrast_rejects_paths_outside_the_repository_and_bad_patterns(self):
         self.regression_fixture()
         self.assertIn('inside the repository', self.contrast('--keep', '../elsewhere').stderr)

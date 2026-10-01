@@ -288,9 +288,18 @@ class SetupCheckTest(unittest.TestCase):
         config = json.loads((self.root / '.jfactory' / 'verification.json').read_text())
         config['suites']['e2e-app']['live_model'] = True
         (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(config))
-        self.assertIn('no workflow runs `verify_plan.py ci --live`', self.check('--remote', '--repo', 'o/r', code=1))
-        shutil.copy(ROOT / 'skills' / 'jfactory' / 'templates' / 'jfactory-live-suites.yml',
-                    self.root / '.github' / 'workflows' / 'jfactory-live-suites.yml')
+        missing = 'no scheduled workflow runs `verify_plan.py ci --live`'
+        self.assertIn(missing, self.check('--remote', '--repo', 'o/r', code=1))
+        live = self.root / '.github' / 'workflows' / 'jfactory-live-suites.yml'
+        template = (ROOT / 'skills' / 'jfactory' / 'templates' / 'jfactory-live-suites.yml').read_text()
+        # Found by the PR #45 verifier: a comment, a manual-only trigger or a disabled job runs nothing.
+        live.write_text("on:\n  workflow_dispatch:\njobs:\n  x:\n    steps:\n      - run: echo hi  # python3 verify_plan.py ci --live\n")
+        self.assertIn(missing, self.check('--remote', '--repo', 'o/r', code=1))
+        live.write_text(template.replace("  schedule:\n    # Mondays, off the hour to avoid the scheduler's peak.\n    - cron: '23 5 * * 1'\n", ''))
+        self.assertIn(missing, self.check('--remote', '--repo', 'o/r', code=1))
+        live.write_text(template.replace('    runs-on: ubuntu-latest\n    timeout-minutes: 90', '    if: false\n    runs-on: ubuntu-latest\n    timeout-minutes: 90'))
+        self.assertIn(missing, self.check('--remote', '--repo', 'o/r', code=1))
+        live.write_text(template)
         self.assertNotIn('ci --live', self.check('--remote', '--repo', 'o/r'))
 
     def test_targets_need_a_fresh_start_up_receipt(self):

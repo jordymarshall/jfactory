@@ -16,6 +16,8 @@ from urllib.parse import quote, unquote, urlsplit
 import uuid
 
 CLI_PACKAGE = '@playwright/cli@0.1.21'
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
+from evidence import failure_gap  # noqa: E402
 
 
 def cli_environment(folder):
@@ -340,9 +342,10 @@ def confirm(folder, number, repro, expect_failure, command, timeout=300):
     if code == 0:
         raise ValueError('The repro test passed, so the bug did not reproduce. Reject the finding with --bucket '
                          'not-reproduced, and keep the test as a regression test only if it is worth having')
-    if not pattern.search(text):
-        raise ValueError(f'The repro failed, but not with {expect_failure!r}: the test is wrong (a locator, a timeout, '
-                         f'a setup error), not proof of the bug. Fix it and confirm again ({log})')
+    gap = failure_gap(text, pattern, [test.read_bytes().decode(errors='replace')])
+    if gap:
+        raise ValueError(f'The repro failed, but {gap}: the test is wrong (a locator, a timeout, a setup error), not '
+                         f'proof of the bug. Fix it and confirm again ({log})')
     revision = subprocess.run(['git', '-C', str(project), 'rev-parse', 'HEAD'], capture_output=True, text=True)
     item.update(status='confirmed', repro=str(test.relative_to(project)), command=command,
                 expect_failure=expect_failure, log=str(log.relative_to(folder)),

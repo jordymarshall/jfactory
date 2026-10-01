@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 BUNDLE = Path(__file__).resolve().parents[1]
 DEFAULT_REPOSITORY = 'https://github.com/jordymarshall/jfactory'
@@ -59,6 +60,22 @@ def project_names():
     return {n for n in names if len(n) >= 4 and n.lower() not in GENERIC | {'jfactory'}}
 
 
+CREDENTIAL_ASSIGNMENT = re.compile(
+    r'(?i)\b([\w.-]*(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|access[_-]?key|private[_-]?key|'
+    r'credential|cookie|session|auth)[\w.-]*)(\s*[:=]\s*)("[^"]*"|\'[^\']*\'|[^\s,;&]+)')
+
+
+def public_link(url, repository):
+    """Keep a link only when it points inside the jfactory repository itself, without its query or fragment."""
+    keep = urlsplit(repository)
+    link = urlsplit(url)
+    own = [part for part in keep.path.split('/') if part][:2]
+    if link.scheme in ('http', 'https') and link.hostname == keep.hostname and not link.username and \
+            [part for part in link.path.split('/') if part][:2] == own:
+        return urlunsplit((link.scheme, link.netloc, link.path, '', ''))
+    return '<url>'
+
+
 def redact(text, repository, environ=None, names=()):
     environ = os.environ if environ is None else environ
     for name, value in environ.items():
@@ -66,9 +83,9 @@ def redact(text, repository, environ=None, names=()):
             text = text.replace(value, f'<{name}>')
     for shape in TOKEN_SHAPES:
         text = re.sub(shape, '<token>', text)
-    keep = repository.rstrip('/')
-    text = re.sub(r'https?://[^\s)>\]"\']+',
-                  lambda m: m.group(0) if m.group(0).startswith(keep) else '<url>', text)
+    text = re.sub(r'https?://[^\s)>\]"\']+', lambda m: public_link(m.group(0), repository), text)
+    # Named credentials written inline, as command output and error messages often show them.
+    text = CREDENTIAL_ASSIGNMENT.sub(lambda m: m.group(1) + m.group(2) + '<redacted>', text)
     text = re.sub(r'[\w.+-]+@[\w-]+(?:\.[\w-]+)+', '<email>', text)
     text = re.sub(r'(/Users|/home)/[^/\s]+', '~', text)
     for name in sorted(names, key=len, reverse=True):

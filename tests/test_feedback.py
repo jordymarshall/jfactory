@@ -28,6 +28,18 @@ class FeedbackTests(unittest.TestCase):
         self.assertIn('https://github.com/jordymarshall/jfactory/issues/3', out, 'Links to jfactory itself stay')
         self.assertIn('the app still runs', out, 'Ordinary words are not project names')
 
+    def test_redaction_removes_inline_credentials_and_lookalike_repositories(self):
+        # Found by the PR #45 verifier.
+        text = ('failed with password=hunter2 and API_KEY=plainsecret123, token: "abc def", Cookie=sid42; see '
+                'https://github.com/jordymarshall/jfactory-private/customer?token=plainsecret123 and '
+                'https://github.com/jordymarshall/jfactory/issues/3?token=zzz#frag and https://evil.example/jordymarshall/jfactory')
+        out = feedback.redact(text, REPO, {}, set())
+        for private in ('hunter2', 'plainsecret123', 'abc def', 'sid42', 'jfactory-private', 'zzz', 'evil.example'):
+            self.assertNotIn(private, out)
+        self.assertIn('password=<redacted>', out)
+        self.assertIn('https://github.com/jordymarshall/jfactory/issues/3 ', out)
+        self.assertIn('failed with', out)
+
     def test_dry_run_prints_the_issue_and_sends_nothing(self):
         result = subprocess.run([sys.executable, str(SCRIPT), '--type', 'docs', '-m', 'mapping.md step 7 names a '
                                  'flag that smoke does not accept', '--command', 'verify_plan.py smoke --fresh'],

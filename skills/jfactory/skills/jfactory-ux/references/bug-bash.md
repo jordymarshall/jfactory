@@ -86,7 +86,7 @@ Use separate verifiers, one per area with three to five candidates each, so the 
    $UX confirm "$STUDY" 1 --repro tests/bugbash/coupon.spec.ts --expect-failure 'Expected.*\$9\.00' -- npx playwright test tests/bugbash/coupon.spec.ts
    ```
 
-   A passing test means the bug did not reproduce: reject the finding as `not-reproduced`, and keep the test only as an ordinary regression test if it is worth having. Any other failure, such as a missing locator, a timeout or a setup error, means the test is wrong: fix it and confirm again.
+   `confirm` ignores output lines that echo the repro's own source, since a traceback prints the assertion message even when the test never ran, and it refuses output showing a setup error such as a missing module. So match what the test observed (the wrong total), not only its message. A passing test means the bug did not reproduce: reject the finding as `not-reproduced`, and keep the test only as an ordinary regression test if it is worth having. Any other failure, such as a missing locator, a timeout or a setup error, means the test is wrong: fix it and confirm again.
 
 ## 7. Report
 

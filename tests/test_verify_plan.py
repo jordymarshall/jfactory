@@ -906,6 +906,12 @@ class RunTest(unittest.TestCase):
             marker.unlink()
         self.run_script('ci', '--live')
         self.assertEqual(self.ran(), ['ran-live'])
+        # Found by the PR #45 verifier: naming the suite explicitly must not reach the live model either.
+        for marker in self.root.glob('ran-*'):
+            marker.unlink()
+        self.assertIn('never run on a PR gate', self.run_script('ci', '--suites', 'agent-cli', code=1))
+        self.assertIn('never run on a PR gate', self.run_script('ci', '--all', '--suites', 'cli,agent-cli', code=1))
+        self.assertEqual(self.ran(), [])
         self.write_config(suites={**self.config['suites'], 'agent-cli': live}, always_suites=['unit', 'agent-cli'])
         self.assertIn('never gate a PR', self.run_script('audit', code=None))
 
@@ -1016,3 +1022,15 @@ class RunTest(unittest.TestCase):
                           ('probe', True, None)])
         (self.root / 'probed').unlink()
         self.run_script('smoke', '--target', 'local', '--retries', '0', code=1)
+
+    def test_smoke_never_retries_a_start_or_probe_that_fails_on_configuration(self):
+        # Found by the PR #45 verifier: a start command exiting 2 for missing configuration was started twice.
+        self.write_config(targets={'local': {**self.config['targets']['local'], 'start': 'echo no DATABASE_URL; exit 2'}})
+        out = self.run_script('smoke', '--target', 'local', '--record', '.jfactory/smoke.json', code=1)
+        self.assertNotIn('Retrying', out)
+        self.assertIn('a setup failure', out)
+        self.assertEqual(json.loads((self.root / '.jfactory' / 'smoke.json').read_text())['local']['failure'], 'setup')
+        self.write_config(targets={'local': {**self.config['targets']['local'], 'probe': 'exit 2'}})
+        out = self.run_script('smoke', '--target', 'local', code=1)
+        self.assertNotIn('Retrying', out)
+        self.assertIn('probe failed, a setup failure', out)

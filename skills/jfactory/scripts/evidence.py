@@ -21,6 +21,38 @@ SCOPES = {'unit', 'component', 'integration', 'application', 'provider', 'deploy
 EVIDENCE = Path('.context/jfactory')
 
 
+# Failures that happen before a test can assert anything: a missing module, a syntax error, a runner that could not
+# collect the test. A run that shows one proves nothing about the bug, whatever else its output contains.
+SETUP_FAILURES = re.compile(r'ModuleNotFoundError|ImportError: |SyntaxError: |IndentationError: |Cannot find module|'
+                            r'ERR_MODULE_NOT_FOUND|error TS\d{4}|COLLECTION_ERROR|errors? during collection|'
+                            r'collected 0 items|No tests? found|command not found', re.I)
+
+
+def failure_gap(output, pattern, sources=()):
+    """Why a failing run's output does not show the expected assertion failure, or None when it does.
+
+    Lines that echo the test's own source are ignored: tracebacks and code frames print the failing line, so a test
+    that never reached its assertion could otherwise match the assertion's own message."""
+    setup = SETUP_FAILURES.search(output)
+    if setup:
+        return f'it failed before asserting anything ({setup.group(0).strip()})'
+    echoed = {line.strip() for text in sources for line in text.splitlines() if len(line.strip()) >= 8}
+    observed = '\n'.join(line for line in output.splitlines() if not any(e in line for e in echoed))
+    if not pattern.search(observed):
+        return f'its output does not match {pattern.pattern!r} outside lines that echo the test source'
+    return None
+
+
+def source_texts(paths):
+    """Text of the kept test files, for `failure_gap` to recognise echoed source."""
+    texts = []
+    for path in paths:
+        for item in ([path] if path.is_file() else sorted(path.rglob('*'))):
+            if item.is_file() and not item.is_symlink() and item.stat().st_size <= 1_000_000:
+                texts.append(item.read_bytes().decode(errors='replace'))
+    return texts
+
+
 def sha(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -233,8 +265,10 @@ def contrast(args):
             subprocess.run(['git', '-C', str(root), 'worktree', 'remove', '--force', str(worktree)],
                            capture_output=True)
             shutil.rmtree(worktree.parent, ignore_errors=True)
-        output = base_log.read_bytes().decode(errors='replace')
-        record['base_matched'] = bool(expected.search(output))
+        gap = failure_gap(base_log.read_bytes().decode(errors='replace'), expected, source_texts(keep))
+        record['base_matched'] = gap is None
+        if gap:
+            record['base_reason'] = gap
         head_status, record['exit_code'] = execute(command, root, log, args.timeout)
         if record['base_status'] != 'failed':
             # A pass means the bug did not reproduce; a timeout or launch error proves nothing about it.
@@ -255,7 +289,8 @@ def contrast(args):
             record['status'] = 'error'
         write_receipt(directory, record)
     print(json.dumps({'receipt': str(directory / 'receipt.json'), 'status': record['status'],
-                      'base': record.get('base_status'), 'base_matched': record.get('base_matched')}))
+                      'base': record.get('base_status'), 'base_matched': record.get('base_matched'),
+                      **({'base_reason': record['base_reason']} if record.get('base_reason') else {})}))
     return 0 if record['status'] == 'passed' else 1
 
 

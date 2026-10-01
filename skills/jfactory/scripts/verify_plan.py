@@ -1174,6 +1174,11 @@ def cmd_ci(args):
         if not suites:
             print('No live-model suites ("live_model": true) to run')
     elif args.suites:
+        live = live_suites(config, args.suites)
+        if live:
+            # Only the scheduled run spends live model calls; a gate that names one must not run it.
+            print(f'FAIL: {", ".join(live)} call a live model and never run on a PR gate; run them with `ci --live`')
+            return 1
         suites = args.suites
     elif args.all:
         suites = [s for s in sorted(defs) if s not in live_suites(config)]
@@ -1251,9 +1256,15 @@ def cmd_ci(args):
 
 # What a failed smoke step says about a retry. Setup failures (a missing tool, variable or seed) are deterministic:
 # rerunning cannot fix them. Environment failures (the app or a service not answering) can be transient, so smoke
-# retries those once before reporting them.
+# retries those once before reporting them. A start command that exits on its own is a setup failure, and so is any
+# step that exits with code 2, the usual code for a usage or configuration error.
 SMOKE_KINDS = {'setup': 'setup', 'doctor': 'setup', 'seed': 'setup',
                'ready': 'environment', 'probe': 'environment', 'cleanup': 'environment'}
+SETUP_EXIT = 2
+
+
+def smoke_kind(name, code):
+    return 'setup' if code == SETUP_EXIT else SMOKE_KINDS[name]
 
 
 def cmd_smoke(args):
@@ -1269,7 +1280,8 @@ def cmd_smoke(args):
         if not ok or placeholder(command):
             return
         code, minutes = shell(expand(command, env or os.environ), env)
-        steps.append({'step': name, 'kind': SMOKE_KINDS[name], 'ok': code == 0, 'minutes': minutes,
+        steps.append({'step': name, 'kind': smoke_kind(name, code), 'ok': code == 0,
+                      'minutes': minutes,
                       'detail': f'`{command}` exited {code}'})
         ok = code == 0
 
@@ -1293,7 +1305,9 @@ def cmd_smoke(args):
                     step('cleanup', target.get('cleanup'), env)
                     ok = ok and passed
         except Refused as error:
-            steps.append({'step': 'ready', 'kind': 'environment', 'ok': False, 'detail': str(error)})
+            # The app exiting before it answered is deterministic; not answering in time may be transient.
+            kind = 'setup' if 'start command exited' in str(error) else 'environment'
+            steps.append({'step': 'ready', 'kind': kind, 'ok': False, 'detail': str(error)})
             ok = False
         failed = next((item for item in steps[before:] if not item['ok']), None)
         if ok or failed['kind'] != 'environment' or attempts > args.retries:

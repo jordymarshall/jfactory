@@ -176,10 +176,10 @@ def check_verification(root, report, states):
                                'everything on every PR; install templates/jfactory-checks.yml')
         live = verify_plan.live_suites(config)
         scheduled = [p for p in workflows.glob('*.y*ml')
-                     if re.search(r'verify_plan\.py"?\s+ci\b[^\n]*--live', p.read_text())] if workflows.is_dir() else []
+                     if runs_on_schedule(p.read_text(), 'verify_plan.py', 'ci', '--live')] if workflows.is_dir() else []
         if live and not scheduled:
-            report.add('FAIL', f'Live-model suite(s) {", ".join(live)} never run on PRs, and no workflow runs '
-                               '`verify_plan.py ci --live`, so nothing exercises them; install '
+            report.add('FAIL', f'Live-model suite(s) {", ".join(live)} never run on PRs, and no scheduled workflow '
+                               'runs `verify_plan.py ci --live`, so nothing exercises them; install '
                                'templates/jfactory-live-suites.yml')
     if gate and not re.search(r'^\s*checks:\s*read\b', gate[0].read_text(), re.M):
         report.add('FAIL', f'{gate[0].relative_to(root)} lacks `checks: read`, so the status cannot confirm CI passed '
@@ -328,19 +328,27 @@ def shell_commands(script):
     return commands
 
 
-def runs_method_audit(text):
-    """A scheduled workflow with a run step that executes `python3 ... method_audit.py`."""
+def runs_on_schedule(text, script, *flags):
+    """A scheduled workflow, not disabled, with a run step that executes `python3 ... <script>` with these flags.
+    A comment, a manual-only trigger or a job switched off with `if: false` runs nothing on its own."""
     scheduled = re.search(r'(?m)^\s*schedule:\s*$', text) and re.search(r'(?m)^\s*-\s*cron:', text)
+    disabled = re.search(r'(?m)^\s*if:\s*(?:\$\{\{\s*)?false\b', text)
 
-    def audits(words):
+    def runs(words):
         while words and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*=.*', words[0]):
             words = words[1:]
         if not words or not re.fullmatch(r'(\S*/)?python3?', words[0]):
             return False
-        script = next((w for w in words[1:] if not w.startswith('-')), '')
-        return script.endswith('method_audit.py')
+        name = next((w for w in words[1:] if not w.startswith('-')), '')
+        return name.endswith(script) and all(flag in words for flag in flags)
 
-    return bool(scheduled) and any(audits(c) for script in run_blocks(text) for c in shell_commands(script))
+    return bool(scheduled) and not disabled and any(
+        runs(c) for block in run_blocks(text) for c in shell_commands(block))
+
+
+def runs_method_audit(text):
+    """A scheduled workflow with a run step that executes `python3 ... method_audit.py`."""
+    return runs_on_schedule(text, 'method_audit.py')
 
 
 def check_standards(root, report, states):

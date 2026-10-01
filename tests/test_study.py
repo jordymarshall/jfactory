@@ -83,6 +83,14 @@ class StudyTests(unittest.TestCase):
         self.assertIn('### 1. Coupon applied twice (high)', text)
         self.assertIn('`repro_test.py` fails with', text)
 
+    def test_bug_bash_refuses_a_repro_that_fails_on_an_import_echoing_its_message(self):
+        # Found by the PR #45 verifier: the traceback echoes the assertion message of a test that never ran.
+        number = self.bash()
+        command = self.repro('import nonexistent_helper; assert False, "expected total 9"')
+        with self.assertRaisesRegex(ValueError, 'failed before asserting anything'):
+            study.confirm(self.folder, number, 'repro_test.py', 'expected total 9', command)
+        self.assertEqual(study.bugs(self.folder)[1], 1, 'The claim stays unverified')
+
     def test_bug_bash_rejections_name_their_bucket_and_the_check(self):
         number = self.bash()
         with self.assertRaisesRegex(ValueError, 'Say what settled it'):
