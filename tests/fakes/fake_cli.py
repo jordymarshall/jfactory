@@ -180,7 +180,8 @@ if tool == 'gh':
         wanted = opt('--state', 'open').upper()
         done([{'number': int(k), 'title': v.get('title', 'x'), 'url': v['url'], 'state': v['state']}
               for k, v in issues.items() if wanted in ('ALL', v['state'])
-              and (not opt('--label') or opt('--label') in [label['name'] for label in v.get('labels', [])])])
+              and (not opt('--label') or opt('--label') in [label['name'] for label in v.get('labels', [])])
+              and (not opt('--search') or opt('--search').split('"')[1] in v.get('title', ''))][:int(opt('--limit', '30'))])
     if args[:2] == ['pr', 'view']:
         done({'baseRefName': 'main', 'comments': [], 'isCrossRepository': False, **db['prs'][args[2]]})
     if args[:2] == ['pr', 'merge']:

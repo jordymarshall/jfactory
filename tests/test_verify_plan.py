@@ -710,6 +710,43 @@ class GateTest(unittest.TestCase):
         self.verdict('--since', HEAD, '--rule-decision', 'https://github.test/issues/1#c2', head=fixed)
         self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
 
+    def test_an_unresolved_rule_finding_survives_later_heads_and_verdicts(self):
+        # The verifier's three bypasses: a new head without --since, and an intervening change-cause or partial verdict.
+        newer = 'c' * 40
+        for between in ([], ['failed', '--cause', 'change'], ['partially-verified']):
+            self.write(files=['app/briefs/save.ts'])
+            self.failing('failed', '--cause', 'rules', '--rule-change', RULE)
+            if between:
+                self.failing(*between)
+            self.write(files=['app/briefs/save.ts'], head=newer)
+            self.assertIn('Only the owner settles that', self.verdict(head=newer, code=2), between)
+            # A hand-posted verified record is rejected by the status too.
+            db = json.loads(self.state.read_text())
+            record = {'head': newer, 'verdict': 'verified', 'features': ['briefs'], 'full': False,
+                      'verifier': 'codex/gpt-6.1-sol', 'implementer': 'claude/opus-5-5-1m', 'evidence': ['x']}
+            db['prs']['5']['comments'].append({'authorAssociation': 'OWNER',
+                                               'body': f'<!-- jfactory-verdict {json.dumps(record)} -->'})
+            self.state.write_text(json.dumps(db))
+            self.assertIn("said a rule is wrong", self.run_script('check', '--pr', '5', code=1), between)
+        # The owner's decision settles it; later verdicts need no new link until a new rules finding.
+        self.verdict('--rule-decision', 'https://github.test/issues/1#c2', head=newer)
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+
+    def test_the_rule_issue_is_found_beyond_the_first_page_of_labelled_issues(self):
+        db = json.loads(self.state.read_text())
+        issues = db.setdefault('issues', {})
+        # GitHub lists newest first, so this PR's old issue comes after 258 newer labelled issues.
+        for n in range(2, 260):
+            issues[str(n)] = {'title': f'Rule change needed for PR #{1000 + n}', 'url': f'https://github.test/issues/{n}',
+                              'state': 'OPEN', 'comments': [], 'labels': [{'name': 'jfactory-rule-change'}]}
+        issues['1'] = {'title': 'Rule change needed for PR #5', 'url': 'https://github.test/issues/1', 'state': 'CLOSED', 'comments': [],
+                       'labels': [{'name': 'jfactory-rule-change'}]}
+        self.state.write_text(json.dumps(db))
+        self.failing('failed', '--cause', 'rules', '--rule-change', RULE)
+        db = json.loads(self.state.read_text())
+        self.assertEqual(len([i for i in db['issues'].values() if i['title'] == 'Rule change needed for PR #5']), 1)
+        self.assertEqual(db['issues']['1']['state'], 'OPEN')
+
     def test_old_verdicts_without_a_cause_still_evaluate(self):
         old = {'head': HEAD, 'verdict': 'failed', 'features': ['briefs'], 'full': False, 'verifier': 'codex/gpt-6-sol',
                'implementer': 'claude/opus-5-5-1m', 'evidence': ['x']}

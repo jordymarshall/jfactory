@@ -956,13 +956,19 @@ def cause_refusal(verdict, cause, rule_changes, rule_decision=None):
     return None
 
 
-def rule_decision_needed(verdicts, head, since=None):
-    """The earlier rules-cause verdict a new verdict at `head` (or re-checking `since`) follows, or None.
-    A verdict after one that said a rule is wrong must link the owner's decision on it: agents never waive a rule."""
-    for earlier in reversed(verdicts):
-        if earlier.get('head') in (head, since):
-            return earlier if verdict_cause(earlier) in ('rules', 'both') else None
-    return None
+def rule_decision_needed(verdicts, head=None, since=None):
+    """The unresolved rules-cause verdict in this PR's history, or None: agents never waive a rule.
+
+    A finding that a rule is wrong stays open across every later head and verdict (a change-cause failure, a partial
+    verification, a fresh verdict without --since) until a later verdict links the owner's decision on it. One
+    decision settles every finding before it; a rules finding after the decision needs a new one."""
+    pending = None
+    for record in verdicts:
+        if record.get('rule_decision'):
+            pending = None
+        if verdict_cause(record) in ('rules', 'both'):
+            pending = record
+    return pending
 
 
 def trusted_verdicts(pr):
@@ -1384,8 +1390,10 @@ def rule_change_body(pr_number, title, record):
 def raise_rule_change(repo, pr_number, title, record):
     """Open, or update, the one issue per PR that asks the owner about a rule the verifier says is wrong."""
     issue_title = f'Rule change needed for PR #{pr_number}'
+    # Search for this PR's own title rather than paging through every labelled issue, which could miss an old one.
     found = json.loads(run('gh', 'issue', 'list', '--repo', repo, '--label', RULE_CHANGE_LABEL, '--state', 'all',
-                           '--limit', '200', '--json', 'number,title,state') or '[]')
+                           '--search', f'"{issue_title}" in:title', '--limit', '20',
+                           '--json', 'number,title,state') or '[]')
     existing = next((i for i in found if i.get('title') == issue_title), None)
     body = rule_change_body(pr_number, title, record)
     if existing:
