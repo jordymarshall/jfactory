@@ -209,7 +209,7 @@ def check_targets(root, config, report, states):
     for name in targets:
         receipt = receipts.get(name)
         if not receipt or not receipt.get('ok'):
-            failed = next((s for s in (receipt or {}).get('steps', []) if not s.get('ok')), None)
+            failed = next((s for s in (receipt or {}).get('steps', []) if not s.get('ok') and 'attempt' not in s), None)
             report.add(level, f'Target {name} has no passing start-up receipt'
                        + (f' (failed at {failed["step"]}: {failed["detail"]})' if failed else '')
                        + f'; run `verify_plan.py smoke --target {name} --fresh --record .jfactory/smoke.json` '

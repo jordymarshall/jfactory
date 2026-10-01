@@ -993,7 +993,26 @@ class RunTest(unittest.TestCase):
         self.write_config(targets={'local': {**self.config['targets']['local'], 'doctor': 'echo missing DATABASE_URL; exit 2'}})
         out = self.run_script('smoke', '--target', 'local', '--record', '.jfactory/smoke.json', code=1)
         self.assertIn('FAIL: doctor', out)
-        self.assertFalse(json.loads((self.root / '.jfactory' / 'smoke.json').read_text())['local']['ok'])
+        self.assertIn('a setup failure', out)
+        self.assertNotIn('Retrying', out, 'A setup failure fails the same way every time')
+        receipt = json.loads((self.root / '.jfactory' / 'smoke.json').read_text())['local']
+        self.assertEqual((receipt['ok'], receipt['failure']), (False, 'setup'))
         self.write_config(targets={'local': {**self.config['targets']['local'], 'start': 'sleep 30'}})
         out = self.run_script('smoke', '--target', 'local', '--timeout', '2', code=1)
         self.assertIn('did not answer within 2s', out)
+        self.assertIn('an environment failure, and again after 1 retry', out)
+        self.assertEqual(out.count('FAIL: ready'), 2, 'Both attempts are reported')
+
+    def test_smoke_retries_an_environment_failure_once_and_records_both_attempts(self):
+        # The probe fails on the first attempt only, as a briefly unavailable service would.
+        self.write_config(targets={'local': {**self.config['targets']['local'],
+                                             'probe': 'test -e probed || { touch probed; exit 7; }'}})
+        out = self.run_script('smoke', '--target', 'local', '--record', '.jfactory/smoke.json')
+        self.assertIn('Retrying: probe failed', out)
+        self.assertIn('Target local is ready', out)
+        receipt = json.loads((self.root / '.jfactory' / 'smoke.json').read_text())['local']
+        self.assertEqual([(s['step'], s['ok'], s.get('attempt')) for s in receipt['steps']],
+                         [('doctor', True, None), ('ready', True, 1), ('probe', False, 1), ('ready', True, None),
+                          ('probe', True, None)])
+        (self.root / 'probed').unlink()
+        self.run_script('smoke', '--target', 'local', '--retries', '0', code=1)

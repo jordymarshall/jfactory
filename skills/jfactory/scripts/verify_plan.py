@@ -1249,6 +1249,13 @@ def cmd_ci(args):
     return 1 if failed else 0
 
 
+# What a failed smoke step says about a retry. Setup failures (a missing tool, variable or seed) are deterministic:
+# rerunning cannot fix them. Environment failures (the app or a service not answering) can be transient, so smoke
+# retries those once before reporting them.
+SMOKE_KINDS = {'setup': 'setup', 'doctor': 'setup', 'seed': 'setup',
+               'ready': 'environment', 'probe': 'environment', 'cleanup': 'environment'}
+
+
 def cmd_smoke(args):
     """Prove a target starts and answers where verification runs, and optionally record a receipt."""
     config = load_config(root='.')
@@ -1262,18 +1269,22 @@ def cmd_smoke(args):
         if not ok or placeholder(command):
             return
         code, minutes = shell(expand(command, env or os.environ), env)
-        steps.append({'step': name, 'ok': code == 0, 'minutes': minutes,
+        steps.append({'step': name, 'kind': SMOKE_KINDS[name], 'ok': code == 0, 'minutes': minutes,
                       'detail': f'`{command}` exited {code}'})
         ok = code == 0
 
     if not args.no_setup:
         step('setup', target.get('setup'))
     step('doctor', target.get('doctor'))
-    if ok:
-        log = str(Path(tempfile.gettempdir()) / f'jfactory-{args.target}-{os.getpid()}.log')
+    attempts = 0
+    while ok:
+        attempts += 1
+        before = len(steps)
+        log = str(Path(tempfile.gettempdir()) / f'jfactory-{args.target}-{os.getpid()}-{attempts}.log')
         try:
             with started(args.target, target, args.timeout, url=args.url, log=log) as env:
-                steps.append({'step': 'ready', 'ok': True, 'detail': f"{env['BASE_URL']} answered"})
+                steps.append({'step': 'ready', 'kind': 'environment', 'ok': True,
+                              'detail': f"{env['BASE_URL']} answered"})
                 step('seed', target.get('seed'), env)
                 step('probe', target.get('probe'), env)
                 if not placeholder(target.get('seed')) or not placeholder(target.get('cleanup')):
@@ -1282,19 +1293,38 @@ def cmd_smoke(args):
                     step('cleanup', target.get('cleanup'), env)
                     ok = ok and passed
         except Refused as error:
-            steps.append({'step': 'ready', 'ok': False, 'detail': str(error)})
+            steps.append({'step': 'ready', 'kind': 'environment', 'ok': False, 'detail': str(error)})
             ok = False
+        failed = next((item for item in steps[before:] if not item['ok']), None)
+        if ok or failed['kind'] != 'environment' or attempts > args.retries:
+            break
+        # Only an environment failure is worth another attempt; keep the failed attempt in the record.
+        print(f"Retrying: {failed['step']} failed ({failed['detail']}), which can be transient", flush=True)
+        for item in steps[before:]:
+            item['attempt'] = attempts
+        ok = True
+    failed = next((item for item in steps if not item['ok'] and 'attempt' not in item), None)
     for item in steps:
-        print(f"{'PASS' if item['ok'] else 'FAIL'}: {item['step']}: {item['detail']}")
+        retried = f" (attempt {item['attempt']}, retried)" if 'attempt' in item else ''
+        print(f"{'PASS' if item['ok'] else 'FAIL'}: {item['step']}: {item['detail']}{retried}")
     if args.record:
         path = Path(args.record)
         data = json.loads(path.read_text()) if path.is_file() else {}
         head = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
         data[args.target] = {'ok': ok, 'commit': head, 'host': platform.node(), 'fresh': args.fresh,
-                             'at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'steps': steps}
+                             'at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'steps': steps,
+                             **({'failure': failed['kind']} if failed else {})}
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=1) + '\n')
-    print(f"Target {args.target} {'is ready' if ok else 'is not ready; fix the failed step before verifying'}")
+    if ok:
+        print(f'Target {args.target} is ready')
+    elif failed['kind'] == 'setup':
+        print(f"Target {args.target} is not ready: {failed['step']} failed, a setup failure. It fails the same way "
+              'every time, so fix it (install the tool, set the variable, repair the seed) rather than retrying')
+    else:
+        print(f"Target {args.target} is not ready: {failed['step']} failed, an environment failure"
+              + (f', and again after {attempts - 1} retry' if attempts > 1 else '')
+              + '. Report it as a blocker naming the step; do not keep retrying the journey')
     return 0 if ok else 1
 
 
@@ -1493,6 +1523,8 @@ def main(argv=None):
     p.add_argument('--timeout', type=int, default=300)
     p.add_argument('--record', help='Write a receipt, for example .jfactory/smoke.json')
     p.add_argument('--fresh', action='store_true', help='Record that this ran in a new workspace or runner')
+    p.add_argument('--retries', type=int, default=1,
+                   help='Retries for an environment failure (ready, probe, cleanup); setup failures never retry')
     p.set_defaults(func=cmd_smoke)
     p = sub.add_parser('check', help='Evaluate the jfactory verified status for a PR')
     p.add_argument('--pr', type=int, required=True)
