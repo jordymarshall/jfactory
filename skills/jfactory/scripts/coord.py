@@ -176,6 +176,9 @@ def policy(root):
         # A role override changes only the fields it names; the rest, such as the fallback, stay.
         for name, fields in override.get('roles', {}).items():
             role = {**merged['roles'].get(name, {}), **fields}
+            # Fast mode belongs to the default model: an override that picks another model keeps it only if it says so.
+            if ('agent' in fields or 'model' in fields) and 'fast' not in fields:
+                role['fast'] = False
             if not role.get('agent') or not role.get('model'):
                 raise Refused(f'Role {name} in {POLICY_FILE} needs an agent and a model')
             merged['roles'][name] = role
