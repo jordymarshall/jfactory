@@ -8,6 +8,11 @@ Customer and experience outcome. Name the business outcome in `outcomes/README.m
 - **Agent assumptions:** <what the agent inferred and has not confirmed>
 - **Open questions:** <consequential choices still unsettled>
 
+## Why it's right
+- **Serves:** <the outcome in `outcomes/README.md` and the `outcomes/<job>.md` goals, by path>
+- **Standards it must meet:** <rows of `.jfactory/standards.md` this touches>
+- **Could be wrong even if every check passes because:** <the ways this could pass its checks and still miss the outcome, a job goal or a standard, and how each was ruled out>
+
 ## Route
 Loops this objective uses, and why. See the routing table in `references/methodology.md`.
 - **Product:** <yes or skip, and why>

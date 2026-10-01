@@ -105,6 +105,115 @@ def browser(folder, args):
     return subprocess.run(command, cwd=folder, env=cli_environment(folder)).returncode
 
 
+def capture_directory(folder):
+    for directory in (folder / 'artifacts', folder / 'artifacts' / 'steps'):
+        if directory.is_symlink():
+            raise ValueError('Study capture directories must not be symlinks')
+    return folder / 'artifacts' / 'steps'
+
+
+def step(folder, args, run=None):
+    """Perform one browser action, then capture what the user now sees. Every action gets a screenshot, so a
+    walkthrough can't skip the moments between the states someone chose to capture."""
+    run = run or browser
+    folder = Path(folder).resolve()
+    if not args or args[0] in ('screenshot', 'video-start', 'video-stop', 'tracing-start', 'tracing-stop', 'close'):
+        raise ValueError('step takes one user action (open, click, fill, type, press, select, resize, ...)')
+    log_path = folder / 'steps.json'
+    steps = json.loads(log_path.read_text()) if log_path.exists() else []
+    number = len(steps) + 1
+    capture_directory(folder).mkdir(mode=0o700, exist_ok=True)
+    shot = f'artifacts/steps/{number:03d}.png'
+    if (folder / shot).is_symlink() or ((folder / shot).exists() and not (folder / shot).is_file()):
+        raise ValueError(f'{shot} must be absent or a regular file, not a link or directory')
+    started = datetime.now(timezone.utc)
+    entry = {'step': number, 'action': ' '.join(args), 'exit': None, 'seconds': None, 'at': started.isoformat(),
+             'screenshot': None, 'note': ''}
+    try:
+        entry['exit'] = run(folder, list(args))
+    finally:
+        # Record the action before anything else can fail: it happened, and the trail must not hide it. The
+        # screenshot stays null, which blocks rendering, until the capture below is published.
+        entry['seconds'] = round((datetime.now(timezone.utc) - started).total_seconds(), 2)
+        steps.append(entry)
+        write_json(log_path, steps)
+    # Capture to a fresh name, then rename over the leaf, so nothing is written through a planted link.
+    fresh = folder / f'artifacts/steps/{number:03d}-{uuid.uuid4().hex}.png'
+    try:
+        captured = run(folder, ['screenshot', f'--filename={fresh.relative_to(folder)}'])
+        if captured or not fresh.is_file() or fresh.is_symlink():
+            raise ValueError('the screenshot command failed')
+        os.replace(fresh, folder / shot)
+    except Exception as error:
+        try:
+            if fresh.is_symlink() or fresh.is_file():
+                fresh.unlink()
+        except OSError:
+            pass
+        raise ValueError(f'Step {number} ran, but its screenshot was not captured ({error}); the trail will not '
+                         'render until the session is fixed and the journey is walked again') from error
+    entry['screenshot'] = shot
+    write_json(log_path, steps)
+    return number, shot
+
+
+def note(folder, number, text):
+    """Record what the reviewer saw in a step's screenshot, after looking at it."""
+    folder = Path(folder).resolve()
+    steps = json.loads((folder / 'steps.json').read_text())
+    if not text.strip():
+        raise ValueError('A note says what the screenshot shows: layout, text, state and anything wrong')
+    match = [s for s in steps if s['step'] == number]
+    if not match:
+        raise ValueError(f'No step {number}')
+    match[0]['note'] = text.strip()
+    write_json(folder / 'steps.json', steps)
+
+
+def walkthrough(folder):
+    """Render the step-by-step trail. Refuses while any step's screenshot has no note, because the point is that
+    someone looked at every step."""
+    folder = Path(folder).resolve()
+    steps = json.loads((folder / 'steps.json').read_text()) if (folder / 'steps.json').exists() else []
+    if not steps:
+        raise ValueError('No steps recorded; drive the journey with `study.py step`')
+    shots = capture_directory(folder)
+    missing = []
+    for s in steps:
+        path, linked = folder, False
+        for part in Path(s.get('screenshot') or '').parts:
+            path = path / part
+            linked = linked or path.is_symlink()
+        if not s.get('screenshot') or linked or not path.resolve().is_relative_to(shots) or not path.is_file():
+            missing.append(str(s['step']))
+    if missing:
+        raise ValueError('Step(s) ' + ', '.join(missing) + ' have no screenshot inside artifacts/steps; walk the journey '
+                         'again in a working session')
+    unseen = [str(s['step']) for s in steps if not str(s.get('note') or '').strip()]
+    if unseen:
+        raise ValueError('Look at each screenshot and note what it shows first; no note for step(s) ' + ', '.join(unseen))
+    study = json.loads((folder / 'study.json').read_text())
+    rows = []
+    for s in steps:
+        href = quote(s['screenshot'], safe='/')
+        rows.append(f'<li><p><strong>{escape(s["action"])}</strong> · {s["seconds"]}s'
+                    + (f' · exit {s["exit"]}' if s['exit'] else '') + f'</p><p>{escape(s["note"])}</p>'
+                    f'<figure><img loading="lazy" src="{href}" alt="Step {s["step"]}"></figure></li>')
+    doc = ('<!doctype html><html lang="en"><meta charset="utf-8">'
+           '<meta name="viewport" content="width=device-width, initial-scale=1">'
+           '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src \'self\'; style-src \'unsafe-inline\'">'
+           '<title>Step-by-step walkthrough</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:1040px;'
+           'margin:auto;padding:32px 20px;color:#192230}li{margin-bottom:28px}img{width:100%;border:1px solid #dde1e7;'
+           'border-radius:8px}</style><h1>' + escape(study['objective']) + '</h1><p>Every action, with what the reviewer saw '
+           'after it.</p><ol>' + ''.join(rows) + '</ol></html>')
+    out = folder / 'steps.html'
+    out.write_text(doc)
+    md = ['# Step-by-step walkthrough: ' + study['objective'], '']
+    md += [f"{s['step']}. **{s['action']}** ({s['seconds']}s): {s['note']} [`{s['screenshot']}`]" for s in steps]
+    (folder / 'steps.md').write_text('\n'.join(md) + '\n')
+    return out
+
+
 def render(folder):
     folder = Path(folder).resolve()
     report = json.loads((folder / 'report.json').read_text())
@@ -197,7 +306,8 @@ def review_server(folder, port=0):
         def send_head(self):
             name = unquote(urlsplit(self.path).path).lstrip('/')
             path = (folder / name).resolve()
-            if not path.is_file() or not (path == folder / 'walkthrough.html' or path.is_relative_to(folder / 'artifacts')):
+            if not path.is_file() or not (path in (folder / 'walkthrough.html', folder / 'steps.html', folder / 'steps.md')
+                                          or path.is_relative_to(folder / 'artifacts')):
                 self.send_error(404)
                 return None
             size = path.stat().st_size
@@ -252,6 +362,14 @@ def review_server(folder, port=0):
     return ThreadingHTTPServer(('127.0.0.1', port), ReviewHandler)
 
 
+def review_urls(folder, port):
+    folder = Path(folder).resolve()
+    base = f'http://127.0.0.1:{port}/'
+    report = (folder / 'walkthrough.html').exists()
+    trail = (folder / 'steps.html').exists() or ((folder / 'steps.json').exists() and not report)
+    return [base + 'steps.html'] * trail + [base + 'walkthrough.html'] * (report or not trail)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
@@ -267,6 +385,15 @@ def main():
     dashboard.add_argument('study')
     dashboard.add_argument('--port', type=int, default=8931)
     dashboard.add_argument('--host', choices=['127.0.0.1', '0.0.0.0'], default='127.0.0.1')
+    act = sub.add_parser('step', help='Perform one browser action and screenshot the result')
+    act.add_argument('study')
+    act.add_argument('args', nargs=argparse.REMAINDER)
+    seen = sub.add_parser('note', help='Record what a step\'s screenshot shows, after looking at it')
+    seen.add_argument('study')
+    seen.add_argument('step', type=int)
+    seen.add_argument('text')
+    trail = sub.add_parser('walkthrough', help='Render the step-by-step trail once every step has a note')
+    trail.add_argument('study')
     report = sub.add_parser('report')
     report.add_argument('study')
     serve = sub.add_parser('serve')
@@ -280,6 +407,13 @@ def main():
             print(init(args.project, args.name, args.url, args.objective))
         elif args.command == 'browser':
             return browser(args.study, args.args)
+        elif args.command == 'step':
+            number, shot = step(args.study, args.args)
+            print(f'Step {number}: look at {Path(args.study).resolve() / shot}, then `study.py note {args.study} {number} "<what it shows>"`')
+        elif args.command == 'note':
+            note(args.study, args.step, args.text)
+        elif args.command == 'walkthrough':
+            print(walkthrough(args.study))
         elif args.command == 'dashboard':
             if not 1 <= args.port <= 65535:
                 raise ValueError('Dashboard port must be between 1 and 65535')
@@ -287,7 +421,7 @@ def main():
             return browser(args.study, ['show', f'--port={args.port}', f'--host={args.host}'])
         elif args.command == 'serve':
             with review_server(args.study, args.port) as server:
-                print(f'http://127.0.0.1:{server.server_port}/walkthrough.html', flush=True)
+                print('\n'.join(review_urls(args.study, server.server_port)), flush=True)
                 try:
                     server.serve_forever()
                 except KeyboardInterrupt:

@@ -1,0 +1,3 @@
+# Python writes bytecode next to these scripts when they run; keep it out of the repository that installs jfactory.
+__pycache__/
+*.pyc

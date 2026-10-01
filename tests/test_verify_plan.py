@@ -296,7 +296,7 @@ class GateTest(unittest.TestCase):
         bins = self.tmp / 'bin'
         bins.mkdir()
         self.env = {**os.environ, 'FAKE_STATE': str(self.state)}
-        for tool in ('gh', 'git'):
+        for tool in ('gh', 'git', 'conductor'):
             exe = bins / tool
             exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE}" {tool} "$@"\n')
             exe.chmod(0o755)
@@ -326,17 +326,31 @@ class GateTest(unittest.TestCase):
         screens = {**CONFIG, 'suites': {'browser': {'run': 'true', 'target': 'app'}},
                    'targets': {'app': {'url': 'http://x', 'ready': 'http://x', 'auth': 'none'}}}
         self.write(files=['app/briefs/save.ts'], config=screens)
-        self.assertIn('touches screens users see (briefs)', self.verdict(code=2))
+        self.assertIn('touches screens users see', self.verdict(code=2))
         # A verdict posted without them (for example by hand) still does not count.
         db = json.loads(self.state.read_text())
         db['prs']['5']['comments'].append({'authorAssociation': 'OWNER', 'body': '<!-- jfactory-verdict ' + json.dumps(
             {'head': HEAD, 'verdict': 'verified', 'features': ['auth', 'briefs'], 'full': False,
              'verifier': 'codex/gpt-6-sol', 'implementer': 'claude/opus-5-5-1m', 'evidence': ['x']}) + ' -->'})
         self.state.write_text(json.dumps(db))
+        self.assertIn('no step-by-step walkthrough', self.run_script('check', '--pr', '5', code=1))
+        db = json.loads(self.state.read_text())
+        body = db['prs']['5']['comments'][-1]['body'].replace('"evidence": ["x"]', '"evidence": ["x"], "walkthrough": ["w"]')
+        db['prs']['5']['comments'][-1]['body'] = body
+        self.state.write_text(json.dumps(db))
         self.assertIn('no screenshots of the changed screens (briefs)', self.run_script('check', '--pr', '5', code=1))
-        self.verdict('--screenshots', 'https://shots/briefs-desktop.png', '--screenshots', 'https://shots/briefs-mobile.png')
+        self.assertIn('step by step', self.verdict('--screenshots', 'https://shots/briefs-desktop.png', code=2))
+        self.verdict('--screenshots', 'https://shots/briefs-desktop.png', '--screenshots', 'https://shots/briefs-mobile.png',
+                     '--walkthrough', 'https://trail/briefs-desktop.html', '--walkthrough', 'https://trail/briefs-mobile.html')
         self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
-        self.assertIn('Screenshots reviewed:', json.loads(self.state.read_text())['prs']['5']['comments'][-1]['body'])
+        posted = json.loads(self.state.read_text())['prs']['5']['comments'][-1]['body']
+        self.assertIn('Screenshots reviewed:', posted)
+        self.assertIn('Step-by-step walkthrough:', posted)
+        # Turning screenshots off does not turn the walkthrough off.
+        self.write(files=['app/briefs/save.ts'], head='9' * 40, config={**screens, 'require_screenshots': False})
+        self.assertIn('step by step', self.verdict(head='9' * 40, code=2))
+        self.verdict('--walkthrough', 'https://trail/b.html', head='9' * 40)
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
         # Changes without screens, and repositories that opt out, need none. Neither do test-only or prose-only
         # changes inside a screen feature: they still get the independent review, just not screenshots.
         self.write(files=['cli/run.py'], head='c' * 40, config=screens)
@@ -352,7 +366,7 @@ class GateTest(unittest.TestCase):
         self.assertEqual(verify_plan.plan(new_screen, screens)['screen_features'], ['auth', 'briefs'])
         self.write(files=new_screen, head='e' * 40, config=screens)
         self.assertIn('touches screens users see', self.verdict('--full', head='e' * 40, code=2))
-        self.verdict('--full', '--screenshots', 'https://shots/new.png', head='e' * 40)
+        self.verdict('--full', '--screenshots', 'https://shots/new.png', '--walkthrough', 'https://trail/new.html', head='e' * 40)
         self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
         # A later head re-checked with --since still needs them.
         self.write(files=new_screen, head='f' * 40, config=screens)
@@ -362,7 +376,7 @@ class GateTest(unittest.TestCase):
         # A mixed change still needs them.
         self.assertEqual(verify_plan.plan(['app/briefs/save.test.ts', 'app/briefs/save.ts'], screens)['screen_features'],
                          ['briefs'])
-        self.write(files=['app/briefs/save.ts'], head='d' * 40, config={**screens, 'require_screenshots': False})
+        self.write(files=['app/briefs/save.ts'], head='d' * 40, config={**screens, 'require_screenshots': False, 'require_walkthrough': False})
         self.verdict(head='d' * 40)
         self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
 
@@ -387,6 +401,18 @@ class GateTest(unittest.TestCase):
              'verifier': 'codex/gpt-6-sol', 'implementer': 'claude/opus-5-5-1m', 'evidence': ['x']}) + ' -->'})
         self.state.write_text(json.dumps(db))
         self.assertIn('does not name the standards', self.run_script('check', '--pr', '5', code=1))
+        # With outcomes/ documents, the PR itself must name the ones it serves.
+        config['features']['briefs']['journey'] = 'outcomes/save-a-brief.md'
+        self.write(files=['app/briefs/save.ts'], head='e' * 40, config=config)
+        self.assertIn('needs a "Why it\'s right" section', self.run_script('check', '--pr', '5', code=1))
+        db = json.loads(self.state.read_text())
+        db['prs']['5']['body'] = "## Objective\nSave briefs.\n\n## Why it's right\nIt serves the outcomes.\n"
+        self.state.write_text(json.dumps(db))
+        self.assertIn('must name the outcomes/<job>.md document(s)', self.run_script('check', '--pr', '5', code=1))
+        db = json.loads(self.state.read_text())
+        db['prs']['5']['body'] = "## Objective\nSave briefs.\n\n## Why it's right\nServes `outcomes/save-a-brief.md`.\n"
+        self.state.write_text(json.dumps(db))
+        self.assertIn('No verdict', self.run_script('check', '--pr', '5', code=1))
         # Docs-only changes need none.
         self.write(files=['docs/a.md'], head='c' * 40, config=config)
         self.assertIn('success: Static-only', self.run_script('check', '--pr', '5'))

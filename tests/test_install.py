@@ -1,6 +1,9 @@
 import importlib.util
 import json
+import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -86,6 +89,39 @@ class InstallTests(unittest.TestCase):
                 installer.install(ROOT, target, host)
                 self.assertTrue((target / directory / 'SKILL.md').is_file())
                 self.assertIn(directory, (target / filename).read_text())
+
+    def test_bundle_gitignore_keeps_bytecode_out_of_the_installing_repository(self):
+        git = lambda *args: subprocess.run(['git', '-C', str(self.target), *args], check=True,
+                                           capture_output=True, text=True).stdout
+        git('init', '-q')
+        dest = installer.install(ROOT, self.target)
+        receipt = json.loads((dest / '.jfactory-install.json').read_text())
+        self.assertIn('.gitignore', receipt['files'])
+        self.assertEqual((dest / '.gitignore').read_bytes(), (ROOT / 'skills/jfactory/.gitignore').read_bytes())
+        # Running an installed script that imports its neighbours writes bytecode next to them.
+        env = {k: v for k, v in os.environ.items() if k != 'PYTHONDONTWRITEBYTECODE'}
+        subprocess.run([sys.executable, str(dest / 'scripts/coord.py'), '--help'], check=True, capture_output=True,
+                       env=env, cwd=self.target)
+        self.assertTrue(list((dest / 'scripts/__pycache__').glob('*.pyc')), 'the script wrote no bytecode')
+        status = git('status', '--porcelain', '--untracked-files=all')
+        self.assertIn('.agents/skills/jfactory/SKILL.md', status)
+        self.assertNotIn('.pyc', status)
+        self.assertNotIn('__pycache__', status)
+        # Bytecode is not a local edit, so a later reviewed update still goes through.
+        installer.install(ROOT, self.target, update=True)
+
+    def test_update_adds_the_bundle_gitignore_to_an_older_installation(self):
+        source = Path(self.tmp.name) / 'source'
+        shutil.copytree(ROOT / 'skills', source / 'skills')
+        (source / 'skills/jfactory/.gitignore').unlink()
+        dest = installer.install(source, self.target)
+        self.assertFalse((dest / '.gitignore').exists())
+        shutil.copy(ROOT / 'skills/jfactory/.gitignore', source / 'skills/jfactory/.gitignore')
+        with self.assertRaisesRegex(ValueError, '--update'):
+            installer.install(source, self.target)
+        installer.install(source, self.target, update=True)
+        self.assertTrue((dest / '.gitignore').is_file())
+        self.assertIn('.gitignore', json.loads((dest / '.jfactory-install.json').read_text())['files'])
 
     def test_update_handles_directory_to_file_transition(self):
         source = Path(self.tmp.name) / 'source'

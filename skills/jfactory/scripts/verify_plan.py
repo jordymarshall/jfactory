@@ -157,6 +157,29 @@ def journey_proofs(text):
     return rows
 
 
+def outcome_files(config):
+    """The specific outcome documents a PR can name: files under outcomes/, not the folder itself."""
+    return [s for s in config.get('_standards', []) if s.startswith('outcomes/') and not s.endswith('/')]
+
+
+WHY_SECTION = re.compile(r'(?im)^\s*(#{1,6}\s*|\*\*|__)?\s*why\s+it[\'\u2019]s\s+right\b')
+
+
+def why_its_right_problem(body, config):
+    """With outcome documents, a PR that isn't static names the specific ones it serves in a "Why it's right"
+    section. Returns what is missing, or None."""
+    files = outcome_files(config)
+    if not files:
+        return None
+    body = body or ''
+    if not WHY_SECTION.search(body):
+        return 'PR description needs a "Why it\'s right" section (templates/objective.md)'
+    if not any(doc in body for doc in files):
+        return ('PR description must name the outcomes/<job>.md document(s) this change serves in its "Why it\'s right" '
+                'section')
+    return None
+
+
 def needs_standards(result, config):
     """With a standards map, a verdict on any change that isn't static names the standards it checked."""
     return bool(config.get('_standards')) and result['level'] != 'static'
@@ -165,6 +188,12 @@ def needs_standards(result, config):
 def needs_screenshots(result, config):
     """A verdict on a change to screens users see must link screenshots that a vision-capable model reviewed."""
     return bool(result['screen_features']) and config.get('require_screenshots', True)
+
+
+def needs_walkthrough(result, config):
+    """A verdict on a change to screens users see links a step-by-step walkthrough. Its own opt-out, separate from
+    screenshots."""
+    return bool(result['screen_features']) and config.get('require_walkthrough', True)
 
 
 def full_suite_mode(config, event, labels=()):
@@ -785,7 +814,7 @@ def git_files(base):
 
 def pr_info(repo, number):
     pr = json.loads(run('gh', 'pr', 'view', str(number), '--repo', repo, '--json',
-                        'headRefOid,baseRefName,comments,isCrossRepository,body'))
+                        'headRefOid,baseRefName,comments,isCrossRepository,body,title'))
     files = run('gh', 'api', f'repos/{repo}/pulls/{number}/files', '--paginate', '--jq', '.[].filename')
     pr['files'] = [line for line in files.splitlines() if line]
     return pr
@@ -933,6 +962,10 @@ def evaluate(pr, config, ci_check=None):
     if current_verdicts and current_verdicts[-1].get('verdict') in ('failed', 'blocked'):
         # Done means right: a reviewer who found this change wrong vetoes it, even where no verdict was required.
         return 'failure', f"Latest verdict at {pr['headRefOid'][:7]} is {current_verdicts[-1]['verdict']}"
+    if result['level'] != 'static' and config.get('require_objective', True):
+        problem = why_its_right_problem(pr.get('body'), config)
+        if problem:
+            return 'failure', problem
     if not result['needs_verifier']:
         if result['level'] == 'ci':
             return 'success', 'Low-risk change (verify: ci); required CI checks apply'
@@ -959,6 +992,8 @@ def evaluate(pr, config, ci_check=None):
         if not named or any(n is None or not (n in valid or any(n.startswith(v) for v in valid if v.endswith('/')))
                             for n in named):
             return 'failure', f'Verdict does not name the standards it checked the change against ({STANDARDS})'
+    if needs_walkthrough(result, config) and not verdict.get('walkthrough'):
+        return 'failure', 'Verdict has no step-by-step walkthrough of the changed screens (study.py step, note, walkthrough)'
     if needs_screenshots(result, config) and not verdict.get('screenshots'):
         return 'failure', ('Verdict has no screenshots of the changed screens (' + ', '.join(result['screen_features'])[:80]
                            + ')')
@@ -1195,6 +1230,10 @@ def cmd_verdict(args):
         source_path(s).startswith(v) for v in valid if v.endswith('/'))))]
     if unknown:
         raise Refused(f'--standards {", ".join(unknown)} is not a source in {STANDARDS}')
+    if args.verdict == 'verified' and needs_walkthrough(result, config) and not args.walkthrough:
+        raise Refused('This change touches screens users see. Use each changed journey step by step (jfactory-ux '
+                      '`study.py step` for every action, look at each screenshot, `study.py note` what it shows, then '
+                      '`study.py walkthrough`) at every target viewport, and link the trail with --walkthrough')
     if args.verdict == 'verified' and needs_screenshots(result, config) and not args.screenshots:
         raise Refused('This change touches screens users see (' + ', '.join(result['screen_features']) + '). Capture '
                       'each changed screen at the target viewports, review the images with a vision-capable model '
@@ -1206,6 +1245,7 @@ def cmd_verdict(args):
     record = {'head': args.head, 'verdict': args.verdict, 'features': sorted(features), 'full': args.full,
               'verifier': args.verifier, 'implementer': args.implementer, 'evidence': args.evidence,
               **({'screenshots': args.screenshots} if args.screenshots else {}),
+              **({'walkthrough': args.walkthrough} if args.walkthrough else {}),
               **({'standards': args.standards} if args.standards else {}),
               'at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
               **({'since': args.since} if args.since else {})}
@@ -1216,10 +1256,22 @@ def cmd_verdict(args):
             f"{'full feature map' if args.full else ', '.join(features) or 'none'}\n\nEvidence:\n"
             + '\n'.join(f'- {e}' for e in args.evidence)
             + (('\n\nChecked against standards:\n' + '\n'.join(f'- `{s}`' for s in args.standards)) if args.standards else '')
+            + (('\n\nStep-by-step walkthrough:\n' + '\n'.join(f'- {w}' for w in args.walkthrough)) if args.walkthrough else '')
             + (('\n\nScreenshots reviewed:\n' + '\n'.join(f'- {s}' for s in args.screenshots)) if args.screenshots else '')
             + (f'\n\n{args.note}' if args.note else ''))
     run('gh', 'pr', 'comment', str(args.pr), '--repo', args.repo, '--body-file', body_file(text))
     print(f'Posted {args.verdict} verdict for #{args.pr} at {args.head[:7]}')
+    tidy_after_verdict(args.repo)
+
+
+def tidy_after_verdict(repo):
+    """Archive finished jfactory PR workspaces (coord.archive_merged). The verdict is already posted, so this runs
+    within coord.TIDY_BUDGET seconds and can neither fail nor undo it."""
+    try:
+        import coord
+        coord.sweep(repo)
+    except Exception as error:  # noqa: BLE001
+        print(f'Check: finished workspaces not tidied: {error}')
 
 
 def shard_arg(value):
@@ -1278,7 +1330,7 @@ def main(argv=None):
     p.add_argument('--pr', type=int, required=True)
     p.add_argument('--head', required=True)
     p.add_argument('--verdict', required=True, choices=['verified', 'failed', 'blocked', 'partially-verified'])
-    p.add_argument('--verifier', required=True, help='agent/model, e.g. codex/gpt-6-luna')
+    p.add_argument('--verifier', required=True, help='agent/model, e.g. codex/gpt-6.1-sol')
     p.add_argument('--implementer', required=True, help='agent/model, e.g. claude/opus-5-5-1m')
     p.add_argument('--features', type=listing, default=[])
     p.add_argument('--full', action='store_true')
@@ -1287,6 +1339,8 @@ def main(argv=None):
                    help='Link to screenshots of a changed screen, reviewed by a vision-capable model; repeat per link')
     p.add_argument('--standards', action='append', default=[],
                    help=f'A source in {STANDARDS} the change was checked against; repeat per document')
+    p.add_argument('--walkthrough', action='append', default=[],
+                   help='Link to a step-by-step walkthrough (study.py walkthrough) of a changed journey; repeat per viewport')
     p.add_argument('--since', help='Head of this PR\'s earlier verdict; this one re-checked only the changes since')
     p.add_argument('--note')
     p.set_defaults(func=cmd_verdict)

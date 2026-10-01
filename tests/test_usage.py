@@ -126,7 +126,7 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(out['choice'], {'frontier': ('claude', 'opus-5-5-1m', 'medium'),
                                          'fast': ('codex', 'gpt-6-sol', None),
                                          'trivial': ('codex', 'gpt-6-luna', None),
-                                         'verify': ('codex', 'gpt-6-luna', None)})
+                                         'verify': ('codex', 'gpt-6.1-sol', 'high')})
         self.assertEqual(out['accounts']['claude']['windows'][1], {'name': 'weekly', 'used_percent': 1.0,
                                                                    'resets_at': '2026-10-02T17:00:00Z'})
         self.assertNotIn('session create', self.calls())
@@ -195,14 +195,14 @@ class UsageTests(unittest.TestCase):
         self.assertEqual([w['name'] for w in out['accounts']['codex']['windows']], ['five_hour', 'weekly'])
         self.assertEqual(out['choice']['fast'], ('claude', 'opus-5-5-1m', 'low'))
 
-    def test_verify_uses_luna_fast_and_switches_family_for_codex_work(self):
+    def test_verify_uses_sol_high_and_switches_family_for_codex_work(self):
         self.claude(5, 1, 1)
         self.codex_log(10, 1)
         out = self.run_usage('--tier', 'verify')
-        self.assertEqual(out['choice']['verify'], ('codex', 'gpt-6-luna', None))
-        self.assertTrue(out['fast']['verify'])
+        self.assertEqual(out['choice']['verify'], ('codex', 'gpt-6.1-sol', 'high'))
+        self.assertFalse(out['fast']['verify'])
         out = self.run_usage('--tier', 'verify', '--implementer', 'codex')
-        self.assertEqual(out['choice']['verify'], ('claude', 'opus-5-5-1m', 'low'))
+        self.assertEqual(out['choice']['verify'], ('claude', 'opus-5-5-1m', 'high'))
         self.assertFalse(out['fast']['verify'])
         self.assertIn('alternate: claude', out['choices'][0]['reason'])
 
@@ -218,7 +218,7 @@ class UsageTests(unittest.TestCase):
         self.claude(5, 1, 1)
         self.codex_log(92, 1)
         out = self.run_usage('--tier', 'verify')
-        self.assertEqual(out['choice']['verify'], ('claude', 'opus-5-5-1m', 'low'))
+        self.assertEqual(out['choice']['verify'], ('claude', 'opus-5-5-1m', 'high'))
         self.assertFalse(out['fast']['verify'])
 
     def test_policy_matches_model_reference(self):

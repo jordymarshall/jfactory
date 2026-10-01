@@ -77,6 +77,8 @@ The sections below explain each step in depth.
 - **Checks sized to the change.** A PR runs the checks for what it touched, including every browser journey that executes changed shared code, split across parallel jobs. The full browser suite runs when you chose at setup, for example only on the final PR of a major feature, and records what each journey executes.
 - **A second opinion from a different AI.** A verifier from a different model family (for example GPT checking Claude's work) re-checks each high-risk change before it can merge. Low-risk changes need only passing CI.
 - **Checked against your own standards.** Setup records the business outcomes (`outcomes/README.md`), where each standard lives (brand and voice, design system, UX principles, accessibility, performance, security, conventions, definition of done), and one document per job to be done (`outcomes/<job>.md`), with how each goal is proven. Verifiers check every change against them and name what they checked; a document never gets edited to match broken behavior.
+- **The checkers get checked.** A weekly method audit samples merged PRs and opens an issue when any merged short of "done means right": no verified verdict, no standards cited, a screen change nobody looked at, or no outcome named. Each PR also says why it's right, including what could make it wrong even though every check passes.
+- **Someone actually uses it, step by step.** The verifier uses each changed journey one action at a time and looks at the screen after every action, writing down what it sees. The trail (every action, its timing, screenshot and note) is linked from the verdict; the gate rejects a screen change without it.
 - **Someone actually looks at the screen.** Scripted tests check structure, not appearance. When a PR changes screens users see, the verifier captures each changed screen at every target viewport and reviews the images with a vision-capable model; `jfactory verified` rejects a verdict without them.
 - **Safe automatic merging.** Verified PRs merge themselves through GitHub's protected auto-merge. Missing proof keeps the PR open. Merging deploys to staging at most; production only when you ask.
 - **A record you can trust.** jfactory keeps five things apart: what you decided, what the agent assumed, what exists, what was verified, and what you accepted.
@@ -347,6 +349,8 @@ In [Conductor](https://www.conductor.build), ask one agent to coordinate:
 8. **Merge one at a time.** `coord.py merge` queues protected auto-merge pinned to the PR's current commit: after a verified verdict at that commit, or on GitHub's required CI alone when every change is low-risk. Overlapping units merge one at a time, and dependent workers update from main and re-check after each merge.
 9. **Close.** Once every unit is merged, done or abandoned, `coord.py close` closes the issue, archives the program's workspaces and removes its sidebar section.
 
+Finished workspaces archive themselves. A reviewer or fixer launched for one PR with `coord.py launch --role verify|build|fix --pr N` is named `<role>-<repo>-<N>`, such as `verify-loopcraft-102`. The next `sync`, `verdict`, `merge`, `close` or `tidy` after that PR merges or closes archives it once every one of its sessions reports idle. It checks the exact name, the exact repository and every session, keeps the workspace whenever any of them is uncertain, and never takes more than a few seconds. Workspaces with other names, such as yours, are never touched, and archived workspaces can be restored from `conductor workspace list --include-archived`.
+
 ### Guards `coord.py` enforces
 
 | Refuses to | Unless |
@@ -377,9 +381,9 @@ When jfactory launches another agent, the task decides the tier, and remaining u
 | Frontier (`implement`) | Features, fixes, debugging, architecture | Claude Opus 5.5, medium effort | GPT Astra 6 |
 | Fast (`fast`) | Routine edits, fixes with a known cause, CI triage | GPT Sol 6 | Opus 5.5, low effort |
 | Trivial (`trivial`) | Renames, formatting, lookups | GPT Luna 6 | Opus 5.5, low effort |
-| Verify (`verify`) | Checking another agent's PR | GPT Luna 6, fast mode | Opus 5.5, low effort |
+| Verify (`verify`) | Judging whether another agent's PR is right | GPT Sol 6.1, high effort | Opus 5.5, high effort |
 
-A verifier always comes from a different family than the implementer, so Codex-written work is verified by Opus 5.5 at low effort. Before launching, agents run `scripts/usage.py`. It reads your Claude and Codex usage from Conductor session records and Codex logs, starts a tiny probe session if a reading is missing or stale, and prints the model to use. It never reads credential files. Override the policy per repository in `.jfactory/coordination.json`. See [model selection](skills/jfactory/references/models.md).
+A verifier always comes from a different family than the implementer, so Codex-written work is verified by Opus 5.5 at high effort. Before launching, agents run `scripts/usage.py`. It reads your Claude and Codex usage from Conductor session records and Codex logs, starts a tiny probe session if a reading is missing or stale, and prints the model to use. It never reads credential files. Override the policy per repository in `.jfactory/coordination.json`. See [model selection](skills/jfactory/references/models.md).
 
 ## What jfactory adds to your project
 
