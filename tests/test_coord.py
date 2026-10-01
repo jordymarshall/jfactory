@@ -64,7 +64,7 @@ class CoordTest(unittest.TestCase):
         self.coord('launch', '1', 'a', '--brief', str(self.brief))
         workspace = self.db()['workspaces'][0]
         self.assertEqual((workspace['agent'], workspace['model'], workspace['effort'], workspace['fast'],
-                          workspace['branch']), ('claude', 'opus-5-5-1m', 'medium', False, 'main'))
+                          workspace['branch']), ('claude', 'opus-5-5-1m', 'medium', True, 'main'))
         command = next(line.strip() for line in workspace['message'].splitlines() if '--state in-review' in line)
         self.assertIn('--repo o/r report 1 a --state in-review', command)
         # The printed command must parse exactly as a worker would run it.
