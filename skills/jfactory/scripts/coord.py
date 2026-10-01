@@ -447,6 +447,16 @@ def pages(*command, timeout):
     raise Uncertain(f'`conductor {" ".join(command[:2])}` has more than {MAX_PAGES} pages')
 
 
+def was_archived(workspace_id, timeout=10):
+    """Whether Conductor reports the workspace archived; False when that can't be read."""
+    try:
+        found = run_json('conductor', 'workspace', 'get', workspace_id, '--json', timeout=timeout)
+    except (Refused, Missing, ValueError):
+        return False
+    found = found.get('data', found) if isinstance(found, dict) else None
+    return isinstance(found, dict) and found.get('state') == 'archived'
+
+
 def archive_merged(repo, budget=TIDY_BUDGET):
     """Archive my convention-named workspaces for `repo` whose PR merged or closed and whose sessions are all idle.
 
@@ -508,7 +518,12 @@ def archive_merged(repo, budget=TIDY_BUDGET):
                 notes.append(f'{name} kept: PR #{number} is {state.lower()} but session status '
                              f'{", ".join(f"{sid}={status!r}" for sid, status in unknown.items())} does not show idle')
                 continue
-            run('conductor', 'workspace', 'archive', wid, timeout=left())
+            try:
+                run('conductor', 'workspace', 'archive', wid, timeout=left())
+            except Refused:
+                # Conductor can finish archiving after the CLI call times out: read the state back before reporting.
+                if not was_archived(wid):
+                    raise
             archived.append(f'archived workspace {name} (PR #{number} {state.lower()})')
     except Missing as error:
         # No conductor CLI, as on a CI runner, means there is nothing to tidy. No gh is worth one line.
