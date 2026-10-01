@@ -62,6 +62,11 @@ if tool == 'conductor':
             sys.stderr.write('archive failed')
             sys.exit(1)
         db.setdefault('archived', []).append(args[2])
+        if args[2] in db.get('archive_slow', []):
+            # Conductor archives, but the CLI call outlives the caller's time limit (seen 2026-10-01).
+            path.write_text(json.dumps(db))
+            import time
+            time.sleep(30)
         done()
     if args[:2] == ['section', 'list']:
         done({'data': [s for s in db.get('sections', []) if s['id'] not in db.get('deleted_sections', [])],
@@ -79,6 +84,9 @@ if tool == 'conductor':
         limit = min(int(opt('--limit', '100')), db.get('page_size', 100))  # the server may cap a page
         done({'data': [{'id': i} for i in ids[offset:offset + limit]], 'offset': offset,
               'hasMore': offset + limit < len(ids)})
+    if args[:2] == ['workspace', 'get'] and db.get('conductor_sleep_get'):
+        import time
+        time.sleep(db['conductor_sleep_get'])
     if args[:2] == ['workspace', 'get']:
         done({'id': args[2], 'state': 'archived' if args[2] in db.get('archived', []) else 'ready'})
     if args[:2] == ['section', 'delete']:
