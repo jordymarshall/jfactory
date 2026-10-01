@@ -11,7 +11,7 @@ Last reviewed 2026-09-28 against `main` at `6ae1299`.
 | Documentation | verified | `AGENTS.md` has the four entry sections, and `tests/test_links.py` passes. The README explains the components, loop routing, objectives, verification, auto-merge, coordination and the correction ladder. Its six diagrams are PNG images rendered from `docs/diagrams/*.mmd`, so they show in GitHub's mobile app; a test keeps them in sync with their sources. |
 | Product direction | verified | The owner answered every interview question below on 2026-09-28. The brief in `AGENTS.md` follows those answers. |
 | Workspace tools | verified | Python 3 only; the browser smokes also need Node, Chrome and Playwright's ffmpeg. In the Conductor cloud workspace (Python 3.9.25, Node 24.14.1), the unit tests, `check-upstream.py`, `tests/browser_smoke.py` and `tests/dashboard_smoke.py` passed. CI runs Python 3.10. No cloud setup script is needed. |
-| Verification | verified | `.jfactory/verification.json` maps every tracked file except the gate paths, which always need full verification. `setup_check.py` confirms it and the `jfactory verified` workflow. |
+| Verification | verified | `.jfactory/verification.json` maps every tracked file except the gate paths, which always need full verification. `setup_check.py` confirms it and the `jfactory verified` workflow. This is structural readiness, not proof of agent behavior or owner approval of newly drafted job goals; see the job-map review below. |
 | Environments | not applicable | Nothing deploys. |
 | PR delivery | verified | Repository auto-merge is on. The active ruleset "Verified squash merges to main" (id 24086594) requires PRs, squash merges, no bypass, and both `checks` and `jfactory verified` against the latest main. The owner added `jfactory verified` on 2026-09-28, and `setup_check.py --remote` confirmed it. `merge_deploys` is `none`. |
 
@@ -27,7 +27,17 @@ Last reviewed 2026-09-28 against `main` at `6ae1299`.
 
 ## Open owner decisions
 
-None. (Requiring `jfactory verified` on main was applied by the owner on 2026-09-28.)
+The five job boundaries are agreed; the detailed standing goals and proof requirements in `outcomes/` are drafted for owner review, not yet approved. Requiring `jfactory verified` on main was applied by the owner on 2026-09-28.
+
+## Job-map review
+
+On 2026-09-30 the owner agreed to draft five generic jobs: set up or update a repository, deliver an objective without babysitting, merge verified changes safely, run many agents in parallel, and research an experience to inform product decisions. Learning from corrections is cross-cutting, not another job. Setting up a named consumer repository is an instance of the setup job, never a product-specific jfactory job.
+
+The owner requested standing goals and proof requirements next. [The draft](../outcomes/README.md) distinguishes executable controls from pending model trials. Review the detailed goals and unresolved product intent before treating this map as owner-confirmed; the September 28 interview is not approval of every later addition. Owner-requested release stays supporting guidance in this draft, with no new release authorization. Behavioral and blinded cross-model trials remain pending.
+
+At the owner's request, the draft was informed by Lauren Tan's pinned pstack verification skills and supporting principles. [The method sources and adaptations](../outcomes/README.md#method-sources-and-adaptations) distinguish original methods from jfactory's own scope and authorization. This adds proposed goals and trial cases, not completed trials, new owner approval or an upstream update; vendor files remain unchanged.
+
+On 2026-10-01 the owner requested speed as a quality dimension across the jobs. [The proposed measurement](../outcomes/README.md#speed-and-its-measurement) is end-to-end time to a verified result with waiting and rework visible, not speed obtained by skipping proof. No numeric target, new priority order or measured improvement has been agreed or established.
 
 ## Next objective
 

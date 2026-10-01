@@ -12,13 +12,14 @@
   },
   "features": {
     "agent-instructions": {
-      "outcome": "outcomes/deliver-an-objective.md",
+      "outcome": ["outcomes/set-up-a-repository.md", "outcomes/deliver-an-objective.md", "outcomes/merge-verified-changes.md", "outcomes/run-many-agents.md", "outcomes/research-an-experience.md"],
       "paths": ["AGENTS.md", "CLAUDE.md", "README.md", "outcomes/**", "skills/jfactory/SKILL.md", "skills/jfactory/references/**", "skills/jfactory/skills/*/SKILL.md", "skills/jfactory/skills/*/references/**"],
-      "recipe": "Read the changed instructions for contradictions with the other references; run tests/test_links.py; behavior changes need a scenario from evals/scenarios.md",
+      "recipe": "Read the changed instructions against the affected job goals and the shared goals in outcomes/README.md; check contradictions and owner decisions; run tests/test_links.py; behavior changes need a scenario from evals/scenarios.md, with model-trial limits stated separately from unit results",
       "suites": ["checks"],
       "verify": "independent"
     },
     "installer": {
+      "outcome": "outcomes/set-up-a-repository.md",
       "paths": ["scripts/install.py", "tests/test_install.py"],
       "recipe": "Run tests/test_install.py and install into a disposable repository, then run the installed check-upstream.py",
       "suites": ["checks"],
@@ -59,8 +60,9 @@
       "verify": "independent"
     },
     "ux-helpers": {
+      "outcome": ["outcomes/research-an-experience.md", "outcomes/deliver-an-objective.md"],
       "paths": ["skills/jfactory/skills/jfactory-ux/scripts/**", "tests/test_study.py", "tests/browser_smoke.py", "tests/dashboard_smoke.py"],
-      "recipe": "Run tests/test_study.py, tests/browser_smoke.py and tests/dashboard_smoke.py",
+      "recipe": "Run tests/test_study.py, tests/browser_smoke.py and tests/dashboard_smoke.py; changes to research behavior also need the reference research cases in evals/scenarios.md; disposable browser pages prove helper mechanics, not a complete study or customer usability",
       "suites": ["checks"],
       "verify": "ci"
     },

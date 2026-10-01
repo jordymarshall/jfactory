@@ -2,6 +2,8 @@
 
 Serves outcomes 1 and 2 in [README.md](README.md). Feature: `coordination` (`coord.py`) and `model-selection` in `.jfactory/verification.json`. How to drive it: `skills/jfactory/references/coordination.md`.
 
+The [shared goals and evidence limits](README.md#goals-shared-by-every-job) also apply. Standing goals below are pending owner review.
+
 ## Who and why
 
 - **User:** the owner running several objectives at once.
@@ -14,11 +16,16 @@ Serves outcomes 1 and 2 in [README.md](README.md). Feature: `coordination` (`coo
 | Goal | How it's proven |
 | --- | --- |
 | Launches follow the policy and tell workers how to report | `tests/test_coord.py` `test_launch_uses_policy_and_tells_worker_how_to_report` |
+| Parallel work starts only for agreed independent units, within the owner's limit and dependency order; one small fix does not create a speculative program | `tests/test_coord.py` `test_refuses_incomplete_brief_limit_dependency_hold_and_unknown_model`; model trial "A single small fix is requested in parallel" |
+| Workers own separate branches, reports, browser/data state and processes; genuinely shared mutable state has enforced ownership or serialization, not only instructions to be careful | `tests/test_coord.py` `test_worker_report_sync_verdict_and_merge_gate_on_current_head` and `test_stale_report_does_not_override_coordinator_and_close_requires_terminal_units` check report reconciliation; model trial "Parallel workers publish independent results" checks simultaneous reporting and resource isolation |
 | A merge needs a verified verdict at the unit's current head | `tests/test_coord.py` `test_worker_report_sync_verdict_and_merge_gate_on_current_head` |
 | Workers' questions block merge until resolved | `tests/test_coord.py` `test_worker_question_becomes_gate_that_blocks_merge_until_resolved` |
 | Reviews use another model family and retries are capped | `tests/test_coord.py` `test_review_needs_other_family_and_retries_are_capped` |
 | Finished workspaces are archived and sections tidied | `tests/test_coord.py` `test_sync_archives_finished_workspaces_once_their_sessions_stop`, `test_tidy_deletes_only_finished_program_sections` |
 | Models are chosen by tier and remaining usage | `tests/test_usage.py` |
+| The owner can pause and resume a program; workers stop safely and preserve work, and new launches remain held until resumed | `tests/test_coord.py` `test_refuses_incomplete_brief_limit_dependency_hold_and_unknown_model` checks launch holds; model trial "A worker is told the program is on hold mid-task" checks worker behavior and resumption |
+| A replacement coordinator recovers from the program issue and actual workspace state without relaunching completed units or modifying unrelated workspaces | Model trial "Coordinator session ends mid-program"; `tests/test_coord.py` `test_tidy_deletes_only_finished_program_sections` checks cleanup ownership, not full recovery |
+| Shared-contract and dependent units integrate current main and refresh affected verification after every overlapping merge | Model trial "Overlapping units must integrate and reverify"; inspect merge order, integrated revisions and new evidence, not only isolated unit verdicts |
 
 ## Quality rubric
 
