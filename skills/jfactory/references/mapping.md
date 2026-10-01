@@ -59,6 +59,18 @@ For recorded coverage, each suite writes a coverage report into `$JFACTORY_COVER
 
 Check a whole-suite run's output: `ci` names suites that recorded no coverage.
 
+### Journeys a model drives
+
+Some projects write journeys as goals in plain language that a model carries out, for example with [e2e](https://github.com/tester-army/e2e) (`npx e2e init`; web and mobile), Stagehand or Midscene. These suites are flexible, but a model is neither deterministic nor free. Keep them trustworthy this way:
+
+- **Pair every model-driven step with an exact check.** After "upgrade the workspace to Pro", assert the status text says Pro. The model reaching its goal is a claim; the assertion is the proof.
+- **Judge meaning, not wording.** Assert that a result contains "Pro", not that it matches a sentence a model wrote, so the suite survives a model change.
+- **Replay recorded actions on PRs.** Record a step's actions only after its check passes, and replay them on later runs without calling the model. In CI, replay read-only from committed recordings, so the PR gate is fast, free and repeatable. A step that calls the model there has a stale recording: re-record it. e2e does this with its replay cache (`cache: 'read-write'` locally; read-only when `CI` is set).
+- **Keep live-model runs off the gate.** Mark a suite that calls a live model on every run `"live_model": true`. `plan` and `ci` never run it on a PR, not even in a whole-suite run. [The scheduled workflow](../templates/jfactory-live-suites.yml) runs it weekly with `ci --live` and opens an issue when it fails. `setup_check.py` fails when the map has live suites and no scheduled workflow runs them. It reads workflows line by line, so write that job in ordinary block style: a job or step condition it cannot confirm holds on a schedule, a merge key or a flow-style mapping (`{...}`) is reported as unconfirmed rather than accepted. The independent verifier may still run one by hand when the change needs it.
+- **Retry only what a retry can fix.** A configuration or credential error fails the same way every time, so fix it rather than retrying. An app or provider that was briefly unavailable may pass on one retry. e2e's exit codes separate the two: 2 for configuration, 3 for the environment.
+
+Install such a tool in the project, with its own skill if it ships one, not inside the jfactory bundle.
+
 Set `shards` to the number of parallel CI jobs. `ci --shard I/N` runs its share of the planned suites, balanced by recorded minutes, so a 40-minute plan across four jobs takes about 10 minutes of waiting. It still uses 40 minutes of compute.
 
 ## 7. Define where the app runs, and prove it starts
@@ -79,7 +91,7 @@ Suites with a `target` get `$PORT`, `$BASE_URL` and `$JFACTORY_RUN_ID`, and `ci`
 
 Never point journeys at one shared, long-lived test account. Every run adds records, nothing removes them, and pages slow down until checks time out for reasons unrelated to the change. In one real case, a shared account piled up about 1,700 briefs from many tests. The Briefs page showed them all at once, and an accessibility scan of that one page took 21 of a 45-second timeout. Per-run data keeps each journey's starting state small and known, and parallel jobs can't see each other's records. `audit` warns about a target with journeys but no `seed`, `cleanup` or `prune`. When a journey needs a large dataset, for example to test paging, seed that size deliberately in that journey. A symptom like that one is also a product finding: real users with many records hit the same page. Raise it as an objective rather than hiding it with test data.
 
-Then prove it in the place that matters: a new workspace (for Conductor, a new cloud workspace, as a verifier gets) and the CI runner. Run `$VP smoke --target local --fresh --record .jfactory/smoke.json`. It runs setup, doctor, start, the readiness URL, seed, the probe and cleanup, then stops the app and records which step failed and why. Fix what it reports, usually a missing secret, service, browser binary or sign-in. Rerun until it passes, and commit the receipt. A target that needs a human sign-in with no stored session or test account stays `blocked` with that owner step. `setup_check.py` will not accept `Verification: verified` until every target has a passing receipt.
+Then prove it in the place that matters: a new workspace (for Conductor, a new cloud workspace, as a verifier gets) and the CI runner. Run `$VP smoke --target local --fresh --record .jfactory/smoke.json`. It runs setup, doctor, start, the readiness URL, seed, the probe and cleanup, then stops the app and records which step failed and why. A failed setup, doctor or seed step, a start command that exits on its own, and any step that exits with code 2 are setup failures and are never retried. An app that doesn't answer in time, or a probe or cleanup that fails otherwise, is an environment failure and is retried once. Make a probe exit 2 when it finds a configuration problem. The receipt records which kind it was. Fix what it reports, usually a missing secret, service, browser binary or sign-in. Rerun until it passes, and commit the receipt. A target that needs a human sign-in with no stored session or test account stays `blocked` with that owner step. `setup_check.py` will not accept `Verification: verified` until every target has a passing receipt.
 
 ## 8. Set risk levels and when the whole suite runs
 

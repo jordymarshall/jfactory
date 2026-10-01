@@ -34,6 +34,8 @@ These are the criteria for this piece of work. Each one adds, changes or relies 
 | save | A signed-in user saves an item and sees it after reload and in a new session | `outcomes/save-items.md`: "A saved item survives reload" (adds) | application | `npm run test:e2e -- save.spec.ts` against the PR preview, plus a storage readback |
 | clear | Saving an item is quick and obvious for a first-time user | `outcomes/save-items.md` rubric (relies on) | judgment | Rubric below, scored by the independent verifier from the walkthrough video and screenshots |
 
+For a bug fix, add a criterion whose regression test fails on the base and passes at the head, and prove it with `evidence.py contrast` (`"regression": true` in an acceptance file). Put the before-and-after result in the PR.
+
 For a `judgment` criterion, write the rubric before building. Give each point something the judge can observe, and set a pass mark:
 
 - **Rubric for `clear`:** passes when all of these hold.

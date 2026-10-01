@@ -283,6 +283,98 @@ class SetupCheckTest(unittest.TestCase):
         # The whole browser suite on every PR is the misconfiguration this check exists for.
         self.mapping(pr_budget_minutes=10, suites=timed(unit=2, e2e=45, **{'e2e-app': 5}), always_suites=['unit', 'e2e'])
         self.assertIn('FAIL: Map: Suites that run on every PR take 47 min', self.check('--remote', '--repo', 'o/r', code=1))
+        # Live-model suites stay off PRs, so a scheduled workflow must run them.
+        self.mapping(pr_budget_minutes=10, suites=timed(unit=2, **{'e2e-app': 5}))
+        config = json.loads((self.root / '.jfactory' / 'verification.json').read_text())
+        config['suites']['e2e-app']['live_model'] = True
+        (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(config))
+        missing = 'no scheduled workflow runs `verify_plan.py ci --live`'
+        self.assertIn(missing, self.check('--remote', '--repo', 'o/r', code=1))
+        live = self.root / '.github' / 'workflows' / 'jfactory-live-suites.yml'
+        template = (ROOT / 'skills' / 'jfactory' / 'templates' / 'jfactory-live-suites.yml').read_text()
+        # Found by the PR #45 verifier: a comment, a manual-only trigger or a disabled job runs nothing.
+        live.write_text("on:\n  workflow_dispatch:\njobs:\n  x:\n    steps:\n      - run: echo hi  # python3 verify_plan.py ci --live\n")
+        self.assertIn(missing, self.check('--remote', '--repo', 'o/r', code=1))
+        live.write_text(template.replace("  schedule:\n    # Mondays, off the hour to avoid the scheduler's peak.\n    - cron: '23 5 * * 1'\n", ''))
+        self.assertIn(missing, self.check('--remote', '--repo', 'o/r', code=1))
+        live.write_text(template.replace('    runs-on: ubuntu-latest\n    timeout-minutes: 90', '    if: false\n    runs-on: ubuntu-latest\n    timeout-minutes: 90'))
+        self.assertIn(missing, self.check('--remote', '--repo', 'o/r', code=1))
+        # Found by the PR #45 re-check: a job guard that skips scheduled events must not count, and an unrelated
+        # disabled step must not discount a live job that does run.
+        live.write_text(template.replace("  live:\n", "  live:\n    if: ${{ github.event_name == 'workflow_dispatch' }}\n"))
+        out = self.check('--remote', '--repo', 'o/r', code=1)
+        self.assertIn("it runs only when `github.event_name == 'workflow_dispatch'`", out)
+        live.write_text(template + '  # This job should not execute on schedule\n    if: false\n')
+        self.assertIn('it runs only when `false`', self.check('--remote', '--repo', 'o/r', code=1))
+        live.write_text(template.replace("      - uses: actions/checkout@v4\n",
+                                         "      - name: Disabled optional diagnostics\n        if: false\n"
+                                         "        run: echo diagnostic\n      - uses: actions/checkout@v4\n", 1))
+        self.assertNotIn('ci --live', self.check('--remote', '--repo', 'o/r'))
+        live.write_text(template)
+        self.assertNotIn('ci --live', self.check('--remote', '--repo', 'o/r'))
+
+    def test_scheduled_run_follows_the_conditions_on_its_own_job_and_step(self):
+        head = "on:\n  schedule:\n    - cron: '0 6 * * 1'\njobs:\n"
+        run = 'python3 x/verify_plan.py ci --live'
+        cases = {
+            f'  live:\n    runs-on: ubuntu-latest\n    steps:\n      - run: {run}\n': (True, None),
+            f'  live:\n    if: false\n    steps:\n      - run: {run}\n': (False, 'false'),
+            f'  live:\n    steps:\n      - name: Live\n        if: github.ref == \'refs/heads/dev\'\n        run: {run}\n':
+                (False, "github.ref == 'refs/heads/dev'"),
+            f'  live:\n    steps:\n      - if: always()\n        run: {run}\n': (True, None),
+            f'  other:\n    if: false\n    steps:\n      - run: echo hi\n  live:\n    steps:\n      - run: {run}\n':
+                (True, None),
+            f'  live:\n    steps:\n      - run: echo {run}\n': (False, None),
+            # Found by the third PR #45 check: a job's keys are unordered, so a guard after its steps still applies.
+            f'  live:\n    steps:\n      - run: {run}\n    if: false\n': (False, 'false'),
+            f"  live:\n    steps:\n      - run: {run}\n    if: ${{{{ github.event_name == 'workflow_dispatch' }}}}\n":
+                (False, "github.event_name == 'workflow_dispatch'"),
+            f'  live:\n    steps:\n      - run: {run}\n  later:\n    if: false\n    steps:\n      - run: echo hi\n':
+                (True, None),
+            # Found by the fourth PR #45 check: a comment never ends a job or a step.
+            f'  live:\n    steps:\n      - run: {run}\n  # This job should not execute on schedule\n    if: false\n':
+                (False, 'false'),
+            f"  live:\n    steps:\n      - run: {run}\n# note\n    if: ${{{{ github.event_name == 'workflow_dispatch' }}}}\n":
+                (False, "github.event_name == 'workflow_dispatch'"),
+            f'  live:\n    steps:\n      - name: Live\n# note\n        if: false  # off for now\n        run: {run}\n':
+                (False, 'false'),
+            f'  live:\n    if: always()  # keep running\n    steps:\n      - run: {run}\n': (True, None),
+        }
+        for jobs, (expected, condition) in cases.items():
+            ok, why = setup_check.scheduled_run(head + jobs, 'verify_plan.py', 'ci', '--live')
+            self.assertEqual(ok, expected, jobs)
+            self.assertEqual(condition is not None and condition in (why or ''), condition is not None, (jobs, why))
+        self.assertEqual(setup_check.scheduled_run(head.replace('schedule', 'workflow_dispatch') + list(cases)[0],
+                                                   'verify_plan.py', 'ci', '--live'), (False, None))
+        # Shapes found while checking the fourth PR #45 finding's neighbours.
+        for jobs in (f'  live:\n    "if": false\n    steps:\n      - run: {run}\n',
+                     f'  live:\n    <<: *guarded\n    steps:\n      - run: {run}\n'):
+            self.assertFalse(setup_check.scheduled_run(head + jobs, 'verify_plan.py', 'ci', '--live')[0], jobs)
+        not_a_trigger = ('on:\n  workflow_dispatch:\n    inputs:\n      schedule:\n        description: x\n'
+                         'jobs:\n  live:\n    steps:\n      - name: x\n        with:\n          list:\n'
+                         f'            - cron: x\n        run: {run}\n')
+        self.assertEqual(setup_check.scheduled_run(not_a_trigger, 'verify_plan.py', 'ci', '--live'), (False, None))
+        # Found by the fifth PR #45 check: multi-line flow mappings hide their keys from a line reader, so they
+        # fail closed, while braces in scripts, quoted strings and expressions do not count as structure.
+        flow_job = (f'  live: {{if: false,\n    runs-on: ubuntu-latest,\n    steps: [\n      {{\n'
+                    f'        run: "{run}"\n      }}\n    ]\n  }}\n')
+        flow_step = (f'  live:\n    runs-on: ubuntu-latest\n    steps:\n      - {{\n          if: false,\n'
+                     f'          run: "{run}"\n        }}\n')
+        self.assertFalse(setup_check.scheduled_run(
+            head + f'  live:\n    steps:\n      - {{if: false,\n         run: "{run}"}}\n',
+            'verify_plan.py', 'ci', '--live')[0])
+        for jobs in (flow_job, flow_step):
+            ok, why = setup_check.scheduled_run(head + jobs, 'verify_plan.py', 'ci', '--live')
+            self.assertFalse(ok, jobs)
+            self.assertIn('flow-style mapping', why or '', jobs)
+        braces = (f"  live:\n    if: ${{{{ !cancelled() }}}}\n    env:\n      X: '{{not a mapping}}'\n    steps:\n"
+                  f'      - run: |\n          f() {{ echo "${{HOME}}"; }}\n          {run}\n')
+        self.assertEqual(setup_check.scheduled_run(head + braces, 'verify_plan.py', 'ci', '--live'), (True, None))
+        quoted = "'on':\n  schedule:\n    - cron: '0 6 * * 1'\njobs:\n" + list(cases)[0]
+        self.assertEqual(setup_check.scheduled_run(quoted, 'verify_plan.py', 'ci', '--live'), (True, None))
+        flow = head.replace('jobs:\n', '') + 'jobs: {live: {steps: [{run: "' + run + '"}]}}\n'
+        ok, why = setup_check.scheduled_run(flow, 'verify_plan.py', 'ci', '--live')
+        self.assertFalse(ok, 'A structure the reader cannot follow is not reported as scheduled')
 
     def test_targets_need_a_fresh_start_up_receipt(self):
         target = {'local': {'start': 'npm start', 'ready': 'http://127.0.0.1:$PORT/', 'auth': 'none'}}

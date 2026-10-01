@@ -1,9 +1,11 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from threading import Thread
 from urllib.error import HTTPError
@@ -40,6 +42,98 @@ class StudyTests(unittest.TestCase):
                 (folder / args[1].split('=', 1)[1]).write_bytes(b'png')
             return 0
         return run
+
+    def bash(self):
+        study.charter(self.folder, 'cart', 'numbers', 'Starting at /cart, apply a coupon and check every total')
+        shot = self.folder / 'artifacts/finding-1.png'
+        shot.write_bytes(b'png')
+        return study.claim(self.folder, 'cart', 'issue', 4, 'Coupon applied twice', '/cart', 'Total $9.00',
+                           'Total $8.10', ['Open /cart', 'Apply SAVE10'], ['artifacts/finding-1.png'])
+
+    def repro(self, assertion):
+        (self.root / 'repro_test.py').write_text(assertion)
+        return [sys.executable, 'repro_test.py']
+
+    def test_bug_bash_confirms_only_a_repro_that_fails_for_the_reported_reason(self):
+        with self.assertRaisesRegex(ValueError, 'No charter'):
+            study.claim(self.folder, 'cart', 'issue', 4, 't', '/', 'e', 'a', ['s'], [])
+        number = self.bash()
+        with self.assertRaisesRegex(ValueError, 'inside artifacts'):
+            study.claim(self.folder, 'cart', 'issue', 3, 't', '/', 'e', 'a', ['s'], ['../study.json'])
+        # The report refuses to call the bash finished while a claim is unverified.
+        out, unverified = study.bugs(self.folder)
+        self.assertEqual(unverified, 1)
+        self.assertIn('0 confirmed, 1 unverified', out.read_text())
+        # A repro that passes means the bug did not reproduce.
+        with self.assertRaisesRegex(ValueError, 'did not reproduce'):
+            study.confirm(self.folder, number, 'repro_test.py', 'total 8.1', self.repro('assert True'))
+        # A repro that fails for another reason proves nothing.
+        with self.assertRaisesRegex(ValueError, 'the test is wrong'):
+            study.confirm(self.folder, number, 'repro_test.py', 'total 8.1', self.repro('import missing_module'))
+        with self.assertRaisesRegex(ValueError, 'must be a file in the project'):
+            study.confirm(self.folder, number, '../outside.py', 'x', ['true'])
+        command = self.repro('raise AssertionError("total 8.1, expected 9.0")')
+        log = study.confirm(self.folder, number, 'repro_test.py', r'total 8\.1', command)
+        self.assertIn(b'total 8.1', log.read_bytes())
+        with self.assertRaisesRegex(ValueError, 'already confirmed'):
+            study.reject(self.folder, number, 'artifact', 'checked it by hand')
+        out, unverified = study.bugs(self.folder)
+        self.assertEqual(unverified, 0)
+        text = out.read_text()
+        self.assertIn('### 1. Coupon applied twice (high)', text)
+        self.assertIn('`repro_test.py` fails with', text)
+
+    def test_bug_bash_refuses_a_repro_that_fails_on_an_import_echoing_its_message(self):
+        # Found by the PR #45 verifier: the traceback echoes the assertion message of a test that never ran.
+        number = self.bash()
+        command = self.repro('import nonexistent_helper; assert False, "expected total 9"')
+        with self.assertRaisesRegex(ValueError, 'failed before asserting anything'):
+            study.confirm(self.folder, number, 'repro_test.py', 'expected total 9', command)
+        self.assertEqual(study.bugs(self.folder)[1], 1, 'The claim stays unverified')
+
+    def test_bug_bash_rejections_name_their_bucket_and_the_check(self):
+        number = self.bash()
+        with self.assertRaisesRegex(ValueError, 'Say what settled it'):
+            study.reject(self.folder, number, 'artifact', 'nope')
+        with self.assertRaisesRegex(ValueError, 'Bucket must be'):
+            study.reject(self.folder, number, 'flaky', 'the link opens in a new tab')
+        study.reject(self.folder, number, 'artifact', 'the link opens in a new tab when clicked')
+        text = study.bugs(self.folder)[0].read_text()
+        self.assertIn('**artifact**', text)
+        self.assertIn('0 confirmed, 0 unverified, 1 rejected', text)
+        with self.assertRaisesRegex(ValueError, 'one sentence'):
+            study.charter(self.folder, 'short', 'state', 'Check stuff')
+        with self.assertRaisesRegex(ValueError, 'already exists'):
+            study.charter(self.folder, 'cart', 'numbers', 'Starting at /cart, apply a coupon and check every total')
+
+    def test_bug_bash_confirm_refuses_a_timeout_and_stops_what_the_repro_started(self):
+        number = self.bash()
+        marker = self.root / 'child.pid'
+        command = self.repro('import subprocess, time\n'
+                             f'child = subprocess.Popen(["sleep", "120"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n'
+                             f'open({str(marker)!r}, "w").write(str(child.pid))\ntime.sleep(4)\n')
+        with self.assertRaisesRegex(ValueError, 'a timeout proves nothing'):
+            study.confirm(self.folder, number, 'repro_test.py', 'x', command, timeout=2)
+        pid = int(marker.read_text())
+        for _ in range(50):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            os.kill(pid, 9)
+            self.fail('The app or server a repro started must not outlive it')
+
+    def test_bug_bash_cli_confirms_with_a_command_after_the_separator(self):
+        number = self.bash()
+        self.repro('raise AssertionError("total 8.1")')
+        result = subprocess.run([sys.executable, str(SCRIPT), 'confirm', str(self.folder), str(number), '--repro',
+                                 'repro_test.py', '--expect-failure', 'total 8', '--', sys.executable, 'repro_test.py'],
+                                cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = subprocess.run([sys.executable, str(SCRIPT), 'bugs', str(self.folder)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_every_step_captures_what_the_user_now_sees(self):
         calls = []

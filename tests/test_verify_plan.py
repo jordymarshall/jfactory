@@ -831,7 +831,8 @@ class RunTest(unittest.TestCase):
     def run_script(self, *args, code=0):
         proc = subprocess.run([sys.executable, str(SCRIPT), *args], cwd=self.root, capture_output=True, text=True,
                               timeout=120)
-        self.assertEqual(proc.returncode, code, proc.stdout + proc.stderr)
+        if code is not None:
+            self.assertEqual(proc.returncode, code, proc.stdout + proc.stderr)
         return proc.stdout + proc.stderr
 
     def change(self, path):
@@ -888,6 +889,31 @@ class RunTest(unittest.TestCase):
     def test_ci_all_runs_every_suite(self):
         self.run_script('ci', '--all')
         self.assertEqual(self.ran(), ['ran-browser', 'ran-cli', 'ran-unit'])
+
+    def test_live_model_suites_never_gate_a_pr_and_run_only_with_live(self):
+        live = {'run': 'touch ran-live', 'minutes': 3, 'live_model': True}
+        self.write_config(suites={**self.config['suites'], 'agent-cli': live},
+                          features={**self.config['features'],
+                                    'cli': {'paths': ['cli/**'], 'suites': ['unit', 'cli', 'agent-cli']}})
+        self.change('cli/run.py')
+        out = self.run_script('ci', '--base', 'main')
+        self.assertEqual(self.ran(), ['ran-cli', 'ran-unit'])
+        self.assertIn('Live-model suites, not run on this PR', out)
+        self.assertNotIn('agent-cli', out.split('CI suites:')[1].splitlines()[0])
+        self.run_script('ci', '--all')
+        self.assertNotIn('ran-live', self.ran(), 'A whole-suite run is still a gate; live suites stay off it')
+        for marker in self.root.glob('ran-*'):
+            marker.unlink()
+        self.run_script('ci', '--live')
+        self.assertEqual(self.ran(), ['ran-live'])
+        # Found by the PR #45 verifier: naming the suite explicitly must not reach the live model either.
+        for marker in self.root.glob('ran-*'):
+            marker.unlink()
+        self.assertIn('never run on a PR gate', self.run_script('ci', '--suites', 'agent-cli', code=1))
+        self.assertIn('never run on a PR gate', self.run_script('ci', '--all', '--suites', 'cli,agent-cli', code=1))
+        self.assertEqual(self.ran(), [])
+        self.write_config(suites={**self.config['suites'], 'agent-cli': live}, always_suites=['unit', 'agent-cli'])
+        self.assertIn('never gate a PR', self.run_script('audit', code=None))
 
     def test_ci_shard_runs_its_share_of_the_plan(self):
         self.run_script('ci', '--all', '--shard', '1/2')
@@ -973,7 +999,38 @@ class RunTest(unittest.TestCase):
         self.write_config(targets={'local': {**self.config['targets']['local'], 'doctor': 'echo missing DATABASE_URL; exit 2'}})
         out = self.run_script('smoke', '--target', 'local', '--record', '.jfactory/smoke.json', code=1)
         self.assertIn('FAIL: doctor', out)
-        self.assertFalse(json.loads((self.root / '.jfactory' / 'smoke.json').read_text())['local']['ok'])
+        self.assertIn('a setup failure', out)
+        self.assertNotIn('Retrying', out, 'A setup failure fails the same way every time')
+        receipt = json.loads((self.root / '.jfactory' / 'smoke.json').read_text())['local']
+        self.assertEqual((receipt['ok'], receipt['failure']), (False, 'setup'))
         self.write_config(targets={'local': {**self.config['targets']['local'], 'start': 'sleep 30'}})
         out = self.run_script('smoke', '--target', 'local', '--timeout', '2', code=1)
         self.assertIn('did not answer within 2s', out)
+        self.assertIn('an environment failure, and again after 1 retry', out)
+        self.assertEqual(out.count('FAIL: ready'), 2, 'Both attempts are reported')
+
+    def test_smoke_retries_an_environment_failure_once_and_records_both_attempts(self):
+        # The probe fails on the first attempt only, as a briefly unavailable service would.
+        self.write_config(targets={'local': {**self.config['targets']['local'],
+                                             'probe': 'test -e probed || { touch probed; exit 7; }'}})
+        out = self.run_script('smoke', '--target', 'local', '--record', '.jfactory/smoke.json')
+        self.assertIn('Retrying: probe failed', out)
+        self.assertIn('Target local is ready', out)
+        receipt = json.loads((self.root / '.jfactory' / 'smoke.json').read_text())['local']
+        self.assertEqual([(s['step'], s['ok'], s.get('attempt')) for s in receipt['steps']],
+                         [('doctor', True, None), ('ready', True, 1), ('probe', False, 1), ('ready', True, None),
+                          ('probe', True, None)])
+        (self.root / 'probed').unlink()
+        self.run_script('smoke', '--target', 'local', '--retries', '0', code=1)
+
+    def test_smoke_never_retries_a_start_or_probe_that_fails_on_configuration(self):
+        # Found by the PR #45 verifier: a start command exiting 2 for missing configuration was started twice.
+        self.write_config(targets={'local': {**self.config['targets']['local'], 'start': 'echo no DATABASE_URL; exit 2'}})
+        out = self.run_script('smoke', '--target', 'local', '--record', '.jfactory/smoke.json', code=1)
+        self.assertNotIn('Retrying', out)
+        self.assertIn('a setup failure', out)
+        self.assertEqual(json.loads((self.root / '.jfactory' / 'smoke.json').read_text())['local']['failure'], 'setup')
+        self.write_config(targets={'local': {**self.config['targets']['local'], 'probe': 'exit 2'}})
+        out = self.run_script('smoke', '--target', 'local', code=1)
+        self.assertNotIn('Retrying', out)
+        self.assertIn('probe failed, a setup failure', out)

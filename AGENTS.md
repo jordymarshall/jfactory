@@ -26,7 +26,7 @@ Routines and scheduled automation are acceptable where they help. Preserve upstr
 
 ## System map
 
-The entry point is [skills/jfactory/SKILL.md](skills/jfactory/SKILL.md), with procedures in its `references/`, executable checks in its `scripts/` (`verify_plan.py`, `coord.py`, `usage.py`, `evidence.py`, `check-upstream.py`), templates in `templates/`, the UX skill in `skills/jfactory-ux/` and pinned pstack sources in `vendor/pstack/`. `scripts/install.py` copies that bundle into consumer repositories. `tests/` covers the scripts, with simulated `gh`, `git` and `conductor` in `tests/fakes/`. [evals/scenarios.md](evals/scenarios.md) holds behavioral evaluation cases. The bundle does not deploy applications, and merging to main deploys nothing.
+The entry point is [skills/jfactory/SKILL.md](skills/jfactory/SKILL.md), with procedures in its `references/`, executable checks in its `scripts/` (`verify_plan.py`, `coord.py`, `usage.py`, `evidence.py`, `feedback.py`, `check-upstream.py`), templates in `templates/`, the UX skill in `skills/jfactory-ux/` and pinned pstack sources in `vendor/pstack/`. `scripts/install.py` copies that bundle into consumer repositories. `tests/` covers the scripts, with simulated `gh`, `git` and `conductor` in `tests/fakes/`. [evals/scenarios.md](evals/scenarios.md) holds behavioral evaluation cases. The bundle does not deploy applications, and merging to main deploys nothing.
 
 ## Feature/status map
 

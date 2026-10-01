@@ -131,5 +131,83 @@ class EvidenceTests(unittest.TestCase):
                 process.communicate()
 
 
+    def regression_fixture(self, base_total='16.2', head_total='18.0'):
+        """A committed bug at the base, its fix in the working tree, and a new untracked regression test."""
+        (self.root / '.gitignore').write_text('__pycache__/\n')
+        (self.root / 'cart.py').write_text(f'def total():\n    return {base_total}\n')
+        self.git('add', 'cart.py', '.gitignore')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'Cart')
+        self.base = self.git('rev-parse', 'HEAD').stdout.decode().strip()
+        (self.root / 'cart.py').write_text(f'def total():\n    return {head_total}\n')
+        (self.root / 'test_cart.py').write_text(
+            'import cart\nassert cart.total() == 18.0, f"total is {cart.total()}, expected 18.0"\n')
+        self.task.write_text(json.dumps({'objective': 'Discount once', 'criteria': [
+            {'id': 'save', 'expected': 'The coupon applies once', 'required_scopes': ['unit'], 'regression': True}]}))
+
+    def contrast(self, *extra, expect='total is 16.2'):
+        return self.invoke('contrast', '--task', str(self.task), '--criterion', 'save', '--scope', 'unit',
+                           '--environment', 'disposable', '--base', self.base, '--expect-failure', expect,
+                           *extra, '--', sys.executable, 'test_cart.py')
+
+    def test_contrast_proves_a_fix_fails_on_the_base_and_passes_on_the_tree(self):
+        self.regression_fixture()
+        self.assertEqual(self.invoke('run', '--task', str(self.task), '--criterion', 'save', '--scope', 'unit',
+                                     '--environment', 'disposable', '--', sys.executable, 'test_cart.py').returncode, 0)
+        gaps = json.loads(self.check().stdout)['gaps']
+        self.assertEqual(gaps, [{'criterion': 'save', 'scope': 'contrast', 'reason': 'missing'}],
+                         'A passing check alone must not prove a regression fix')
+        result = self.contrast('--keep', 'test_cart.py')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.check().returncode, 0, self.check().stdout)
+        receipt = json.loads(result.stdout)
+        self.assertEqual((receipt['base'], receipt['base_matched']), ('failed', True))
+        self.assertEqual(self.git('worktree', 'list').stdout.decode().count('\n'), 1, 'The base worktree is removed')
+        (self.root / 'cart.py').write_text('def total():\n    return 18\n')
+        self.assertIn('stale', self.check().stdout)
+
+    def test_contrast_refuses_a_base_that_fails_for_another_reason(self):
+        self.regression_fixture()
+        # Without --keep the base has no regression test, so it fails with a missing file, not the bug.
+        result = self.contrast()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout)['base_matched'], False)
+        self.assertIn('base-failed-differently', self.check().stdout)
+
+    def test_contrast_refuses_a_bug_that_does_not_reproduce_or_a_fix_that_fails(self):
+        self.regression_fixture(base_total='18.0')
+        self.assertIn('"base-passed"', self.contrast('--keep', 'test_cart.py').stdout + self.check().stdout)
+        self.assertNotEqual(self.check().returncode, 0)
+        self.tmp.cleanup()
+        self.setUp()
+        self.regression_fixture(head_total='16.2')
+        result = self.contrast('--keep', 'test_cart.py')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout)['status'], 'failed')
+        self.assertNotEqual(self.check().returncode, 0)
+
+    def test_contrast_refuses_an_assertion_message_echoed_by_an_import_error(self):
+        # Found by the PR #45 verifier: the base lacks the helper the new test imports, and the traceback echoes the
+        # one-line test, assertion message included, so a plain search of the output matched.
+        self.regression_fixture()
+        (self.root / 'helper.py').write_text('total = 9\n')
+        (self.root / 'test_cart.py').write_text('import helper; assert helper.total == 9, "expected total 9"\n')
+        result = self.contrast('--keep', 'test_cart.py', expect='expected total 9')
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn('failed before asserting anything', json.loads(result.stdout)['base_reason'])
+        self.assertNotEqual(self.check().returncode, 0)
+        # Without the setup-error marker, the echoed source line alone still doesn't count.
+        (self.root / 'test_cart.py').write_text('import cart; assert cart.total() == 18.0 or exit(1), "expected 18.0"\n')
+        result = self.contrast('--keep', 'test_cart.py', expect='expected 18')
+        self.assertIn('outside lines that echo the test source', json.loads(result.stdout)['base_reason'])
+
+    def test_contrast_rejects_paths_outside_the_repository_and_bad_patterns(self):
+        self.regression_fixture()
+        self.assertIn('inside the repository', self.contrast('--keep', '../elsewhere').stderr)
+        self.assertIn('not a valid regular expression', self.contrast('--keep', 'test_cart.py', expect='(').stderr)
+        self.task.write_text(json.dumps({'objective': 'x', 'criteria': [
+            {'id': 'save', 'expected': 'y', 'required_scopes': ['unit'], 'regression': 'yes'}]}))
+        self.assertIn('must be true or false', self.check().stderr)
+
+
 if __name__ == '__main__':
     unittest.main()
