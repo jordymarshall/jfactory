@@ -241,7 +241,7 @@ class CoordTest(unittest.TestCase):
         self.coord('launch', '1', 'r', '--brief', str(self.brief))
         verifier = self.db()['workspaces'][-1]
         self.assertEqual((verifier['agent'], verifier['model'], verifier['effort'], verifier['fast']),
-                         ('codex', 'gpt-6.1-sol', 'high', False))
+                         ('codex', 'gpt-6.1-sol', 'low', True))
         for _ in range(2):
             self.coord('set', '1', 'r', '--state', 'failed')
             self.coord('launch', '1', 'r', '--brief', str(self.brief))
@@ -281,7 +281,7 @@ class CoordTest(unittest.TestCase):
         self.coord('close', '1')
 
     def test_open_decision_and_unsupported_fast_mode_block_launch(self):
-        # No default role uses fast mode any more; a repository can still ask for it.
+        # Verify runs in fast mode by default; a model without fast mode in Conductor's catalog is refused.
         (self.tmp / '.jfactory').mkdir(exist_ok=True)
         (self.tmp / '.jfactory' / 'coordination.json').write_text(json.dumps({'roles': {'verify': {'fast': True}}}))
         self.start(['a', '--objective', 'x'], ['v', '--objective', 'verify', '--role', 'verify'], limit=3)
@@ -308,7 +308,7 @@ class CoordTest(unittest.TestCase):
         self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on', 'a')
         verifier = self.db()['workspaces'][-1]
         self.assertEqual((verifier['agent'], verifier['model'], verifier['effort'], verifier['fast']),
-                         ('claude', 'opus-5-5-1m', 'high', False))
+                         ('claude', 'opus-5-5-1m', 'low', False))
 
     def test_verifier_fallback_holds_rather_than_verify_opus_work_with_opus(self):
         self.start(['a', '--objective', 'x'], ['r', '--objective', 'verify a', '--role', 'verify', '--depends', 'a'],
@@ -320,19 +320,19 @@ class CoordTest(unittest.TestCase):
         self.assertIn('same agent family', self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on', 'a',
                                                       '--fallback', '--reason', 'Codex weekly 95%', ok=False))
 
-    def test_opus_verifier_effort_stays_high_whatever_is_requested(self):
+    def test_verifier_effort_stays_low_whatever_is_requested(self):
         self.start(['a', '--objective', 'x'], ['r', '--objective', 'verify a', '--role', 'verify', '--depends', 'a',
                                                 '--effort', 'high'], limit=3)
         self.coord('launch', '1', 'a', '--brief', str(self.brief), '--fallback', '--reason', 'Claude weekly 95%')
         self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
         self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
         self.coord('sync', '1')
-        for override in (['--effort', 'low'], ['--agent', 'claude', '--model', 'opus-5-5-1m', '--effort', 'max']):
-            self.assertIn('high effort only', self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on',
+        for override in (['--effort', 'high'], ['--agent', 'claude', '--model', 'opus-5-5-1m', '--effort', 'max']):
+            self.assertIn('low effort only', self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on',
                                                          'a', *override, ok=False))
         self.coord('launch', '1', 'r', '--brief', str(self.brief), '--stack-on', 'a')
         verifier = self.db()['workspaces'][-1]
-        self.assertEqual((verifier['agent'], verifier['model'], verifier['effort']), ('claude', 'opus-5-5-1m', 'high'))
+        self.assertEqual((verifier['agent'], verifier['model'], verifier['effort']), ('claude', 'opus-5-5-1m', 'low'))
 
     def test_effort_outside_policy_is_refused(self):
         self.start(['a', '--objective', 'x'])
@@ -564,8 +564,8 @@ class CoordTest(unittest.TestCase):
         self.assertEqual(out.splitlines()[0], 'w1')
         workspace = self.db()['workspaces'][0]
         self.assertEqual((workspace['name'], workspace['branch'], workspace['agent'], workspace['model'],
-                          workspace['effort'], workspace['repo_url'], workspace['project']),
-                         ('verify-r-7', 'feat/a', 'codex', 'gpt-6.1-sol', 'high', 'https://github.com/o/r', None))
+                          workspace['effort'], workspace['fast'], workspace['repo_url'], workspace['project']),
+                         ('verify-r-7', 'feat/a', 'codex', 'gpt-6.1-sol', 'low', True, 'https://github.com/o/r', None))
         self.set_db(projects=[{'id': 'p-other', 'gitRemote': 'https://github.com/o/r-other'},
                               {'id': 'p-r', 'gitRemote': 'https://github.com/o/r'}])
         self.coord('launch', '--role', 'fix', '--pr', '7', '--branch', 'feat/a', '--message-file', str(message))

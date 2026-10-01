@@ -40,7 +40,7 @@ if tool == 'conductor':
         done({'agents': [{'agent': 'claude', 'models': ['opus-5-5-1m', 'sonnet-5-1m'],
                           'efforts': ['low', 'medium', 'high', 'max'], 'fastModeModels': ['opus-5-5-1m']},
                          {'agent': 'codex', 'models': ['gpt-6-sol', 'gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna', 'gpt-5.6-sol'],
-                          'efforts': ['low', 'medium', 'high'], 'fastModeModels': ['gpt-6-sol', 'gpt-6-luna']}]})
+                          'efforts': ['low', 'medium', 'high'], 'fastModeModels': ['gpt-6-sol', 'gpt-6.1-sol', 'gpt-6-luna']}]})
     if args[:2] == ['workspace', 'create']:
         n = len(db.setdefault('workspaces', [])) + 1
         db['workspaces'].append({'name': opt('--name'), 'branch': opt('--branch'), 'agent': opt('--agent'),
