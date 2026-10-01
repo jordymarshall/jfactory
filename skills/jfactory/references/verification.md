@@ -13,6 +13,7 @@ Write the objective before substantial implementation, in the task location name
 - Customer and experience outcome, with owner decisions, agent assumptions and unsettled questions distinguished.
 - Scope and non-goals, including constraints and dependencies on other PRs.
 - Observable criteria. For each, give the starting state, user action, expected result, independent side-effect/readback check, required scopes and the command or manual observation that can prove it. A missing test is work to implement, not a reason to remove the criterion.
+- For a bug fix, a criterion whose regression test must fail on the base and pass at the head ([prove a fix](#prove-a-fix-fails-before-it-and-passes-after-it)).
 - Execution target, account/data ownership, permitted side effects and any cost/time limits. Note access still needed.
 - Review/checkpoint and stop conditions. Carry forward the agreed merge/release policy; identify choices that still need owner judgment.
 - Current criterion results, evidence links/revision, unresolved blockers and next action for a resumed session.
@@ -116,6 +117,18 @@ python3 .agents/skills/jfactory/scripts/evidence.py judge --task docs/tasks/save
 ```
 
 `judge` refuses a judge from the implementer's model family, and inspected files that don't exist. It records a hash of each inspected file.
+
+### Prove a fix fails before it and passes after it
+
+A test that passes after a fix proves little on its own: it may never have failed. For a bug fix, mark the criterion `"regression": true`; `check` then also requires a `contrast` receipt, which runs the same check twice. First it runs in a temporary worktree at the base revision, with the new regression test copied in (`--keep`), and it must fail with output matching `--expect-failure`. Then it must pass on the current tree:
+
+```sh
+python3 .agents/skills/jfactory/scripts/evidence.py contrast --task docs/tasks/coupon.json --criterion once --scope unit --environment local --base origin/main --keep tests/coupon.test.ts --link node_modules --expect-failure 'expected 18\.00' -- npx vitest run tests/coupon.test.ts
+```
+
+`--expect-failure` names the assertion that encodes the bug. A base that fails for another reason, such as a missing import, a crash or a timeout, proves nothing, so `contrast` records it as `base-failed-differently` and `check` refuses it. A base that passes means the bug did not reproduce (`base-passed`). `--link` reuses ignored dependency folders instead of installing them again. Put the result in the PR as a short before-and-after table: the check, its result on the base, and its result at the head.
+
+The same rule applies to claims about speed: compare the base and the head on the same machine, in alternating runs. First confirm that both behave the same (same results, same steps), then compare timings. A change that alters behavior is not a performance change, and a single run on a shared CI runner is too noisy to support a timing claim.
 
 The runner uses `.context/jfactory/` for local evidence and excludes only that directory from its source fingerprint. Never put application source there. No credentials in command arguments or environment labels; review logs before sharing. Only evidence IDs, hashes and existing task records need be durable; publish selected sanitized artifacts when a PR reviewer needs them, not all local logs. The code fingerprint covers tracked and nonignored untracked files; ignored configuration/dependency contents are not captured. External state still requires observation.
 
