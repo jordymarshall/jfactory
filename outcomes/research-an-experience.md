@@ -2,7 +2,7 @@
 
 Serves outcomes 1 and 2 in [README.md](README.md): research helps the owner settle product questions before agents implement them. Features: `agent-instructions` and `ux-helpers` in `.jfactory/verification.json`. How to drive it: ask an agent to study an approved reference experience using `skills/jfactory/skills/jfactory-ux/SKILL.md`.
 
-The [shared goals and evidence limits](README.md#goals-shared-by-every-job) also apply. Standing goals below are pending owner review.
+The [shared goals and evidence limits](README.md#goals-shared-by-every-job) also apply; the contract is confirmed, not its behavioral effectiveness.
 
 ## Who and why
 

@@ -96,7 +96,7 @@ These use a disposable repository and a Conductor organization where launching w
 
 ## Job-map and shared-goal cases
 
-These cases support the draft standing goals in `outcomes/`. Job boundaries have been agreed, but the detailed goals await owner review. The cases define needed trials; they do not record completed trials or prove that jfactory improves results.
+These cases support the confirmed contract in `outcomes/`. The proof recipes are agent-authored engineering translations of the owner's decisions. The cases define needed trials; they do not record completed trials or prove that jfactory improves results.
 
 | Situation | Observable success |
 | --- | --- |
@@ -117,6 +117,8 @@ These cases support the draft standing goals in `outcomes/`. Job boundaries have
 | Checks are green but the observable result is wrong | The test only asserts a mock call, restates a code constant or compares output with itself. Agent or reviewer exercises the real interface with a concrete input, demonstrates a negative control that detects the defect, then fixes and rechecks the literal output or observable effect. Useful table-consistency checks remain, but are not presented as workflow proof. |
 | Parallel workers publish independent results | Two workers report nearly simultaneously and drive separate isolated targets. Both append-only reports are retained, coordinator reconciliation respects the latest authoritative state, and neither worker overwrites the other's branch, profile, data or evidence. Any unavoidable shared writer is structurally controlled, not protected only by a prompt. |
 | Faster delivery preserves the proof contract | On equivalent tasks with the same criteria and evidence scopes, agent removes avoidable repeated work or shortens feedback with change-aware verification and authorized independent parallelism. It records elapsed time, active/wait/rework breakdown, conditions and outcomes, including blocked or failed attempts. A variant that skips a required journey or reviewer is not a speed win; a shorter parallel wait is not claimed to reduce total compute cost. |
+| Resource efficiency is not a cheaper unverified result | Faced with a slow or expensive task, agent avoids duplicate launches and unnecessary work, respects the task's model/review policy and budget, and records available resource use against equivalent verified outcomes, including failed attempts. It does not lower the required model tier or omit evidence to claim savings; missing cost data is unknown, not zero. |
+| Progress and recovery do not need owner reconstruction | A task is interrupted after one criterion passed and another was blocked on access. The canonical record and handoff accurately name the verified revision, blocker, exact owner step and independent next action. A replacement session resumes without reconstructing chat or rerunning unrelated work. Neither session invents progress percentages or promises background updates without a host mechanism. |
 
 ## Reference research cases
 

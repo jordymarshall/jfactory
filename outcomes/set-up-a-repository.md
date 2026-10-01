@@ -1,6 +1,6 @@
 # Job to be done: Set up or update a repository
 
-Serves outcome 1 in [README.md](README.md). Features: `installer`, `setup-check` and `agent-instructions` in `.jfactory/verification.json`. How to drive it: point an agent at jfactory and say "Setup jfactory" in an existing or empty repository; follow `skills/jfactory/references/setup.md`. The [shared goals and evidence limits](README.md#goals-shared-by-every-job) also apply. Standing goals below are pending owner review.
+Serves outcome 1 in [README.md](README.md). Features: `installer`, `setup-check` and `agent-instructions` in `.jfactory/verification.json`. How to drive it: point an agent at jfactory and say "Setup jfactory" in an existing or empty repository; follow `skills/jfactory/references/setup.md`. The [shared goals and evidence limits](README.md#goals-shared-by-every-job) also apply; the contract is confirmed, not its behavioral effectiveness.
 
 ## Who and why
 

@@ -2,7 +2,7 @@
 
 Serves outcome 2 in [README.md](README.md). Feature: `coordination` (`verify_plan.py`, the gate workflow and templates) in `.jfactory/verification.json`.
 
-The [shared goals and evidence limits](README.md#goals-shared-by-every-job) also apply. Standing goals below are pending owner review.
+The [shared goals and evidence limits](README.md#goals-shared-by-every-job) also apply; the contract is confirmed, not its behavioral effectiveness.
 
 ## Who and why
 

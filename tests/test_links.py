@@ -1,4 +1,5 @@
 import hashlib
+import importlib.util
 import json
 import re
 import unittest
@@ -7,6 +8,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = ROOT / 'skills' / 'jfactory'
 LINK = re.compile(r'\]\(([^)\s]+)\)')
+VERIFICATION_SPEC = importlib.util.spec_from_file_location('job_verification', BUNDLE / 'scripts' / 'verify_plan.py')
+VERIFICATION = importlib.util.module_from_spec(VERIFICATION_SPEC)
+VERIFICATION_SPEC.loader.exec_module(VERIFICATION)
 
 
 def local_targets(path):
@@ -51,6 +55,24 @@ class LinkTest(unittest.TestCase):
         jobs = {str(document.relative_to(ROOT)) for document in (ROOT / 'outcomes').glob('*.md')
                 if document.name != 'README.md'}
         self.assertEqual(jobs, mapped_documents)
+
+    def test_job_index_and_shared_goals_cover_each_job(self):
+        outcomes = ROOT / 'outcomes'
+        jobs = {document.resolve() for document in outcomes.glob('*.md') if document.name != 'README.md'}
+        indexed = {(outcomes / target).resolve() for target in local_targets(outcomes / 'README.md')
+                   if (outcomes / target).resolve().parent == outcomes.resolve()
+                   and Path(target).name != 'README.md'}
+        self.assertEqual(jobs, indexed)
+        for document in sorted(jobs):
+            self.assertIn('README.md#goals-shared-by-every-job', document.read_text(), str(document))
+
+    def test_each_job_and_shared_goal_has_a_proof_recipe(self):
+        for document in sorted((ROOT / 'outcomes').glob('*.md')):
+            proofs = VERIFICATION.journey_proofs(document.read_text())
+            self.assertTrue(proofs, str(document))
+            for goal, proof in proofs:
+                self.assertTrue(goal.strip(), str(document))
+                self.assertTrue(proof.strip(), f'{document}: {goal}')
 
     def test_readme_diagrams_are_rendered_from_current_sources(self):
         diagrams = ROOT / 'docs' / 'diagrams'

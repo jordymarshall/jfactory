@@ -2,7 +2,7 @@
 
 Serves outcomes 1 and 2 in [README.md](README.md). Feature: `agent-instructions` and `evidence-receipts` in `.jfactory/verification.json`. How to drive it: give an agent an objective in a set-up repository and observe the loop in `skills/jfactory/SKILL.md`.
 
-The [shared goals and evidence limits](README.md#goals-shared-by-every-job) also apply. Standing goals below are pending owner review.
+The [shared goals and evidence limits](README.md#goals-shared-by-every-job) also apply; the contract is confirmed, not its behavioral effectiveness.
 
 ## Who and why
 
