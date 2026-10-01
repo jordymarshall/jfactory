@@ -67,7 +67,7 @@
       "verify": "ci"
     },
     "repository-tests": {
-      "paths": ["tests/test_links.py", "scripts/render_diagrams.py"],
+      "paths": ["tests/test_links.py", "scripts/render_diagrams.py", "tests/run_parallel.py"],
       "recipe": "Run the full unittest suite and a negative control for the changed test",
       "suites": ["checks"],
       "verify": "ci"
