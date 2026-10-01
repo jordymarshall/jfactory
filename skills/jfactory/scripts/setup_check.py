@@ -175,12 +175,14 @@ def check_verification(root, report, states):
             report.add('FAIL', f'The map has {reason} but no workflow runs `verify_plan.py ci`, so CI would run '
                                'everything on every PR; install templates/jfactory-checks.yml')
         live = verify_plan.live_suites(config)
-        scheduled = [p for p in workflows.glob('*.y*ml')
-                     if runs_on_schedule(p.read_text(), 'verify_plan.py', 'ci', '--live')] if workflows.is_dir() else []
-        if live and not scheduled:
+        runs = {p: scheduled_run(p.read_text(), 'verify_plan.py', 'ci', '--live')
+                for p in (workflows.glob('*.y*ml') if workflows.is_dir() else [])}
+        unsure = next(((p, why) for p, (ok, why) in runs.items() if why), None)
+        if live and not any(ok for ok, _ in runs.values()):
             report.add('FAIL', f'Live-model suite(s) {", ".join(live)} never run on PRs, and no scheduled workflow '
-                               'runs `verify_plan.py ci --live`, so nothing exercises them; install '
-                               'templates/jfactory-live-suites.yml')
+                               'runs `verify_plan.py ci --live`, so nothing exercises them'
+                               + (f'; {unsure[0].relative_to(root)} has the step, but {unsure[1]}' if unsure else
+                                  '; install templates/jfactory-live-suites.yml'))
     if gate and not re.search(r'^\s*checks:\s*read\b', gate[0].read_text(), re.M):
         report.add('FAIL', f'{gate[0].relative_to(root)} lacks `checks: read`, so the status cannot confirm CI passed '
                            'at the verified head; update it from templates/jfactory-verified.yml')
@@ -328,11 +330,54 @@ def shell_commands(script):
     return commands
 
 
-def runs_on_schedule(text, script, *flags):
-    """A scheduled workflow, not disabled, with a run step that executes `python3 ... <script>` with these flags.
-    A comment, a manual-only trigger or a job switched off with `if: false` runs nothing on its own."""
-    scheduled = re.search(r'(?m)^\s*schedule:\s*$', text) and re.search(r'(?m)^\s*-\s*cron:', text)
-    disabled = re.search(r'(?m)^\s*if:\s*(?:\$\{\{\s*)?false\b', text)
+# Conditions known to let a job or step run on a scheduled event. Anything else cannot be confirmed from the text.
+SCHEDULE_SAFE = {'always()', 'success()', '!cancelled()', 'true', "github.event_name == 'schedule'"}
+
+
+def indent_of(line):
+    return len(line) - len(line.lstrip(' '))
+
+
+def conditions(lines, index):
+    """The `if:` conditions on the step and the job that contain the line at `index`."""
+    found = []
+    # The step: the nearest list item above (or at) the line, indented less than the line's key.
+    key = indent_of(lines[index]) + (2 if lines[index].lstrip().startswith('- ') else 0)
+    start = next((i for i in range(index, -1, -1) if lines[i].lstrip().startswith('- ') and indent_of(lines[i]) < key),
+                 None)
+    if start is not None:
+        dash = indent_of(lines[start])
+        end = next((i for i in range(start + 1, len(lines))
+                    if lines[i].strip() and indent_of(lines[i]) <= dash), len(lines))
+        for i in range(start, end):
+            text = lines[i][dash + 2:] if i == start else lines[i]
+            if (i == start or indent_of(lines[i]) == dash + 2) and re.match(r'\s*if:', text):
+                found.append(text.split('if:', 1)[1])
+    # The job: the key directly under `jobs:` above the line, and its own direct `if:`.
+    jobs = next((i for i in range(index, -1, -1) if re.match(r'^jobs:\s*$', lines[i])), None)
+    if jobs is not None:
+        level = next((indent_of(line) for line in lines[jobs + 1:] if line.strip()), None)
+        job = next((i for i in range(index, jobs, -1) if lines[i].strip() and indent_of(lines[i]) == level), None)
+        if job is not None:
+            child = next((indent_of(line) for line in lines[job + 1:] if line.strip()), None)
+            for i in range(job + 1, index):
+                if lines[i].strip() and indent_of(lines[i]) == child and re.match(r'\s*if:', lines[i]):
+                    found.append(lines[i].split('if:', 1)[1])
+    result = []
+    for text in found:
+        text = text.strip()
+        if len(text) > 1 and text[0] == text[-1] and text[0] in '"\'':
+            text = text[1:-1]
+        result.append(re.sub(r'^\$\{\{\s*|\s*\}\}$', '', text).strip())
+    return result
+
+
+def scheduled_run(text, script, *flags):
+    """Whether a scheduled event executes `python3 ... <script>` with these flags: (True, None), or (False, why).
+    The schedule must be a trigger, and the job and step that hold the run step must run on it; a comment, a
+    manual-only trigger or a condition that cannot be confirmed to hold on schedule does not count."""
+    if not (re.search(r'(?m)^\s*schedule:\s*$', text) and re.search(r'(?m)^\s*-\s*cron:', text)):
+        return False, None
 
     def runs(words):
         while words and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*=.*', words[0]):
@@ -342,8 +387,20 @@ def runs_on_schedule(text, script, *flags):
         name = next((w for w in words[1:] if not w.startswith('-')), '')
         return name.endswith(script) and all(flag in words for flag in flags)
 
-    return bool(scheduled) and not disabled and any(
-        runs(c) for block in run_blocks(text) for c in shell_commands(block))
+    lines, why = text.splitlines(), None
+    starts = [i for i, line in enumerate(lines) if re.match(r'^\s*(-\s+)?run:', line)]
+    for index, block in zip(starts, run_blocks(text)):
+        if not any(runs(c) for c in shell_commands(block)):
+            continue
+        unsure = [c for c in conditions(lines, index) if c not in SCHEDULE_SAFE]
+        if not unsure:
+            return True, None
+        why = why or f'it runs only when `{unsure[0]}`, which jfactory cannot confirm holds on a scheduled run'
+    return False, why
+
+
+def runs_on_schedule(text, script, *flags):
+    return scheduled_run(text, script, *flags)[0]
 
 
 def runs_method_audit(text):
