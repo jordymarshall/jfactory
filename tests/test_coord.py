@@ -281,7 +281,7 @@ class CoordTest(unittest.TestCase):
         self.coord('close', '1')
 
     def test_open_decision_and_unsupported_fast_mode_block_launch(self):
-        # No default role uses fast mode any more; a repository can still ask for it.
+        # Verify runs in fast mode by default; a model without fast mode in Conductor's catalog is refused.
         (self.tmp / '.jfactory').mkdir(exist_ok=True)
         (self.tmp / '.jfactory' / 'coordination.json').write_text(json.dumps({'roles': {'verify': {'fast': True}}}))
         self.start(['a', '--objective', 'x'], ['v', '--objective', 'verify', '--role', 'verify'], limit=3)
