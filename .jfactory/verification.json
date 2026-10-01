@@ -66,6 +66,13 @@
       "suites": ["checks"],
       "verify": "ci"
     },
+    "upstream-feedback": {
+      "outcome": "outcomes/deliver-an-objective.md",
+      "paths": ["skills/jfactory/scripts/feedback.py", "tests/test_feedback.py"],
+      "recipe": "Run tests/test_feedback.py, including its redaction negative controls; run feedback.py without --send from a disposable consumer install and read the printed issue for anything private",
+      "suites": ["checks"],
+      "verify": "independent"
+    },
     "repository-tests": {
       "paths": ["tests/test_links.py", "scripts/render_diagrams.py", "tests/run_parallel.py"],
       "recipe": "Run the full unittest suite and a negative control for the changed test",
