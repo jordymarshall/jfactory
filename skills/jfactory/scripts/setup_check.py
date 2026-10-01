@@ -338,8 +338,43 @@ def indent_of(line):
     return len(line) - len(line.lstrip(' '))
 
 
+def key_conditions(line):
+    """The condition a mapping line sets: an `if:` key, quoted or not, or a merge key (`<<:`) whose merged keys this
+    reader cannot see, so it is never confirmed."""
+    match = re.match(r'\s*(?:"if"|\'if\'|if)\s*:(.*)$', line)
+    if match:
+        return [match.group(1)]
+    return ['(keys merged from an anchor)'] if re.match(r'\s*<<\s*:', line) else []
+
+
+def triggered_on_schedule(text):
+    """The workflow's `on:` block has a schedule with a cron entry."""
+    lines = [line for line in text.splitlines() if line.strip() and not line.lstrip().startswith('#')]
+    start = next((i for i, line in enumerate(lines) if re.match(r'^(?:on|"on"|\'on\'|true)\s*:', line)), None)
+    if start is None:
+        return False
+    block = []
+    for line in lines[start + 1:]:
+        if indent_of(line) == 0:
+            break
+        block.append(line)
+    level = min((indent_of(line) for line in block), default=0)
+    for i, line in enumerate(block):
+        if indent_of(line) == level and re.match(r'\s*schedule\s*:', line):
+            entries = []
+            for follow in block[i + 1:]:
+                if indent_of(follow) <= level:
+                    break
+                entries.append(follow)
+            return any(re.match(r'\s*-\s*cron\s*:', entry) for entry in entries)
+    return False
+
+
 def conditions(lines, index):
-    """The `if:` conditions on the step and the job that contain the line at `index`."""
+    """The `if:` conditions on the step and the job that contain the line at `index`. Comment-only lines are
+    ignored, since a comment never ends a YAML mapping. A job this line-based reader cannot locate (flow style, for
+    example) yields a condition that is never confirmed, so it is reported rather than assumed to run."""
+    lines = ['' if line.lstrip().startswith('#') else line for line in lines]
     found = []
     # The step: the nearest list item above (or at) the line, indented less than the line's key.
     key = indent_of(lines[index]) + (2 if lines[index].lstrip().startswith('- ') else 0)
@@ -351,24 +386,29 @@ def conditions(lines, index):
                     if lines[i].strip() and indent_of(lines[i]) <= dash), len(lines))
         for i in range(start, end):
             text = lines[i][dash + 2:] if i == start else lines[i]
-            if (i == start or indent_of(lines[i]) == dash + 2) and re.match(r'\s*if:', text):
-                found.append(text.split('if:', 1)[1])
+            if i == start or indent_of(lines[i]) == dash + 2:
+                found += key_conditions(text)
     # The job: the key directly under `jobs:` above the line, and its own direct `if:`.
-    jobs = next((i for i in range(index, -1, -1) if re.match(r'^jobs:\s*$', lines[i])), None)
-    if jobs is not None:
+    jobs = next((i for i in range(index, -1, -1) if re.match(r'^jobs:\s*(#.*)?$', lines[i])), None)
+    if jobs is None:
+        found.append('(a job structure jfactory could not read)')
+    else:
         level = next((indent_of(line) for line in lines[jobs + 1:] if line.strip()), None)
         job = next((i for i in range(index, jobs, -1) if lines[i].strip() and indent_of(lines[i]) == level), None)
-        if job is not None:
+        if job is None:
+            found.append('(a job structure jfactory could not read)')
+        else:
             child = next((indent_of(line) for line in lines[job + 1:] if line.strip()), None)
             # The whole job, to its end: a job's keys are unordered, so its `if:` may follow `steps:`.
             end = next((i for i in range(job + 1, len(lines))
                         if lines[i].strip() and indent_of(lines[i]) <= level), len(lines))
             for i in range(job + 1, end):
-                if lines[i].strip() and indent_of(lines[i]) == child and re.match(r'\s*if:', lines[i]):
-                    found.append(lines[i].split('if:', 1)[1])
+                if lines[i].strip() and indent_of(lines[i]) == child:
+                    found += key_conditions(lines[i])
     result = []
     for text in found:
-        text = text.strip()
+        # A trailing comment is not part of the expression.
+        text = re.sub(r'\s+#.*$', '', text.strip())
         if len(text) > 1 and text[0] == text[-1] and text[0] in '"\'':
             text = text[1:-1]
         result.append(re.sub(r'^\$\{\{\s*|\s*\}\}$', '', text).strip())
@@ -379,7 +419,7 @@ def scheduled_run(text, script, *flags):
     """Whether a scheduled event executes `python3 ... <script>` with these flags: (True, None), or (False, why).
     The schedule must be a trigger, and the job and step that hold the run step must run on it; a comment, a
     manual-only trigger or a condition that cannot be confirmed to hold on schedule does not count."""
-    if not (re.search(r'(?m)^\s*schedule:\s*$', text) and re.search(r'(?m)^\s*-\s*cron:', text)):
+    if not triggered_on_schedule(text):
         return False, None
 
     def runs(words):

@@ -304,7 +304,7 @@ class SetupCheckTest(unittest.TestCase):
         live.write_text(template.replace("  live:\n", "  live:\n    if: ${{ github.event_name == 'workflow_dispatch' }}\n"))
         out = self.check('--remote', '--repo', 'o/r', code=1)
         self.assertIn("it runs only when `github.event_name == 'workflow_dispatch'`", out)
-        live.write_text(template + '    if: false\n')
+        live.write_text(template + '  # This job should not execute on schedule\n    if: false\n')
         self.assertIn('it runs only when `false`', self.check('--remote', '--repo', 'o/r', code=1))
         live.write_text(template.replace("      - uses: actions/checkout@v4\n",
                                          "      - name: Disabled optional diagnostics\n        if: false\n"
@@ -331,6 +331,14 @@ class SetupCheckTest(unittest.TestCase):
                 (False, "github.event_name == 'workflow_dispatch'"),
             f'  live:\n    steps:\n      - run: {run}\n  later:\n    if: false\n    steps:\n      - run: echo hi\n':
                 (True, None),
+            # Found by the fourth PR #45 check: a comment never ends a job or a step.
+            f'  live:\n    steps:\n      - run: {run}\n  # This job should not execute on schedule\n    if: false\n':
+                (False, 'false'),
+            f"  live:\n    steps:\n      - run: {run}\n# note\n    if: ${{{{ github.event_name == 'workflow_dispatch' }}}}\n":
+                (False, "github.event_name == 'workflow_dispatch'"),
+            f'  live:\n    steps:\n      - name: Live\n# note\n        if: false  # off for now\n        run: {run}\n':
+                (False, 'false'),
+            f'  live:\n    if: always()  # keep running\n    steps:\n      - run: {run}\n': (True, None),
         }
         for jobs, (expected, condition) in cases.items():
             ok, why = setup_check.scheduled_run(head + jobs, 'verify_plan.py', 'ci', '--live')
@@ -338,6 +346,19 @@ class SetupCheckTest(unittest.TestCase):
             self.assertEqual(condition is not None and condition in (why or ''), condition is not None, (jobs, why))
         self.assertEqual(setup_check.scheduled_run(head.replace('schedule', 'workflow_dispatch') + list(cases)[0],
                                                    'verify_plan.py', 'ci', '--live'), (False, None))
+        # Shapes found while checking the fourth PR #45 finding's neighbours.
+        for jobs in (f'  live:\n    "if": false\n    steps:\n      - run: {run}\n',
+                     f'  live:\n    <<: *guarded\n    steps:\n      - run: {run}\n'):
+            self.assertFalse(setup_check.scheduled_run(head + jobs, 'verify_plan.py', 'ci', '--live')[0], jobs)
+        not_a_trigger = ('on:\n  workflow_dispatch:\n    inputs:\n      schedule:\n        description: x\n'
+                         'jobs:\n  live:\n    steps:\n      - name: x\n        with:\n          list:\n'
+                         f'            - cron: x\n        run: {run}\n')
+        self.assertEqual(setup_check.scheduled_run(not_a_trigger, 'verify_plan.py', 'ci', '--live'), (False, None))
+        quoted = "'on':\n  schedule:\n    - cron: '0 6 * * 1'\njobs:\n" + list(cases)[0]
+        self.assertEqual(setup_check.scheduled_run(quoted, 'verify_plan.py', 'ci', '--live'), (True, None))
+        flow = head.replace('jobs:\n', '') + 'jobs: {live: {steps: [{run: "' + run + '"}]}}\n'
+        ok, why = setup_check.scheduled_run(flow, 'verify_plan.py', 'ci', '--live')
+        self.assertFalse(ok, 'A structure the reader cannot follow is not reported as scheduled')
 
     def test_targets_need_a_fresh_start_up_receipt(self):
         target = {'local': {'start': 'npm start', 'ready': 'http://127.0.0.1:$PORT/', 'auth': 'none'}}
