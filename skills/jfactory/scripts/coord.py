@@ -236,7 +236,10 @@ def refresh_prs(state, repo):
     for uid, unit in state['units'].items():
         if not unit.get('pr') or unit['state'] in TERMINAL:
             continue
-        pr = json.loads(gh(repo, 'pr', 'view', str(unit['pr']), '--json', 'state,headRefOid,headRefName'))
+        pr = json.loads(gh(repo, 'pr', 'view', str(unit['pr']), '--json', 'state,headRefOid,headRefName,comments'))
+        at_head = [v for v in verify_plan.trusted_verdicts(pr) if v.get('head') == pr['headRefOid']]
+        if at_head and unit['role'] != 'verify':
+            state.setdefault('_verdicts', {})[uid] = at_head[-1]
         if pr['headRefOid'] != unit.get('head'):
             unit['head'] = pr['headRefOid']
             if unit['state'] == 'verified':
@@ -251,6 +254,59 @@ def refresh_prs(state, repo):
             unit['state'] = 'blocked'
             unit['note'] = 'PR closed without merge'
             changes.append(f'{uid}: PR closed without merge')
+    return changes
+
+
+RULE_OPTIONS = ['change-rule: change the rule as proposed in its own verified PR; then re-verify this one',
+                'keep-rule: keep the rule; this change must comply']
+
+
+def route_verdict(state, uid, unit, record):
+    """Turn a failed or blocked verdict at the unit's current head into its next step, once per verdict.
+
+    A fault in the change becomes a fix task for the implementer. A rule the verifier says is wrong becomes an owner
+    decision the unit waits on: the implementer cannot fix a wrong rule, and an agent must not set it aside."""
+    cause = verify_plan.verdict_cause(record)
+    key = f"{record.get('head')}@{record.get('at', '')}"
+    if not cause or record.get('head') != unit.get('head') or unit.get('routed') == key or unit['state'] in TERMINAL:
+        return None
+    unit['routed'] = key
+    unit['updated'] = now()
+    head = record['head'][:7]
+    if cause == 'change':
+        unit['state'] = 'failed'
+        unit['note'] = (f"fix task: {record['verdict']} verdict at {head}; fix the findings, then the verifier "
+                        f"re-checks with --since {head}")
+        return f"{uid}: {record['verdict']} verdict at {head} is a fix task"
+    rules = '; '.join(record.get('rule_changes') or ['(no rule named)'])
+    also = ' It also found defects in the change, which are fixed whatever you decide.' if cause == 'both' else ''
+    gate = add_gate(state, f"The verifier of #{unit.get('pr')} says a rule it was judged against is wrong at {head}: "
+                           f"{rules}.{also} Change the rule, or keep it so the change must comply?",
+                    RULE_OPTIONS, 'none: the unit waits for the owner', [uid])
+    gate.update({'kind': 'rule-change', 'pr': unit.get('pr'), 'head': record['head'], 'cause': cause})
+    unit['state'] = 'blocked'
+    unit['note'] = f"waiting on owner decision {gate['id']}: the verifier says a rule is wrong"
+    return f"{uid}: verifier says a rule is wrong at {head}; owner decision {gate['id']}", gate
+
+
+def announce_gate(repo, number, gate):
+    comment(repo, number, f"Decision needed ({gate['id']}): {gate['question']}\n\nOptions: "
+                          + '; '.join(gate['options']) + f". Default if unanswered: {gate['default']}."
+                          + (f"\n\nAnswer with `coord.py gate resolve {number} --id {gate['id']} --decision "
+                             "change-rule|keep-rule --answer \"<your reply>\"`." if gate.get('kind') == 'rule-change'
+                             else ''))
+
+
+def route_verdicts(state, repo, number, announce=True):
+    changes = []
+    for uid, record in state.get('_verdicts', {}).items():
+        routed = route_verdict(state, uid, state['units'][uid], record)
+        if isinstance(routed, tuple):
+            routed, gate = routed
+            if announce:
+                announce_gate(repo, number, gate)
+        if routed:
+            changes.append(routed)
     return changes
 
 
@@ -860,6 +916,7 @@ def cmd_report(args):
 def cmd_sync(args):
     state = load(args.repo, args.program)
     changes = fold_reports(state) + refresh_prs(state, args.repo)
+    changes += route_verdicts(state, args.repo, args.program, announce=not args.dry_run)
     notes = session_states(state)
     if not args.dry_run and not args.keep_workspaces:
         archived, archive_notes = archive_finished(state)
@@ -926,17 +983,25 @@ def cmd_verdict(args):
                              *(['--features', ','.join(args.features)] if args.features else []),
                              *[a for link in args.screenshots for a in ('--screenshots', link)],
                              *[a for doc in args.standards for a in ('--standards', doc)],
-                             *[a for link in args.walkthrough for a in ('--walkthrough', link)]])
-    if code:
+                             *[a for link in args.walkthrough for a in ('--walkthrough', link)],
+                             *(['--cause', args.cause] if args.cause else []),
+                             *[a for text in args.rule_change for a in ('--rule-change', text)],
+                             *(['--rule-decision', args.rule_decision] if args.rule_decision else []),
+                             '--program', str(args.program)])
+    posted = verify_plan.POSTED[-1] if verify_plan.POSTED else None
+    if code or not posted:
         raise Refused('PR verdict was not posted; see the message above')
     state['ledger'].append({'pr': unit['pr'], 'head': head, 'verdict': args.verdict, 'scopes': args.scopes,
-                            'evidence': args.evidence, 'at': now()})
+                            'evidence': args.evidence, 'at': now(), **({'cause': args.cause} if args.cause else {})})
     unit['head'] = head
-    unit['state'] = 'verified' if args.verdict == 'verified' else ('failed' if args.verdict == 'failed'
-                                                                   else 'in-review')
+    unit['state'] = 'verified' if args.verdict == 'verified' else 'in-review'
     unit['updated'] = now()
+    routed = route_verdict(state, args.unit, unit, posted)
+    if isinstance(routed, tuple):
+        announce_gate(args.repo, args.program, routed[1])
     save(args.repo, args.program, state)
-    print(f'{args.unit} #{unit["pr"]} at {head[:7]}: {args.verdict}')
+    print(f'{args.unit} #{unit["pr"]} at {head[:7]}: {args.verdict}'
+          + (f" ({routed[0] if isinstance(routed, tuple) else routed})" if routed else ''))
 
 
 def cmd_merge(args):
@@ -984,9 +1049,41 @@ def cmd_gate(args):
         gate = next((g for g in state['gates'] if g['id'] == args.id), None)
         if not gate:
             raise Refused(f'Unknown gate {args.id}')
+        follow = ''
+        if gate.get('kind') == 'rule-change':
+            if args.decision not in ('change-rule', 'keep-rule'):
+                raise Refused(f"{gate['id']} asks the owner about a rule; record their choice with --decision "
+                              'change-rule or keep-rule')
+            follow = rule_decision_follow_up(state, gate, args.decision)
+            gate['decision'] = args.decision
+        elif args.decision:
+            raise Refused('--decision applies only to a rule-change decision')
         gate.update({'status': 'resolved', 'answer': args.answer})
-        comment(args.repo, args.program, f"Resolved {gate['id']}: {args.answer}")
+        comment(args.repo, args.program, f"Resolved {gate['id']}: {args.answer}" + (f'\n\n{follow}' if follow else ''))
+        if follow:
+            print(follow)
     save(args.repo, args.program, state)
+
+
+def rule_decision_follow_up(state, gate, decision):
+    """Set the waiting units' next step from the owner's answer about a rule, and say what happens next."""
+    pr, head = gate.get('pr'), (gate.get('head') or '')[:7]
+    for uid in gate['units']:
+        unit = state['units'][uid]
+        unit['updated'] = now()
+        if decision == 'keep-rule':
+            unit['state'] = 'failed'
+            unit['note'] = (f"fix task: the owner kept the rule ({gate['id']}); comply with it, then the verifier "
+                            f"re-checks with --since {head} --rule-decision <link to the answer>")
+        else:
+            unit['note'] = (f"owner approved the rule change ({gate['id']}): land it in its own verified PR, then "
+                            f"re-verify #{pr} under the new rule with --rule-decision <link to the answer>")
+    if decision == 'keep-rule':
+        return (f"The rule stays. {', '.join(gate['units'])} is a fix task: the change must comply"
+                + (', and its own defects are fixed too.' if gate.get('cause') == 'both' else '.'))
+    return (f"The rule changes. Add a unit for the rule change (its own PR, verified like any other); once it merges, "
+            f"re-verify #{pr} under the new rule" + (' after the change\'s own defects are fixed.'
+                                                      if gate.get('cause') == 'both' else '.'))
 
 
 def cmd_close(args):
@@ -1112,6 +1209,11 @@ def main(argv=None):
                    help='A source in .jfactory/standards.md the change was checked against; required with a standards map')
     p.add_argument('--walkthrough', action='append', default=[],
                    help='Link to a step-by-step walkthrough of a changed journey; required when the change touches screens')
+    p.add_argument('--cause', choices=verify_plan.CAUSES,
+                   help='Required for failed or blocked: change (a fix task), rules (an owner decision) or both')
+    p.add_argument('--rule-change', action='append', default=[],
+                   help='With --cause rules or both, per rule: "<file and line or section>: <what is wrong>; <proposal>"')
+    p.add_argument('--rule-decision', help='Link to the owner\'s answer, when an earlier verdict said a rule is wrong')
     p.set_defaults(func=cmd_verdict)
     p = sub.add_parser('merge', help='Queue protected auto-merge for a verified unit')
     p.add_argument('program', type=int)
@@ -1126,6 +1228,8 @@ def main(argv=None):
     p.add_argument('--default', default='')
     p.add_argument('--units', type=listing, default=[])
     p.add_argument('--answer')
+    p.add_argument('--decision', choices=['change-rule', 'keep-rule'],
+                   help='For a rule-change decision: the owner\'s choice, which sets the waiting unit\'s next step')
     p.set_defaults(func=cmd_gate)
     p = sub.add_parser('tidy', help='Archive finished PR workspaces and delete finished Program sidebar sections')
     p.set_defaults(func=cmd_tidy)

@@ -32,6 +32,13 @@ STANDARD_DIMENSIONS = ['Product goals and customer', 'Brand, voice and copy', 'V
                        'Definition of done']
 CONTEXT = 'jfactory verified'
 VERDICT_RE = re.compile(r'<!-- jfactory-verdict (\{.*?\}) -->', re.S)
+# Why a verdict failed or was blocked: the change is wrong, a rule it was judged against is wrong, or both.
+# Records posted before causes existed read as `change`. A rules cause is an owner decision, never a waiver.
+CAUSES = ('change', 'rules', 'both')
+NOT_PASSING = ('failed', 'blocked')
+RULE_CHANGE_LABEL = 'jfactory-rule-change'
+# A rule change must name where the rule lives: a file, with a line or section when it helps.
+RULE_SOURCE = re.compile(r'[\w./-]*\w\.(?:md|py|json|ya?ml|toml|txt|cfg|ini)(?:[#:][\w.-]+)?', re.I)
 # Changes to the gate's own inputs can never be scoped down.
 GATE_PATHS = ['.jfactory/**', '.github/workflows/**', '.github/rulesets/**']
 TRUSTED = {'OWNER', 'MEMBER', 'COLLABORATOR'}
@@ -913,6 +920,57 @@ def states_objective(body):
     return len(re.sub(r'\s+', ' ', text).strip()) >= 10
 
 
+def verdict_cause(record):
+    """`change`, `rules` or `both` for a failed or blocked verdict, None otherwise. Older records without a cause
+    read as `change`, the only cause there was."""
+    if record.get('verdict') not in NOT_PASSING:
+        return None
+    return record.get('cause') if record.get('cause') in CAUSES else 'change'
+
+
+def rule_source(text):
+    """The rule's location named in a --rule-change text (file, with line or section), or None."""
+    match = RULE_SOURCE.search(text or '')
+    return match.group(0).lstrip('./') if match else None
+
+
+def cause_refusal(verdict, cause, rule_changes, rule_decision=None):
+    """Why these verdict arguments cannot be posted, or None. Every failure says whose it is to fix."""
+    if verdict in NOT_PASSING and not cause:
+        return (f'A {verdict} verdict needs --cause: change (the PR must be fixed), rules (a rule it was judged '
+                'against is wrong; the owner decides) or both. See "Is it the change or the rules?" in '
+                'references/verification.md')
+    if verdict not in NOT_PASSING and cause:
+        return f'--cause applies only to failed or blocked verdicts, not {verdict}'
+    if cause in ('rules', 'both') and not rule_changes:
+        return ('--cause rules needs --rule-change "<file and line or section>: <what is wrong with the rule>; '
+                '<the proposed adjustment>" for each rule')
+    if rule_changes and cause not in ('rules', 'both'):
+        return '--rule-change needs --cause rules or both'
+    for text in rule_changes:
+        if not rule_source(text) or len(text.replace(rule_source(text), '').strip(' :;-.')) < 20:
+            return (f'--rule-change {text!r} must name the rule\'s file (with line or section), say what is wrong '
+                    'with it and propose the adjustment')
+    if rule_decision is not None and not re.match(r'https?://\S+$', rule_decision):
+        return '--rule-decision must link the owner\'s decision (the rule-change issue comment or program decision)'
+    return None
+
+
+def rule_decision_needed(verdicts, head=None, since=None):
+    """The unresolved rules-cause verdict in this PR's history, or None: agents never waive a rule.
+
+    A finding that a rule is wrong stays open across every later head and verdict (a change-cause failure, a partial
+    verification, a fresh verdict without --since) until a later verdict links the owner's decision on it. One
+    decision settles every finding before it; a rules finding after the decision needs a new one."""
+    pending = None
+    for record in verdicts:
+        if record.get('rule_decision'):
+            pending = None
+        if verdict_cause(record) in ('rules', 'both'):
+            pending = record
+    return pending
+
+
 def trusted_verdicts(pr):
     """Verdict records from PR comments by accounts with write access, oldest first."""
     verdicts = []
@@ -959,9 +1017,14 @@ def evaluate(pr, config, ci_check=None):
     if result['level'] != 'static' and config.get('require_objective', True) and not states_objective(pr.get('body')):
         return 'failure', 'PR description must start with its objective: an Objective heading (such as "## Objective") or "Objective:" line'
     current_verdicts = [v for v in trusted_verdicts(pr) if v.get('head') == pr['headRefOid']]
-    if current_verdicts and current_verdicts[-1].get('verdict') in ('failed', 'blocked'):
+    if current_verdicts and current_verdicts[-1].get('verdict') in NOT_PASSING:
         # Done means right: a reviewer who found this change wrong vetoes it, even where no verdict was required.
-        return 'failure', f"Latest verdict at {pr['headRefOid'][:7]} is {current_verdicts[-1]['verdict']}"
+        # A wrong rule blocks too, until the owner decides: change the rule, or keep it and fix the change.
+        latest = current_verdicts[-1]
+        why = {'rules': " (cause: rules; waiting on the owner's decision about the rule)",
+               'both': ' (cause: change and rules; fix the change, and the owner decides about the rule)'}
+        return 'failure', f"Latest verdict at {pr['headRefOid'][:7]} is {latest['verdict']}" + why.get(
+            verdict_cause(latest), '')
     if result['level'] != 'static' and config.get('require_objective', True):
         problem = why_its_right_problem(pr.get('body'), config)
         if problem:
@@ -999,6 +1062,11 @@ def evaluate(pr, config, ci_check=None):
                            + ')')
     if verdict.get('since') and not any(v.get('head') == verdict['since'] for v in verdicts):
         return 'failure', f"Verdict re-checks changes since {verdict['since'][:7]}, which has no earlier verdict"
+    earlier = verdicts[:max(i for i, v in enumerate(verdicts) if v.get('head') == head)]
+    flagged = rule_decision_needed(earlier, head, verdict.get('since'))
+    if flagged and not verdict.get('rule_decision'):
+        return 'failure', (f"An earlier verdict at {flagged['head'][:7]} said a rule is wrong; this verdict must link "
+                           "the owner's decision on it (--rule-decision)")
     refusal = same_family_refusal(verdict.get('verifier'), verdict.get('implementer'),
                                   config.get('allow_same_family', False))
     if refusal:
@@ -1206,6 +1274,9 @@ def cmd_smoke(args):
 
 
 def cmd_verdict(args):
+    refusal = cause_refusal(args.verdict, args.cause, args.rule_change, args.rule_decision)
+    if refusal:
+        raise Refused(refusal)
     pr = pr_info(args.repo, args.pr)
     if pr['headRefOid'] != args.head:
         raise Refused(f"PR #{args.pr} head is {pr['headRefOid'][:7]}, not {args.head[:7]}; verify the current head")
@@ -1239,11 +1310,20 @@ def cmd_verdict(args):
                       'each changed screen at the target viewports, review the images with a vision-capable model '
                       'against the objective, and link them with --screenshots')
     if args.verdict == 'verified':
+        flagged = rule_decision_needed(trusted_verdicts(pr), args.head, args.since)
+        if flagged and not args.rule_decision:
+            raise Refused(f"The verdict at {flagged['head'][:7]} said a rule is wrong ("
+                          + '; '.join(flagged.get('rule_changes') or [])[:200] + "). Only the owner settles that: "
+                          'link their decision with --rule-decision (the rule changed in its own verified PR, or '
+                          'the owner kept it and the change now complies)')
         refusal = ci_refusal(args.repo, args.head)
         if refusal:
             raise Refused(refusal)
     record = {'head': args.head, 'verdict': args.verdict, 'features': sorted(features), 'full': args.full,
               'verifier': args.verifier, 'implementer': args.implementer, 'evidence': args.evidence,
+              **({'cause': args.cause} if args.cause else {}),
+              **({'rule_changes': args.rule_change} if args.rule_change else {}),
+              **({'rule_decision': args.rule_decision} if args.rule_decision else {}),
               **({'screenshots': args.screenshots} if args.screenshots else {}),
               **({'walkthrough': args.walkthrough} if args.walkthrough else {}),
               **({'standards': args.standards} if args.standards else {}),
@@ -1252,6 +1332,13 @@ def cmd_verdict(args):
     text = (f"<!-- jfactory-verdict {json.dumps(record)} -->\n**Verification {args.verdict}** at `{args.head[:7]}` "
             f"by {args.verifier} (implementer {args.implementer})."
             + (f" Re-checked the changes since the verdict at `{args.since[:7]}`." if args.since else '')
+            + (f"\n\n**Cause: {CAUSE_TEXT[args.cause]}**" if args.cause else '')
+            + (('\n\nRules the verifier says are wrong, with the proposed change:\n'
+                + '\n'.join(f'- {r}' for r in args.rule_change)
+                + '\n\nThe owner decides: change the rule as proposed (its own verified PR, then this PR is '
+                  're-verified under the new rule), or keep the rule so this change must comply. Until then '
+                  'this verdict blocks merging.') if args.rule_change else '')
+            + (f"\n\nOwner's decision on the earlier rule problem: {args.rule_decision}" if args.rule_decision else '')
             + "\n\nFeatures: "
             f"{'full feature map' if args.full else ', '.join(features) or 'none'}\n\nEvidence:\n"
             + '\n'.join(f'- {e}' for e in args.evidence)
@@ -1260,8 +1347,67 @@ def cmd_verdict(args):
             + (('\n\nScreenshots reviewed:\n' + '\n'.join(f'- {s}' for s in args.screenshots)) if args.screenshots else '')
             + (f'\n\n{args.note}' if args.note else ''))
     run('gh', 'pr', 'comment', str(args.pr), '--repo', args.repo, '--body-file', body_file(text))
+    POSTED.append(record)
     print(f'Posted {args.verdict} verdict for #{args.pr} at {args.head[:7]}')
+    code = 0
+    if args.cause in ('rules', 'both') and not args.program:
+        try:
+            print(raise_rule_change(args.repo, args.pr, pr.get('title') or '', record))
+        except Refused as error:
+            print(f'The verdict is posted, but the {RULE_CHANGE_LABEL} issue was not opened or updated: {error}. '
+                  'Retry the verdict command or open the issue by hand so the owner sees it.', file=sys.stderr)
+            code = 1
+    elif args.cause in ('rules', 'both'):
+        print(f'Program #{args.program} records this as an owner decision at its next sync.')
     tidy_after_verdict(args.repo)
+    return code
+
+
+# Verdicts this process posted, for coord.py, which records the same verdict in its program.
+POSTED = []
+CAUSE_TEXT = {'change': 'the change (fix the PR and re-verify)',
+              'rules': 'the rules (a rule this PR was judged against is wrong; owner decision needed)',
+              'both': 'the change and the rules (fix the PR; the owner decides about the rule)'}
+
+
+def rule_change_body(pr_number, title, record):
+    rules = '\n'.join(f'- {r}' for r in record.get('rule_changes', []))
+    both = ('\n\nThe verifier also found problems in the change itself; those are fixed in the PR whatever you '
+            'decide here.' if record.get('cause') == 'both' else '')
+    return (f"PR #{pr_number} ({title}) was judged at `{record['head'][:7]}` by {record['verifier']}: "
+            f"**{record['verdict']}**, because a rule it was judged against looks wrong.{both}\n\n"
+            f"**Rule, what is wrong with it, and the recommended change**\n{rules}\n\n"
+            f"Evidence: {', '.join(record.get('evidence', []))}\n\n"
+            '**Your decision.** Reply here with one of:\n'
+            '1. **Change the rule as proposed.** The rule change is made in its own PR, which is verified like any '
+            f'other; then PR #{pr_number} is re-verified under the new rule, and that verdict links your reply.\n'
+            f'2. **Keep the rule.** PR #{pr_number} must comply with it: the finding becomes an ordinary fix, and the '
+            're-check links your reply.\n\n'
+            f'PR #{pr_number} cannot merge until then: a failed or blocked verdict blocks it whatever the cause, and '
+            'no agent may set the rule aside on its own.')
+
+
+def raise_rule_change(repo, pr_number, title, record):
+    """Open, or update, the one issue per PR that asks the owner about a rule the verifier says is wrong."""
+    issue_title = f'Rule change needed for PR #{pr_number}'
+    # Search for this PR's own title rather than paging through every labelled issue, which could miss an old one.
+    found = json.loads(run('gh', 'issue', 'list', '--repo', repo, '--label', RULE_CHANGE_LABEL, '--state', 'all',
+                           '--search', f'"{issue_title}" in:title', '--limit', '20',
+                           '--json', 'number,title,state') or '[]')
+    existing = next((i for i in found if i.get('title') == issue_title), None)
+    body = rule_change_body(pr_number, title, record)
+    if existing:
+        number = str(existing['number'])
+        if existing.get('state', 'OPEN').upper() != 'OPEN':
+            run('gh', 'issue', 'reopen', number, '--repo', repo)
+        run('gh', 'issue', 'comment', number, '--repo', repo, '--body-file',
+            body_file(f"The verifier flagged a rule again at `{record['head'][:7]}`.\n\n{body}"))
+        return f'Updated rule-change issue #{number} for the owner'
+    run('gh', 'label', 'create', RULE_CHANGE_LABEL, '--repo', repo, '--color', 'FBCA04', '--force',
+        '--description', 'A verifier says a jfactory rule is wrong; the owner decides')
+    url = run('gh', 'issue', 'create', '--repo', repo, '--title', issue_title, '--label', RULE_CHANGE_LABEL,
+              '--body-file', body_file(body)).strip()
+    return f'Opened rule-change issue for the owner: {url}'
 
 
 def tidy_after_verdict(repo):
@@ -1342,6 +1488,16 @@ def main(argv=None):
     p.add_argument('--walkthrough', action='append', default=[],
                    help='Link to a step-by-step walkthrough (study.py walkthrough) of a changed journey; repeat per viewport')
     p.add_argument('--since', help='Head of this PR\'s earlier verdict; this one re-checked only the changes since')
+    p.add_argument('--cause', choices=CAUSES,
+                   help='Required for failed or blocked: change (the PR is wrong), rules (a rule it was judged against '
+                        'is wrong) or both')
+    p.add_argument('--rule-change', action='append', default=[],
+                   help='With --cause rules or both, per rule: "<file and line or section>: <what is wrong>; '
+                        '<proposed adjustment>"')
+    p.add_argument('--rule-decision',
+                   help='Link to the owner\'s decision on an earlier rules-cause verdict; required to verify after one')
+    p.add_argument('--program', type=int,
+                   help='Program issue coordinating this PR; a rules cause becomes its owner decision instead of an issue')
     p.add_argument('--note')
     p.set_defaults(func=cmd_verdict)
 

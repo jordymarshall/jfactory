@@ -52,6 +52,40 @@ class MethodAuditTest(unittest.TestCase):
         self.assertIn('| #7 Restyle | X |', text)
 
 
+RULE = ('skills/jfactory/references/verification.md#independent-verdict: prescribes high effort, which the owner '
+        'replaced; point to the verify tier in models.md')
+OTHER = 'skills/jfactory/references/models.md#verify: names a retired model; name the current verify model'
+
+
+def ruled(number, *rules, decision='https://github.test/issues/3#c1'):
+    """A merged PR whose verifier first said a rule was wrong, then verified after the owner's decision."""
+    item = pr(['app/briefs/a.ts'], rule_decision=decision)
+    flagged = {'head': HEAD, 'verdict': 'failed', 'cause': 'rules', 'rule_changes': list(rules), 'evidence': ['x'],
+               'verifier': 'codex/gpt-6.1-sol', 'implementer': 'claude/opus-5-5'}
+    item['comments'].insert(0, {'authorAssociation': 'OWNER', 'body': f'<!-- jfactory-verdict {json.dumps(flagged)} -->'})
+    return {**item, 'number': number}
+
+
+class RuleProblemsTest(unittest.TestCase):
+    def test_counts_rules_cause_merges_and_lists_rules_flagged_more_than_once(self):
+        results = [(ruled(3, RULE), []), (ruled(4, RULE, OTHER), []), (ruled(5, OTHER + ' again'), []),
+                   (pr(['app/briefs/a.ts']), [])]
+        self.assertEqual(method_audit.repeated_rules(results),
+                         {'skills/jfactory/references/verification.md#independent-verdict': [3, 4],
+                          'skills/jfactory/references/models.md#verify': [4, 5]})
+        text = method_audit.report(results, 4)
+        self.assertIn('Rule problems: 3 of 4 merged PRs had a verdict saying a rule, not the change, was wrong '
+                      '(#3, #4, #5).', text)
+        self.assertIn('- `skills/jfactory/references/verification.md#independent-verdict`: #3, #4', text)
+        # Flagged once is counted but not listed as recurring; no rule problems at all says so.
+        self.assertEqual(method_audit.repeated_rules([(ruled(3, RULE), [])]), {})
+        self.assertIn('Rule problems: 0 of 1 merged PRs', method_audit.report([(pr(['app/briefs/a.ts']), [])], 1))
+
+    def test_merging_past_a_rules_verdict_needs_the_owners_decision(self):
+        self.assertEqual(method_audit.audit_pr(ruled(3, RULE), CONFIG), [])
+        self.assertIn('must link the owner', method_audit.audit_pr(ruled(3, RULE, decision=None), CONFIG)[0])
+
+
 class PublishTest(unittest.TestCase):
     def setUp(self):
         self.calls, self.issue, self.last = [], '', ''

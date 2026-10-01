@@ -10,6 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 COORD = ROOT / 'skills' / 'jfactory' / 'scripts' / 'coord.py'
 FAKE = ROOT / 'tests' / 'fakes' / 'fake_cli.py'
+RULE = ('skills/jfactory/references/verification.md#independent-verdict: prescribes GPT Sol 6.1 at high effort, but '
+        'the owner moved the verify tier to low-effort fast mode; point to the verify tier in models.md instead')
 BRIEF = '\n'.join(f'{field} filled in' for field in [
     'OBJECTIVE', 'DECISIONS', 'SCOPE', 'CONTEXT', 'ACCEPTANCE', 'VERIFY', 'SHARED', 'LIMITS', 'FORBIDDEN',
     'DELIVERY', 'REPORT'])
@@ -149,7 +151,8 @@ class CoordTest(unittest.TestCase):
     def test_tidy_deletes_only_finished_program_sections(self):
         self.start(['a', '--objective', 'x'])
         self.set_db(archived=['w9'], issues={**self.db()['issues'], '2': {
-            'title': 'Program: Old pilot', 'state': 'CLOSED', 'url': 'u', 'body': '', 'comments': []}},
+            'title': 'Program: Old pilot', 'state': 'CLOSED', 'url': 'u', 'body': '', 'comments': [],
+            'labels': [{'name': 'jfactory-program'}]}},
             sections=[{'id': 'old', 'name': 'Program: Old pilot', 'workspaceIds': ['live-coordinator']},
                       {'id': 'empty', 'name': 'Program: Abandoned idea', 'workspaceIds': ['w9']},
                       {'id': 'live', 'name': 'Program: Two features', 'workspaceIds': ['w1']},
@@ -421,9 +424,87 @@ class CoordTest(unittest.TestCase):
         self.coord('report', '1', 't', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
         self.coord('sync', '1')
         self.coord('verdict', '1', 't', '--head', 'aaa1111', '--verdict', 'failed', '--scopes', 'unit',
-                   '--evidence', 'https://evidence', '--verifier', 'codex/gpt-6-sol')
+                   '--evidence', 'https://evidence', '--verifier', 'codex/gpt-6-sol', '--cause', 'change')
         self.assertIn('has a failed verdict', self.coord('merge', '1', 't', ok=False))
         self.assertNotIn('merged', self.db())
+
+    def in_review(self):
+        self.start(['a', '--objective', 'Save items'])
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a', 'comments': []}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.coord('sync', '1')
+
+    def post_verdict(self, **fields):
+        """A verdict a verifier posted on the PR itself (verify_plan.py verdict), which sync reads."""
+        record = {'head': 'aaa1111', 'verdict': 'failed', 'features': [], 'full': True, 'evidence': ['x'],
+                  'verifier': 'codex/gpt-6.1-sol', 'implementer': 'claude/opus-5-5-1m', 'at': '2099-02-01T00:00:00Z',
+                  **fields}
+        db = self.db()
+        db['prs']['7']['comments'].append({'authorAssociation': 'OWNER',
+                                           'body': f'<!-- jfactory-verdict {json.dumps(record)} -->'})
+        self.state.write_text(json.dumps(db))
+
+    def test_sync_turns_a_rules_verdict_into_an_owner_decision_not_a_fix_task(self):
+        self.in_review()
+        self.post_verdict(cause='rules', rule_changes=[RULE])
+        out = self.coord('sync', '1')
+        self.assertIn('a: verifier says a rule is wrong at aaa1111; owner decision G1', out)
+        program = self.program_state()
+        gate, unit = program['gates'][0], program['units']['a']
+        self.assertEqual((gate['kind'], gate['status'], gate['units'], gate['pr']), ('rule-change', 'open', ['a'], 7))
+        self.assertIn(RULE, gate['question'])
+        self.assertEqual(unit['state'], 'blocked')
+        self.assertNotIn('fix task', unit['note'])
+        self.assertIn('Decision needed (G1)', self.db()['issues']['1']['comments'][-1]['body'])
+        self.assertIn('keep-rule', self.db()['issues']['1']['body'])
+        # The unit waits: no relaunch for a fix, no merge; and a second sync adds no second decision.
+        self.assertIn('Open owner decisions block a: G1', self.coord('launch', '1', 'a', '--brief', str(self.brief),
+                                                                      ok=False))
+        self.coord('sync', '1')
+        self.assertEqual(len(self.program_state()['gates']), 1)
+        self.assertIn('--decision change-rule or keep-rule',
+                      self.coord('gate', 'resolve', '1', '--id', 'G1', '--answer', 'ok', ok=False))
+        # The owner keeps the rule: now it is an ordinary fix task.
+        self.assertIn('fix task', self.coord('gate', 'resolve', '1', '--id', 'G1', '--answer', 'Keep it',
+                                             '--decision', 'keep-rule'))
+        unit = self.program_state()['units']['a']
+        self.assertEqual(unit['state'], 'failed')
+        self.assertIn('fix task: the owner kept the rule (G1)', unit['note'])
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+
+    def test_sync_turns_a_change_verdict_into_a_fix_task(self):
+        for record in ({'cause': 'change'}, {}):  # a record from before causes existed reads as `change`
+            with self.subTest(record=record):
+                self.setUp()
+                self.in_review()
+                self.post_verdict(**record)
+                self.assertIn('a: failed verdict at aaa1111 is a fix task', self.coord('sync', '1'))
+                program = self.program_state()
+                self.assertEqual(program['gates'], [])
+                self.assertEqual(program['units']['a']['state'], 'failed')
+                self.assertIn('fix task', program['units']['a']['note'])
+
+    def test_verdict_command_routes_a_rules_failure_to_the_owner(self):
+        self.in_review()
+        out = self.coord('verdict', '1', 'a', '--head', 'aaa1111', '--verdict', 'failed', '--scopes', 'unit',
+                         '--evidence', 'https://evidence', '--verifier', 'codex/gpt-6.1-sol', '--cause', 'both',
+                         '--rule-change', RULE)
+        self.assertIn('owner decision G1', out)
+        self.assertIn('needs --cause', self.coord('verdict', '1', 'a', '--head', 'aaa1111', '--verdict', 'blocked',
+                                                  '--scopes', 'unit', '--evidence', 'x', '--verifier',
+                                                  'codex/gpt-6.1-sol', ok=False))
+        body = self.db()['prs']['7']['comments'][-1]['body']
+        self.assertIn('Cause: the change and the rules', body)
+        # Inside a program the decision lives in the program issue; no separate rule-change issue is opened.
+        self.assertEqual(list(self.db()['issues']), ['1'])
+        self.assertEqual(self.program_state()['ledger'][-1]['cause'], 'both')
+        self.coord('sync', '1')
+        self.assertEqual(len(self.program_state()['gates']), 1)
+        self.assertIn('has a failed verdict', self.coord('merge', '1', 'a', ok=False))
+        out = self.coord('gate', 'resolve', '1', '--id', 'G1', '--answer', 'Change it', '--decision', 'change-rule')
+        self.assertIn('Add a unit for the rule change', out)
+        self.assertIn('re-verify #7 under the new rule', self.program_state()['units']['a']['note'])
 
     def test_verdict_passes_screenshots_for_screen_changes(self):
         self.start(['a', '--objective', 'x'])
