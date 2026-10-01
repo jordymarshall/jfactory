@@ -831,7 +831,8 @@ class RunTest(unittest.TestCase):
     def run_script(self, *args, code=0):
         proc = subprocess.run([sys.executable, str(SCRIPT), *args], cwd=self.root, capture_output=True, text=True,
                               timeout=120)
-        self.assertEqual(proc.returncode, code, proc.stdout + proc.stderr)
+        if code is not None:
+            self.assertEqual(proc.returncode, code, proc.stdout + proc.stderr)
         return proc.stdout + proc.stderr
 
     def change(self, path):
@@ -888,6 +889,25 @@ class RunTest(unittest.TestCase):
     def test_ci_all_runs_every_suite(self):
         self.run_script('ci', '--all')
         self.assertEqual(self.ran(), ['ran-browser', 'ran-cli', 'ran-unit'])
+
+    def test_live_model_suites_never_gate_a_pr_and_run_only_with_live(self):
+        live = {'run': 'touch ran-live', 'minutes': 3, 'live_model': True}
+        self.write_config(suites={**self.config['suites'], 'agent-cli': live},
+                          features={**self.config['features'],
+                                    'cli': {'paths': ['cli/**'], 'suites': ['unit', 'cli', 'agent-cli']}})
+        self.change('cli/run.py')
+        out = self.run_script('ci', '--base', 'main')
+        self.assertEqual(self.ran(), ['ran-cli', 'ran-unit'])
+        self.assertIn('Live-model suites, not run on this PR', out)
+        self.assertNotIn('agent-cli', out.split('CI suites:')[1].splitlines()[0])
+        self.run_script('ci', '--all')
+        self.assertNotIn('ran-live', self.ran(), 'A whole-suite run is still a gate; live suites stay off it')
+        for marker in self.root.glob('ran-*'):
+            marker.unlink()
+        self.run_script('ci', '--live')
+        self.assertEqual(self.ran(), ['ran-live'])
+        self.write_config(suites={**self.config['suites'], 'agent-cli': live}, always_suites=['unit', 'agent-cli'])
+        self.assertIn('never gate a PR', self.run_script('audit', code=None))
 
     def test_ci_shard_runs_its_share_of_the_plan(self):
         self.run_script('ci', '--all', '--shard', '1/2')

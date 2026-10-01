@@ -256,6 +256,13 @@ def static_allowed(path, reason):
     return reason is None or (reason == 'tests' and not matches(path, TEST_FILES) and path.lower().endswith(PROSE))
 
 
+def live_suites(config, suites=None):
+    """Suites that spend real model calls on every run (`"live_model": true`). They never gate a PR: model output
+    varies and costs money, so a scheduled run (`ci --live`) exercises them instead."""
+    defs = config.get('suites', {})
+    return sorted(s for s in (defs if suites is None else suites) if defs.get(s, {}).get('live_model') is True)
+
+
 def has_screens(feature, config):
     """A feature users see: one with a journey suite against a running app, or marked `"screens": true`."""
     defs = config.get('suites', {})
@@ -384,9 +391,11 @@ def plan(files, config, impact=None):
     else:
         level = 'static'
     needs = level == 'independent' or (level == 'static' and config.get('verify_static', False))
+    live = live_suites(config, suites)
+    suites -= set(live)
     minutes, untimed = cost(suites, config)
     shards = shard_count(config)
-    return {'files': len(files), 'features': sorted(features), 'unmapped': unmapped, 'gate': gate, 'full': full,
+    return {'files': len(files), 'live_suites': live, 'features': sorted(features), 'unmapped': unmapped, 'gate': gate, 'full': full,
             'static_only': static_only, 'suites': sorted(suites), 'level': level,
             'independent_features': independent, 'overridden': overridden,
             'screen_features': sorted(f for f in visual if has_screens(all_features[f], config)),
@@ -518,6 +527,9 @@ def render_plan(result):
         lines += ['', 'Added from recorded coverage:'] + [
             f"- `{suite}` executes {', '.join(f'`{p}`' for p in files[:5])}" for suite, files in result['impact'].items()]
     lines += ['', 'CI suites: ' + (', '.join(result['suites']) or 'none')]
+    if result.get('live_suites'):
+        lines.append('Live-model suites, not run on this PR (scheduled `ci --live`; the verifier may run them): '
+                     + ', '.join(result['live_suites']))
     estimate = f"Estimated CI time: {result['minutes']} min"
     if result['shards'] > 1:
         estimate += f", about {result['wall_minutes']} min across {result['shards']} parallel jobs"
@@ -628,6 +640,12 @@ def audit(files, config, root='.'):
     missing = sorted({d['target'] for d in defs.values() if d.get('target') and d['target'] not in targets})
     if missing:
         items.append(('FAIL', f'Suite target(s) {", ".join(missing)} are not defined under "targets"'))
+    gating = set(config.get('always_suites', [])) | set(config.get('static_suites', [])) | \
+        set(config.get('full_suites', []))
+    live = live_suites(config, gating)
+    if live:
+        items.append(('WARN', f'Live-model suite(s) {", ".join(live)} are listed in always_suites, static_suites or '
+                              'full_suites, but never gate a PR; run them on the schedule with `ci --live`'))
     # Journeys against a running app never run on every PR; each belongs to the features it checks.
     for key in ('always_suites', 'static_suites'):
         journeys = sorted(s for s in config.get(key, []) if defs.get(s, {}).get('target'))
@@ -1150,10 +1168,15 @@ def cmd_ci(args):
     if problems:
         return 1
     defs, targets = config.get('suites', {}), config.get('targets', {})
-    if args.suites:
+    if args.live:
+        # Only the suites that spend real model calls, on the schedule that pays for them.
+        suites = live_suites(config, args.suites)
+        if not suites:
+            print('No live-model suites ("live_model": true) to run')
+    elif args.suites:
         suites = args.suites
     elif args.all:
-        suites = sorted(defs)
+        suites = [s for s in sorted(defs) if s not in live_suites(config)]
     else:
         impact = load_impact(args.impact) if args.impact else None
         if args.impact and not impact:
@@ -1456,6 +1479,8 @@ def main(argv=None):
     p.add_argument('--base', default='origin/main')
     p.add_argument('--all', action='store_true', help='Run every defined suite, for scheduled or pre-release runs')
     p.add_argument('--suites', type=listing, help='Run only these suites, for example to time one')
+    p.add_argument('--live', action='store_true',
+                   help='Run only the live-model suites ("live_model": true), for the scheduled run; never a PR gate')
     p.add_argument('--timeout', type=int, default=300, help='Seconds to wait for a target to answer')
     p.add_argument('--shard', type=shard_arg, help='Run group I of N (I/N), balanced by recorded minutes')
     p.add_argument('--impact', help='Recorded coverage (file or directory) that adds suites executing changed files')

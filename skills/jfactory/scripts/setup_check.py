@@ -174,6 +174,13 @@ def check_verification(root, report, states):
             reason = f'journey suites ({", ".join(journeys[:4])})' if journeys else f'{total} min of suites'
             report.add('FAIL', f'The map has {reason} but no workflow runs `verify_plan.py ci`, so CI would run '
                                'everything on every PR; install templates/jfactory-checks.yml')
+        live = verify_plan.live_suites(config)
+        scheduled = [p for p in workflows.glob('*.y*ml')
+                     if re.search(r'verify_plan\.py"?\s+ci\b[^\n]*--live', p.read_text())] if workflows.is_dir() else []
+        if live and not scheduled:
+            report.add('FAIL', f'Live-model suite(s) {", ".join(live)} never run on PRs, and no workflow runs '
+                               '`verify_plan.py ci --live`, so nothing exercises them; install '
+                               'templates/jfactory-live-suites.yml')
     if gate and not re.search(r'^\s*checks:\s*read\b', gate[0].read_text(), re.M):
         report.add('FAIL', f'{gate[0].relative_to(root)} lacks `checks: read`, so the status cannot confirm CI passed '
                            'at the verified head; update it from templates/jfactory-verified.yml')

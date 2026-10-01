@@ -283,6 +283,15 @@ class SetupCheckTest(unittest.TestCase):
         # The whole browser suite on every PR is the misconfiguration this check exists for.
         self.mapping(pr_budget_minutes=10, suites=timed(unit=2, e2e=45, **{'e2e-app': 5}), always_suites=['unit', 'e2e'])
         self.assertIn('FAIL: Map: Suites that run on every PR take 47 min', self.check('--remote', '--repo', 'o/r', code=1))
+        # Live-model suites stay off PRs, so a scheduled workflow must run them.
+        self.mapping(pr_budget_minutes=10, suites=timed(unit=2, **{'e2e-app': 5}))
+        config = json.loads((self.root / '.jfactory' / 'verification.json').read_text())
+        config['suites']['e2e-app']['live_model'] = True
+        (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(config))
+        self.assertIn('no workflow runs `verify_plan.py ci --live`', self.check('--remote', '--repo', 'o/r', code=1))
+        shutil.copy(ROOT / 'skills' / 'jfactory' / 'templates' / 'jfactory-live-suites.yml',
+                    self.root / '.github' / 'workflows' / 'jfactory-live-suites.yml')
+        self.assertNotIn('ci --live', self.check('--remote', '--repo', 'o/r'))
 
     def test_targets_need_a_fresh_start_up_receipt(self):
         target = {'local': {'start': 'npm start', 'ready': 'http://127.0.0.1:$PORT/', 'auth': 'none'}}

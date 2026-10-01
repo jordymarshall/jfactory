@@ -1,0 +1,53 @@
+# Copy to .github/workflows/jfactory-live-suites.yml during setup when the map has suites marked "live_model": true,
+# and set JFACTORY_DIR to the installed bundle path. Add the project's runtime steps where marked, and the secret
+# for the model the suites call (for example ANTHROPIC_API_KEY or AI_GATEWAY_API_KEY) under the run step's env.
+#
+# Live-model suites drive the app with real model calls, such as agent-driven journeys or an explorer, so they
+# vary from run to run and cost money. They never gate a PR: PRs replay recorded actions read-only, and this
+# weekly run exercises the live model against the app. A failure opens or updates an issue labelled
+# jfactory-live-suites; it is a fix objective, and when the app did not change, it usually means a recording or
+# a step's wording needs updating.
+name: jfactory live suites
+on:
+  schedule:
+    # Mondays, off the hour to avoid the scheduler's peak.
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+concurrency:
+  group: jfactory-live-suites
+  cancel-in-progress: false
+permissions:
+  contents: read
+  # Opens or comments on the failure issue, and creates its label on the first run.
+  issues: write
+env:
+  JFACTORY_DIR: .agents/skills/jfactory
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      JFACTORY_RUN_ID: gh-live-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      # Project runtime and dependencies go here, matching the local target's "setup" command.
+      - name: Run the live-model suites
+        id: live
+        # env:
+        #   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python3 "$JFACTORY_DIR/scripts/verify_plan.py" ci --live
+      - name: Report a failure as an issue
+        if: failure() && steps.live.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create jfactory-live-suites --color D93F0B --force \
+            --description 'A scheduled live-model suite failed' >/dev/null
+          body="The scheduled live-model suites failed: $RUN_URL. Read the log, decide whether the app, a recording or a step's wording is wrong, and fix it as an objective."
+          number=$(gh issue list --label jfactory-live-suites --state open --json number --jq '.[0].number')
+          if [ -n "$number" ]; then gh issue comment "$number" --body "$body"
+          else gh issue create --title 'Scheduled live-model suites failed' --label jfactory-live-suites --body "$body"; fi
