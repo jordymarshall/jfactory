@@ -360,7 +360,10 @@ def conditions(lines, index):
         job = next((i for i in range(index, jobs, -1) if lines[i].strip() and indent_of(lines[i]) == level), None)
         if job is not None:
             child = next((indent_of(line) for line in lines[job + 1:] if line.strip()), None)
-            for i in range(job + 1, index):
+            # The whole job, to its end: a job's keys are unordered, so its `if:` may follow `steps:`.
+            end = next((i for i in range(job + 1, len(lines))
+                        if lines[i].strip() and indent_of(lines[i]) <= level), len(lines))
+            for i in range(job + 1, end):
                 if lines[i].strip() and indent_of(lines[i]) == child and re.match(r'\s*if:', lines[i]):
                     found.append(lines[i].split('if:', 1)[1])
     result = []

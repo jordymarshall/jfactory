@@ -304,6 +304,8 @@ class SetupCheckTest(unittest.TestCase):
         live.write_text(template.replace("  live:\n", "  live:\n    if: ${{ github.event_name == 'workflow_dispatch' }}\n"))
         out = self.check('--remote', '--repo', 'o/r', code=1)
         self.assertIn("it runs only when `github.event_name == 'workflow_dispatch'`", out)
+        live.write_text(template + '    if: false\n')
+        self.assertIn('it runs only when `false`', self.check('--remote', '--repo', 'o/r', code=1))
         live.write_text(template.replace("      - uses: actions/checkout@v4\n",
                                          "      - name: Disabled optional diagnostics\n        if: false\n"
                                          "        run: echo diagnostic\n      - uses: actions/checkout@v4\n", 1))
@@ -323,6 +325,12 @@ class SetupCheckTest(unittest.TestCase):
             f'  other:\n    if: false\n    steps:\n      - run: echo hi\n  live:\n    steps:\n      - run: {run}\n':
                 (True, None),
             f'  live:\n    steps:\n      - run: echo {run}\n': (False, None),
+            # Found by the third PR #45 check: a job's keys are unordered, so a guard after its steps still applies.
+            f'  live:\n    steps:\n      - run: {run}\n    if: false\n': (False, 'false'),
+            f"  live:\n    steps:\n      - run: {run}\n    if: ${{{{ github.event_name == 'workflow_dispatch' }}}}\n":
+                (False, "github.event_name == 'workflow_dispatch'"),
+            f'  live:\n    steps:\n      - run: {run}\n  later:\n    if: false\n    steps:\n      - run: echo hi\n':
+                (True, None),
         }
         for jobs, (expected, condition) in cases.items():
             ok, why = setup_check.scheduled_run(head + jobs, 'verify_plan.py', 'ci', '--live')
