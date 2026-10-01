@@ -176,6 +176,9 @@ def policy(root):
         # A role override changes only the fields it names; the rest, such as the fallback, stay.
         for name, fields in override.get('roles', {}).items():
             role = {**merged['roles'].get(name, {}), **fields}
+            # Fast mode belongs to the default model: an override that picks another model keeps it only if it says so.
+            if ('agent' in fields or 'model' in fields) and 'fast' not in fields:
+                role['fast'] = False
             if not role.get('agent') or not role.get('model'):
                 raise Refused(f'Role {name} in {POLICY_FILE} needs an agent and a model')
             merged['roles'][name] = role
@@ -404,6 +407,7 @@ PR_ROLE_TIERS = {'verify': 'verify', 'build': 'frontier', 'fix': 'frontier'}
 # One small budget at every call site. The sweep is housekeeping: it must not hold up a verdict, a merge or a sync.
 # Whatever it cannot finish in time, the next command picks up.
 TIDY_BUDGET = 5
+READ_BACK = 1.5  # seconds kept back to confirm an archive whose call timed out
 # Conductor's CLI reports a session as "working" or "idle". Only "idle" proves a session has stopped; anything else,
 # including a missing or unfamiliar status, keeps the workspace.
 IDLE = 'idle'
@@ -503,6 +507,16 @@ def pages(*command, timeout):
     raise Uncertain(f'`conductor {" ".join(command[:2])}` has more than {MAX_PAGES} pages')
 
 
+def was_archived(workspace_id, timeout=10):
+    """Whether Conductor reports the workspace archived; False when that can't be read."""
+    try:
+        found = run_json('conductor', 'workspace', 'get', workspace_id, '--json', timeout=timeout)
+    except (Refused, Missing, ValueError):
+        return False
+    found = found.get('data', found) if isinstance(found, dict) else None
+    return isinstance(found, dict) and found.get('state') == 'archived'
+
+
 def archive_merged(repo, budget=TIDY_BUDGET):
     """Archive my convention-named workspaces for `repo` whose PR merged or closed and whose sessions are all idle.
 
@@ -564,7 +578,17 @@ def archive_merged(repo, budget=TIDY_BUDGET):
                 notes.append(f'{name} kept: PR #{number} is {state.lower()} but session status '
                              f'{", ".join(f"{sid}={status!r}" for sid, status in unknown.items())} does not show idle')
                 continue
-            run('conductor', 'workspace', 'archive', wid, timeout=left())
+            try:
+                # Keep a little of the budget back to read the state if the archive call outlives its time.
+                remaining = left()
+                run('conductor', 'workspace', 'archive', wid,
+                    timeout=remaining - READ_BACK if remaining > 2 * READ_BACK else remaining)
+            except Refused:
+                # Conductor can finish archiving after the CLI call times out: read the state back before reporting,
+                # within what is left of the sweep's budget.
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.2 or not was_archived(wid, timeout=remaining):
+                    raise
             archived.append(f'archived workspace {name} (PR #{number} {state.lower()})')
     except Missing as error:
         # No conductor CLI, as on a CI runner, means there is nothing to tidy. No gh is worth one line.

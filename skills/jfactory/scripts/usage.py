@@ -12,8 +12,10 @@ from pathlib import Path
 # Keep in step with references/models.md.
 # Each option is (agent, model, effort, fast mode).
 POLICY = {
-    'frontier': [('claude', 'opus-5-5-1m', 'medium', False), ('codex', 'gpt-6-astra', None, False)],
-    'fast': [('codex', 'gpt-6-sol', None, False), ('claude', 'opus-5-5-1m', 'low', False)],
+    # Owner, 2026-10-01: core coding defaults to Opus 5.5 at medium effort in fast mode, with GPT Astra 6 for big work
+    # when Claude usage is low; routine work runs GPT Sol 6.1 in fast mode.
+    'frontier': [('claude', 'opus-5-5-1m', 'medium', True), ('codex', 'gpt-6-astra', None, False)],
+    'fast': [('codex', 'gpt-6.1-sol', None, True), ('claude', 'opus-5-5-1m', 'low', False)],
     'trivial': [('codex', 'gpt-6-luna', None, False), ('claude', 'opus-5-5-1m', 'low', False)],
     # Verification judges whether work is right: GPT Sol 6.1 at low effort in fast mode, so reviews keep pace (owner,
     # 2026-10-01). The Opus fallback runs at low effort without fast mode (see references/models.md).
