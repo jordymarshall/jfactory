@@ -147,18 +147,20 @@ def outcome_doc(feature):
 
 
 def journey_proofs(text):
-    """Rows of an outcome document's goal tables: [(goal, proof)]. A goal table has a column whose header mentions
-    "proven" or "proof"."""
-    rows, proof_col = [], None
+    """Rows of an outcome document's goal tables: [(goal, proof)]. The proof header must precede a table separator."""
+    rows, proof_col, header_col = [], None, None
     for line in text.splitlines():
         if not line.strip().startswith('|'):
             proof_col = None
+            header_col = None
             continue
         cells = table_cells(line)
-        if proof_col is None:
-            proof_col = next((i for i, c in enumerate(cells) if re.search(r'proven|proof', c, re.I)), None)
-            continue
         if set(''.join(cells)) <= set('-: '):
+            proof_col = header_col
+            header_col = None
+            continue
+        if proof_col is None:
+            header_col = next((index for index, cell in enumerate(cells) if re.search(r'proven|proof', cell, re.I)), None)
             continue
         rows.append((cells[0], cells[proof_col] if proof_col < len(cells) else ''))
     return rows
