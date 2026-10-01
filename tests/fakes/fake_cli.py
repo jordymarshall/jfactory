@@ -62,6 +62,11 @@ if tool == 'conductor':
             sys.stderr.write('archive failed')
             sys.exit(1)
         db.setdefault('archived', []).append(args[2])
+        if args[2] in db.get('archive_slow', []):
+            # Conductor archives, but the CLI call outlives the caller's time limit (seen 2026-10-01).
+            path.write_text(json.dumps(db))
+            import time
+            time.sleep(30)
         done()
     if args[:2] == ['section', 'list']:
         done({'data': [s for s in db.get('sections', []) if s['id'] not in db.get('deleted_sections', [])],
@@ -79,6 +84,9 @@ if tool == 'conductor':
         limit = min(int(opt('--limit', '100')), db.get('page_size', 100))  # the server may cap a page
         done({'data': [{'id': i} for i in ids[offset:offset + limit]], 'offset': offset,
               'hasMore': offset + limit < len(ids)})
+    if args[:2] == ['workspace', 'get'] and db.get('conductor_sleep_get'):
+        import time
+        time.sleep(db['conductor_sleep_get'])
     if args[:2] == ['workspace', 'get']:
         done({'id': args[2], 'state': 'archived' if args[2] in db.get('archived', []) else 'ready'})
     if args[:2] == ['section', 'delete']:
@@ -145,6 +153,7 @@ if tool == 'gh' and args[:2] == ['pr', 'comment']:
 if tool == 'gh':
     issues = db.setdefault('issues', {})
     if args[:2] == ['label', 'create']:
+        db.setdefault('labels', []).append(args[2])
         done()
     if args[:2] == ['issue', 'create']:
         n = str(len(issues) + 1)
@@ -164,9 +173,15 @@ if tool == 'gh':
     if args[:2] == ['issue', 'close']:
         issues[args[2]]['state'] = 'CLOSED'
         done()
+    if args[:2] == ['issue', 'reopen']:
+        issues[args[2]]['state'] = 'OPEN'
+        done()
     if args[:2] == ['issue', 'list']:
-        done([{'number': int(k), 'title': v.get('title', 'x'), 'url': v['url']} for k, v in issues.items()
-              if v['state'] == opt('--state', 'open').upper()])
+        wanted = opt('--state', 'open').upper()
+        done([{'number': int(k), 'title': v.get('title', 'x'), 'url': v['url'], 'state': v['state']}
+              for k, v in issues.items() if wanted in ('ALL', v['state'])
+              and (not opt('--label') or opt('--label') in [label['name'] for label in v.get('labels', [])])
+              and (not opt('--search') or opt('--search').split('"')[1] in v.get('title', ''))][:int(opt('--limit', '30'))])
     if args[:2] == ['pr', 'view']:
         done({'baseRefName': 'main', 'comments': [], 'isCrossRepository': False, **db['prs'][args[2]]})
     if args[:2] == ['pr', 'merge']:

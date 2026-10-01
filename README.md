@@ -263,6 +263,9 @@ Unknown files fall back to full verification, so a gap in the map is always safe
 - a verdict for an older commit;
 - one that skips a required feature;
 - one from the same model family as the implementer, unless you've recorded `"allow_same_family": true` as a deliberate decision.
+- a failed or blocked verdict that doesn't say whose fault it is: the change (`--cause change`, a fix for the implementer) or a rule it was judged against (`--cause rules`, with the rule, what's wrong with it and the proposed adjustment).
+
+**When the rule is wrong.** A rule can be stale, or contradict your newer decision or another rule. Then no fix to the PR can pass, so the verifier fails it with `--cause rules` instead of sending the implementer round in circles. The PR still can't merge, and no agent sets the rule aside. You get one issue per PR, labelled `jfactory-rule-change` (or a decision in the program issue), with two choices: change the rule as proposed, in its own verified PR, after which the original PR is re-verified, or keep the rule so the PR must comply. The next verdict links your answer.
 
 **The `jfactory verified` check.** A GitHub workflow (`.github/workflows/jfactory-verified.yml`) re-evaluates on every push and comment and sets a commit status. It passes on its own for static and low-risk changes. Otherwise it passes only for a verdict at the current commit that covers the plan's high-risk features, posted by a repository owner, member or collaborator. It runs from your base branch and never executes code from the PR, so a PR can't edit its own gate. Any new push resets it.
 
@@ -345,7 +348,7 @@ In [Conductor](https://www.conductor.build), ask one agent to coordinate:
 4. **A complete brief per unit.** The brief is the worker's whole context: objective, decisions, scope, context, acceptance, verification steps, shared resources, limits, forbidden actions, delivery and reporting. `coord.py` refuses a brief with a missing field.
 5. **Launch in isolation.** Each unit gets its own Conductor workspace, branch and PR. The model comes from the unit's role and your remaining usage (see the next section). A new kind of unit is piloted alone first. Free slots are refilled as units finish, up to the concurrency limit (default three).
 6. **Monitor by evidence.** The coordinator runs `coord.py sync` at natural points. It folds in worker reports, reads the real PR state, voids verdicts when a PR gets a new commit, archives finished workspaces and lists what's ready. It doesn't ping workers to ask how they're doing, because a message restarts their turn.
-7. **Verify independently, once.** Once a worker's PR is in review and touches a high-risk area, one verify unit from the other model family checks out that PR. It reuses CI's green results, drives the changed journeys in the app when users see the change, reviews the diff, and posts the verdict itself with `coord.py verdict`. The coordinator merges without re-judging. After a fix, the verifier re-checks only what changed.
+7. **Verify independently, once.** Once a worker's PR is in review and touches a high-risk area, one verify unit from the other model family checks out that PR. It reuses CI's green results, drives the changed journeys in the app when users see the change, reviews the diff, and posts the verdict itself with `coord.py verdict`. The coordinator merges without re-judging. After a fix, the verifier re-checks only what changed. A verdict that blames a rule rather than the change becomes a decision for you, not a fix task.
 8. **Merge one at a time.** `coord.py merge` queues protected auto-merge pinned to the PR's current commit: after a verified verdict at that commit, or on GitHub's required CI alone when every change is low-risk. Overlapping units merge one at a time, and dependent workers update from main and re-check after each merge.
 9. **Close.** Once every unit is merged, done or abandoned, `coord.py close` closes the issue, archives the program's workspaces and removes its sidebar section.
 
@@ -378,8 +381,8 @@ When jfactory launches another agent, the task decides the tier, and remaining u
 
 | Tier (coordination role) | Used for | First choice | When that account is out of usage |
 | --- | --- | --- | --- |
-| Frontier (`implement`) | Features, fixes, debugging, architecture | Claude Opus 5.5, medium effort | GPT Astra 6 |
-| Fast (`fast`) | Routine edits, fixes with a known cause, CI triage | GPT Sol 6 | Opus 5.5, low effort |
+| Frontier (`implement`) | Features, fixes, debugging, architecture | Claude Opus 5.5, medium effort, fast mode | GPT Astra 6 |
+| Fast (`fast`) | Routine edits, fixes with a known cause, CI triage | GPT Sol 6.1, fast mode | Opus 5.5, low effort |
 | Trivial (`trivial`) | Renames, formatting, lookups | GPT Luna 6 | Opus 5.5, low effort |
 | Verify (`verify`) | Judging whether another agent's PR is right | GPT Sol 6.1, low effort, fast mode | Opus 5.5, low effort |
 

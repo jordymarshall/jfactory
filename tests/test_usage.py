@@ -124,9 +124,11 @@ class UsageTests(unittest.TestCase):
         self.codex_log(10, 3)
         out = self.run_usage()
         self.assertEqual(out['choice'], {'frontier': ('claude', 'opus-5-5-1m', 'medium'),
-                                         'fast': ('codex', 'gpt-6-sol', None),
+                                         'fast': ('codex', 'gpt-6.1-sol', None),
                                          'trivial': ('codex', 'gpt-6-luna', None),
                                          'verify': ('codex', 'gpt-6.1-sol', 'low')})
+        # Owner, 2026-10-01: Opus core coding and the Sol 6.1 tiers run in fast mode; Luna does not.
+        self.assertEqual(out['fast'], {'frontier': True, 'fast': True, 'trivial': False, 'verify': True})
         self.assertEqual(out['accounts']['claude']['windows'][1], {'name': 'weekly', 'used_percent': 1.0,
                                                                    'resets_at': '2026-10-02T17:00:00Z'})
         self.assertNotIn('session create', self.calls())
@@ -136,8 +138,10 @@ class UsageTests(unittest.TestCase):
         self.codex_log(10, 1)
         out = self.run_usage()
         self.assertEqual(out['choice']['frontier'], ('codex', 'gpt-6-astra', None))
-        self.assertEqual(out['choice']['fast'], ('codex', 'gpt-6-sol', None))
+        self.assertEqual(out['choice']['fast'], ('codex', 'gpt-6.1-sol', None))
         self.assertIn('claude has no usage remaining', out['choices'][0]['reason'])
+        # Astra runs without fast mode; routine work keeps Sol 6.1 in fast mode.
+        self.assertEqual((out['fast']['frontier'], out['fast']['fast']), (False, True))
 
     def test_just_below_reserve_keeps_primary(self):
         self.claude(89, 89, 1)
@@ -180,7 +184,7 @@ class UsageTests(unittest.TestCase):
         out = self.run_usage('--no-probe')
         self.assertTrue(out['accounts']['claude']['stale'])
         self.assertNotIn('codex', out['accounts'])
-        self.assertEqual(out['choice']['fast'], ('codex', 'gpt-6-sol', None))
+        self.assertEqual(out['choice']['fast'], ('codex', 'gpt-6.1-sol', None))
         self.assertIn('codex usage unknown', out['choices'][1]['reason'])
         self.assertNotIn('session create', self.calls())
 

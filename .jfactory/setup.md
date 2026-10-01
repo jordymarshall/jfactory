@@ -12,8 +12,8 @@ Initial readiness reviewed 2026-09-28 against `main` at `6ae1299`. Contract reco
 | Product direction | verified | The owner answered every interview question below on 2026-09-28. The brief in `AGENTS.md` follows those answers. |
 | Workspace tools | verified | Python 3 only; the browser smokes also need Node, Chrome and Playwright's ffmpeg. In the Conductor cloud workspace (Python 3.9.25, Node 24.14.1), the unit tests, `check-upstream.py`, `tests/browser_smoke.py` and `tests/dashboard_smoke.py` passed. CI runs Python 3.10. No cloud setup script is needed. |
 | Verification | verified | `.jfactory/verification.json` maps every tracked file except the gate paths, which always need full verification. `setup_check.py` confirms it and the `jfactory verified` workflow. This is structural readiness, not proof of agent behavior; the owner confirmed the contract as recorded in the job-map review below. |
-| Environments | blocked | GitHub reports successful Vercel Preview deployments for PR heads and Production deployments after main merges, on the external `loopcraft-status` project. On 2026-10-01 deployment 6773351488 reported Production success for main at `2e4ddb9`. This contradicts the intended non-deploying repository policy. Owner step: clarify whether that external status-page deployment is an authorized exception or disconnect its Git deployment integration from jfactory. No host setting or consumer repository was changed. |
-| PR delivery | blocked | Repository auto-merge is on and the active ruleset "Verified squash merges to main" (id 24086594) requires PRs, squash merges, no bypass, and both `checks` and `jfactory verified` against the latest main. The enforced gates were rechecked, but they do not prevent the external Production deployment. `merge_deploys` now records `production` so tooling refuses unattended merge. Owner step: resolve the environment policy above before queuing auto-merge; a review-ready PR is still deliverable with this limit explicit. |
+| Environments | not applicable | Nothing deploys. The external `loopcraft-status` Vercel project had been linked to this repository by accident (a CLI deploy from inside a checkout), so main merges and branches produced Vercel deployments. That Git link was removed on 2026-10-01 (`DELETE /v9/projects/loopcraft-status/link`; the project's `link` now reads none), and the status page is deployed by hand from outside any checkout. |
+| PR delivery | verified | Repository auto-merge is on. The active ruleset "Verified squash merges to main" (id 24086594) requires PRs, squash merges, no bypass, and both `checks` and `jfactory verified` against the latest main. The owner added `jfactory verified` on 2026-09-28, and `setup_check.py --remote` confirmed it. `merge_deploys` is `none`. |
 
 ## Owner interview
 
@@ -27,7 +27,7 @@ Initial readiness reviewed 2026-09-28 against `main` at `6ae1299`. Contract reco
 
 ## Open owner decisions
 
-None required to finalize the five-job contract. The owner confirmed it on 2026-10-01 and delegated completion of jfactory only; numeric targets remain repository/objective-owned. One consequential delivery decision surfaced during remote verification: whether the external `loopcraft-status` Production deployment is an intentional, authorized exception. Until clarified or its Git deployment integration is disconnected, auto-merge stays off. Requiring `jfactory verified` on main was applied by the owner on 2026-09-28.
+None required to finalize the five-job contract. The owner confirmed it on 2026-10-01 and delegated completion of jfactory only; numeric targets remain repository/objective-owned. The external `loopcraft-status` Production deployments that surfaced during remote verification came from an accidental Git link, removed on 2026-10-01, so merges deploy nothing and auto-merge is allowed. Requiring `jfactory verified` on main was applied by the owner on 2026-09-28.
 
 ## Job-map review
 

@@ -11,6 +11,9 @@ shows up as a pattern instead of going unnoticed. Findings for a PR:
 - a description that names no outcomes/<job>.md document, or has no "Why it's right" section, when outcomes exist;
 - anything else the required status would reject today, judged by the gate's own code.
 
+It also counts merged PRs whose history includes a verdict saying a rule (not the change) was wrong, and lists rules
+flagged on more than one PR, so a recurring bad rule surfaces instead of being argued again on every PR.
+
   method_audit.py --repo OWNER/NAME [--limit 20] [--since YYYY-MM-DD] [--issue]
 
 It judges every PR by today's rules and the base branch's current map. --since limits it to recent merges, so a rule
@@ -39,12 +42,40 @@ def audit_pr(pr, config):
     return [description]
 
 
+def rule_flags(pr):
+    """The rules a verifier said were wrong anywhere in this PR's history: (rule location, full text) pairs."""
+    flags = []
+    for verdict in vp.trusted_verdicts(pr):
+        if vp.verdict_cause(verdict) in ('rules', 'both'):
+            for text in verdict.get('rule_changes') or []:
+                flags.append((vp.rule_source(text) or text[:80], text))
+    return flags
+
+
+def repeated_rules(results):
+    """Rules flagged on more than one merged PR, most flagged first: {location: [PR numbers]}."""
+    seen = {}
+    for pr, _ in results:
+        for where in {where for where, _ in rule_flags(pr)}:
+            seen.setdefault(where, []).append(pr['number'])
+    return dict(sorted(((w, n) for w, n in seen.items() if len(n) > 1), key=lambda kv: -len(kv[1])))
+
+
 def report(results, limit, since=None):
     flagged = [(pr, found) for pr, found in results if found]
     scope = f'the {limit} PRs merged since {since}' if since else f'the last {limit} merged PRs'
     lines = [f'Method audit of {scope}: {len(flagged)} with findings.',
              '', 'Each PR is judged by the gate\'s own rules as they are today. A PR merged before a rule existed can show '
              'it; read those as history, not as a new gap.', '']
+    ruled = [pr for pr, _ in results if rule_flags(pr)]
+    repeated = repeated_rules(results)
+    lines += [f'Rule problems: {len(ruled)} of {limit} merged PRs had a verdict saying a rule, not the change, was '
+              'wrong' + (' (' + ', '.join(f"#{pr['number']}" for pr in ruled) + ').' if ruled else '.')]
+    if repeated:
+        lines += ['', 'Rules flagged on more than one PR. Each is a candidate for a standing fix: bring it to the owner '
+                      'with the verifiers\' proposals rather than letting each PR argue it again.', '']
+        lines += [f"- `{where}`: " + ', '.join(f'#{n}' for n in numbers) for where, numbers in repeated.items()]
+    lines += ['']
     counts = {}
     for _, found in flagged:
         for item in found:
@@ -108,7 +139,8 @@ def main(argv=None):
         return 2
     text = report(results, len(results), args.since)
     print(text)
-    clean = not any(found for _, found in results)
+    # A rule flagged again and again is a gap in the method too, so it keeps the audit issue open.
+    clean = not any(found for _, found in results) and not repeated_rules(results)
     if args.issue:
         publish(args.repo, text, clean)
     return 0 if clean else 1
