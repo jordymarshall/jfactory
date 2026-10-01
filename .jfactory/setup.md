@@ -4,7 +4,7 @@ This repository is jfactory's own source. It uses the bundle in place through [A
 
 ## Readiness
 
-Initial readiness reviewed 2026-09-28 against `main` at `6ae1299`. Contract reconciliation on 2026-10-01 incorporates `main` at `1f73881`; current-revision delivery evidence is recorded in [objective #39](https://github.com/jordymarshall/jfactory/issues/39).
+Initial readiness reviewed 2026-09-28 against `main` at `6ae1299`. Contract reconciliation on 2026-10-01 incorporates `main` at `2e4ddb9`; current-revision delivery evidence is recorded in [objective #39](https://github.com/jordymarshall/jfactory/issues/39).
 
 | Area | State | Evidence or reason |
 | --- | --- | --- |
@@ -12,8 +12,8 @@ Initial readiness reviewed 2026-09-28 against `main` at `6ae1299`. Contract reco
 | Product direction | verified | The owner answered every interview question below on 2026-09-28. The brief in `AGENTS.md` follows those answers. |
 | Workspace tools | verified | Python 3 only; the browser smokes also need Node, Chrome and Playwright's ffmpeg. In the Conductor cloud workspace (Python 3.9.25, Node 24.14.1), the unit tests, `check-upstream.py`, `tests/browser_smoke.py` and `tests/dashboard_smoke.py` passed. CI runs Python 3.10. No cloud setup script is needed. |
 | Verification | verified | `.jfactory/verification.json` maps every tracked file except the gate paths, which always need full verification. `setup_check.py` confirms it and the `jfactory verified` workflow. This is structural readiness, not proof of agent behavior; the owner confirmed the contract as recorded in the job-map review below. |
-| Environments | not applicable | Nothing deploys. |
-| PR delivery | verified | Repository auto-merge is on. The active ruleset "Verified squash merges to main" (id 24086594) requires PRs, squash merges, no bypass, and both `checks` and `jfactory verified` against the latest main. The owner added `jfactory verified` on 2026-09-28, and `setup_check.py --remote` confirmed it. `merge_deploys` is `none`. |
+| Environments | blocked | GitHub reports successful Vercel Preview deployments for PR heads and Production deployments after main merges, on the external `loopcraft-status` project. On 2026-10-01 deployment 6773351488 reported Production success for main at `2e4ddb9`. This contradicts the intended non-deploying repository policy. Owner step: clarify whether that external status-page deployment is an authorized exception or disconnect its Git deployment integration from jfactory. No host setting or consumer repository was changed. |
+| PR delivery | blocked | Repository auto-merge is on and the active ruleset "Verified squash merges to main" (id 24086594) requires PRs, squash merges, no bypass, and both `checks` and `jfactory verified` against the latest main. The enforced gates were rechecked, but they do not prevent the external Production deployment. `merge_deploys` now records `production` so tooling refuses unattended merge. Owner step: resolve the environment policy above before queuing auto-merge; a review-ready PR is still deliverable with this limit explicit. |
 
 ## Owner interview
 
@@ -27,7 +27,7 @@ Initial readiness reviewed 2026-09-28 against `main` at `6ae1299`. Contract reco
 
 ## Open owner decisions
 
-None required to finalize this contract. The owner confirmed the five jobs and shared quality dimensions on 2026-10-01, then delegated completion of jfactory only. Numeric targets remain repository/objective-owned rather than a setup blocker or an invented universal policy. Requiring `jfactory verified` on main was applied by the owner on 2026-09-28.
+None required to finalize the five-job contract. The owner confirmed it on 2026-10-01 and delegated completion of jfactory only; numeric targets remain repository/objective-owned. One consequential delivery decision surfaced during remote verification: whether the external `loopcraft-status` Production deployment is an intentional, authorized exception. Until clarified or its Git deployment integration is disconnected, auto-merge stays off. Requiring `jfactory verified` on main was applied by the owner on 2026-09-28.
 
 ## Job-map review
 
