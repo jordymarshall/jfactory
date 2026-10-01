@@ -1,6 +1,6 @@
 ---
 name: jfactory-ux
-description: Explore approved web apps to understand their journeys, interaction patterns and motion, or review a running product against its customer task. Use for competitor UX research, experience reviews and meaningful interface changes.
+description: Explore approved web apps to understand their journeys, interaction patterns and motion, review a running product against its customer task, or bug bash it with parallel explorers whose findings are each proven by a failing repro test. Use for competitor UX research, experience reviews, meaningful interface changes and requests to bug bash, QA or hunt for bugs.
 ---
 
 # Learn from and review a real experience
@@ -36,6 +36,10 @@ Map navigation, key user-visible objects and their relationships, state transiti
 Record transitions as video and traces, including successful paths. For motion, note trigger, affected element, property, timing/easing if observable, interruption/reversal and reduced-motion behavior. Collect active animation metadata during the action when useful. An animation can finish between CLI calls; use one `run-code` action and observation. Do not guess exact timings from a screenshot or equate a requested recording frame rate with measured performance.
 
 Separate **observed facts**, **inferred design intent**, **recommendations for our customer**, and **unknowns**. Link observations to action evidence. Replay consequential findings. Do not claim full understanding beyond the observed account, role, plan, routes, states and date. Agent critique is a hypothesis until owner/customer feedback supports it. An independent score against a rubric agreed in the objective can close a `judgment` criterion; it still does not establish customer value.
+
+## Bug bash our own app
+
+When the owner asks to bug bash, QA or hunt for bugs, or before releasing a large change to screens, follow the [bug bash procedure](references/bug-bash.md). Plan five to ten one-sentence charters, each with one area and one stance, and run up to four explorers in parallel. Record what they report as claims. Triage each against the source, and confirm a claim only with a repro test that fails for the reason it reports (`study.py confirm`). Report confirmed bugs only; an explorer's finding is a hypothesis until then.
 
 ## Return a reviewable result
 

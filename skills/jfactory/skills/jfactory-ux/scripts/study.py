@@ -214,6 +214,173 @@ def walkthrough(folder):
     return out
 
 
+POSTURES = ('first-time', 'numbers', 'edge-input', 'state', 'errors', 'other')
+BUCKETS = {'artifact': 'the explorer misread the app (a new-tab link, lazy content, text split around a link)',
+           'environment': 'only the local stack lacks a key, service or limit',
+           'design': 'the code, its tests or its copy say the behavior is intended',
+           'fixture': 'the seed data lacks something real records have',
+           'not-reproduced': 'the repro test passed, so the bug did not reproduce',
+           'duplicate': 'another finding describes the same defect'}
+SEVERITY = {5: 'critical', 4: 'high', 3: 'medium', 2: 'low', 1: 'trivial'}
+
+
+def ledger(folder):
+    folder = Path(folder).resolve()
+    if not (folder / 'study.json').is_file():
+        raise ValueError(f'No study at {folder}; create it with `study.py init`')
+    path = folder / 'bugs.json'
+    return folder, path, (json.loads(path.read_text()) if path.exists() else {'charters': [], 'findings': []})
+
+
+def charter(folder, slug, posture, goal):
+    """Record one bug-bash charter: one area, one posture, one sentence naming where it starts."""
+    folder, path, data = ledger(folder)
+    if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,47}', slug):
+        raise ValueError('Charter slug must be 1-48 lowercase letters, digits or hyphens')
+    if any(c['slug'] == slug for c in data['charters']):
+        raise ValueError(f'Charter {slug} already exists')
+    if posture not in POSTURES:
+        raise ValueError('Posture must be one of ' + ', '.join(POSTURES))
+    if len(goal.split()) < 5:
+        raise ValueError('A charter is one sentence naming the start route, the area and what to check')
+    data['charters'].append({'slug': slug, 'posture': posture, 'goal': goal.strip(),
+                             'at': datetime.now(timezone.utc).isoformat()})
+    write_json(path, data)
+
+
+def claim(folder, charter_slug, kind, severity, title, where, expected, actual, steps, evidence):
+    """Record what an explorer reported. A claim is a model's hypothesis until a repro test confirms it."""
+    folder, path, data = ledger(folder)
+    if charter_slug not in {c['slug'] for c in data['charters']}:
+        raise ValueError(f'No charter {charter_slug}; record it with `study.py charter` first')
+    if kind not in ('issue', 'warning') or severity not in SEVERITY:
+        raise ValueError('Kind is issue or warning, severity 1 (trivial) to 5 (critical)')
+    for field, value in (('title', title), ('where', where), ('expected', expected), ('actual', actual)):
+        if not value.strip():
+            raise ValueError(f'A finding needs {field}')
+    if not steps:
+        raise ValueError('A finding needs reproduction steps (--step, repeated)')
+    for name in evidence:
+        target = (folder / name).resolve()
+        if not target.is_relative_to(folder / 'artifacts') or not target.is_file():
+            raise ValueError('Evidence must be an existing file inside artifacts/: ' + name)
+    number = len(data['findings']) + 1
+    data['findings'].append({'id': number, 'charter': charter_slug, 'kind': kind, 'severity': severity,
+                             'title': title.strip(), 'where': where.strip(), 'expected': expected.strip(),
+                             'actual': actual.strip(), 'steps': [x.strip() for x in steps], 'evidence': evidence,
+                             'status': 'claimed', 'at': datetime.now(timezone.utc).isoformat()})
+    write_json(path, data)
+    return number
+
+
+def finding(data, number):
+    match = [f for f in data['findings'] if f['id'] == number]
+    if not match:
+        raise ValueError(f'No finding {number}')
+    if match[0]['status'] != 'claimed':
+        raise ValueError(f"Finding {number} is already {match[0]['status']}")
+    return match[0]
+
+
+def reject(folder, number, bucket, reason):
+    """Close a claim that is not a product bug, naming the check that settled it."""
+    folder, path, data = ledger(folder)
+    item = finding(data, number)
+    if bucket not in BUCKETS:
+        raise ValueError('Bucket must be one of ' + ', '.join(BUCKETS))
+    if len(reason.split()) < 3:
+        raise ValueError('Say what settled it: the check you ran, the file and line, or the finding it duplicates')
+    item.update(status='rejected', bucket=bucket, reason=reason.strip(), closed=datetime.now(timezone.utc).isoformat())
+    write_json(path, data)
+
+
+def confirm(folder, number, repro, expect_failure, command, timeout=300):
+    """Confirm a claim only when its repro test fails today, for the reason the finding reports. A pass means the
+    bug did not reproduce; any other failure means the test is wrong."""
+    folder, path, data = ledger(folder)
+    item = finding(data, number)
+    project = folder.parents[2]
+    test = (project / repro).resolve()
+    if not test.is_relative_to(project) or not test.is_file():
+        raise ValueError(f'Repro test {repro} must be a file in the project')
+    try:
+        pattern = re.compile(expect_failure)
+    except re.error as error:
+        raise ValueError(f'--expect-failure is not a valid regular expression: {error}')
+    if not command:
+        raise ValueError('Give the command that runs the repro test after --')
+    logs = folder / 'artifacts' / 'bugs'
+    if logs.is_symlink():
+        raise ValueError('artifacts/bugs must not be a symlink')
+    logs.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        result = subprocess.run(command, cwd=project, capture_output=True, timeout=timeout)
+        output, code = result.stdout + result.stderr, result.returncode
+    except subprocess.TimeoutExpired as error:
+        output, code = (error.stdout or b'') + (error.stderr or b''), None
+    except OSError as error:
+        raise ValueError(f'The repro command could not start: {error}')
+    log = logs / f'{number:03d}.log'
+    log.write_bytes(output)
+    text = output.decode(errors='replace')
+    if code is None:
+        raise ValueError(f'The repro timed out after {timeout}s; a timeout proves nothing. Fix the test ({log})')
+    if code == 0:
+        raise ValueError('The repro test passed, so the bug did not reproduce. Reject the finding with --bucket '
+                         'not-reproduced, and keep the test as a regression test only if it is worth having')
+    if not pattern.search(text):
+        raise ValueError(f'The repro failed, but not with {expect_failure!r}: the test is wrong (a locator, a timeout, '
+                         f'a setup error), not proof of the bug. Fix it and confirm again ({log})')
+    revision = subprocess.run(['git', '-C', str(project), 'rev-parse', 'HEAD'], capture_output=True, text=True)
+    item.update(status='confirmed', repro=str(test.relative_to(project)), command=command,
+                expect_failure=expect_failure, log=str(log.relative_to(folder)),
+                log_sha256=hashlib.sha256(output).hexdigest(), revision=revision.stdout.strip() or None,
+                closed=datetime.now(timezone.utc).isoformat())
+    write_json(path, data)
+    return log
+
+
+def bugs(folder):
+    """Write the bug-bash report: confirmed bugs first, then unverified claims, rejections and charters."""
+    folder, path, data = ledger(folder)
+    if not data['charters']:
+        raise ValueError('No charters recorded; plan them with `study.py charter`')
+    found = data['findings']
+    order = lambda f: (-f['severity'], f['id'])  # noqa: E731
+    confirmed = sorted((f for f in found if f['status'] == 'confirmed' and f['kind'] == 'issue'), key=order)
+    open_claims = sorted((f for f in found if f['status'] == 'claimed'), key=order)
+    rejected = [f for f in found if f['status'] == 'rejected']
+    warnings = sorted((f for f in found if f['status'] == 'confirmed' and f['kind'] == 'warning'), key=order)
+    md = ['# Bug bash: ' + json.loads((folder / 'study.json').read_text())['objective'], '',
+          f'{len(confirmed)} confirmed, {len(open_claims)} unverified, {len(rejected)} rejected, '
+          f'{len(data["charters"])} charters.', '', '## Confirmed bugs', '']
+    for f in confirmed:
+        md += [f"### {f['id']}. {f['title']} ({SEVERITY[f['severity']]})", '',
+               f"- **Where:** {f['where']}", f"- **Expected:** {f['expected']}", f"- **Actual:** {f['actual']}",
+               '- **Steps:** ' + ' → '.join(f['steps']),
+               f"- **Repro test:** `{f['repro']}` fails with `{f['expect_failure']}` at `{(f.get('revision') or '?')[:12]}` "
+               f"([log]({f['log']}))",
+               '- **Evidence:** ' + (', '.join(f'[{e}]({e})' for e in f['evidence']) or 'none'),
+               f"- **Charter:** {f['charter']}", '']
+    if not confirmed:
+        md += ['None.', '']
+    md += ['## Unverified claims (not bugs until a repro test confirms them)', '']
+    md += [f"- {f['id']}. {f['title']} ({SEVERITY[f['severity']]} {f['kind']}, {f['where']})" for f in open_claims] or ['None.']
+    md += ['', '## Rejected', '']
+    for bucket in BUCKETS:
+        items = [f for f in rejected if f['bucket'] == bucket]
+        if items:
+            md += [f'**{bucket}** ({BUCKETS[bucket]}):'] + [f"- {f['id']}. {f['title']}: {f['reason']}" for f in items] + ['']
+    if not rejected:
+        md += ['None.', '']
+    if warnings:
+        md += ['## Confirmed warnings', ''] + [f"- {f['id']}. {f['title']} ({f['where']})" for f in warnings] + ['']
+    md += ['## Charters', ''] + [f"- `{c['slug']}` ({c['posture']}): {c['goal']}" for c in data['charters']]
+    out = folder / 'bugs.md'
+    out.write_text('\n'.join(md) + '\n')
+    return out, len(open_claims)
+
+
 def render(folder):
     folder = Path(folder).resolve()
     report = json.loads((folder / 'report.json').read_text())
@@ -394,12 +561,48 @@ def main():
     seen.add_argument('text')
     trail = sub.add_parser('walkthrough', help='Render the step-by-step trail once every step has a note')
     trail.add_argument('study')
+    plan = sub.add_parser('charter', help='Bug bash: record one charter (one area, one posture, one sentence)')
+    plan.add_argument('study')
+    plan.add_argument('slug')
+    plan.add_argument('goal')
+    plan.add_argument('--posture', choices=POSTURES, required=True)
+    said = sub.add_parser('claim', help='Bug bash: record a finding an explorer reported, before verifying it')
+    said.add_argument('study')
+    said.add_argument('--charter', required=True)
+    said.add_argument('--kind', choices=['issue', 'warning'], default='issue')
+    said.add_argument('--severity', type=int, required=True, help='1 trivial, 2 low, 3 medium, 4 high, 5 critical')
+    said.add_argument('--title', required=True)
+    said.add_argument('--where', required=True, help='Route or screen where it was seen')
+    said.add_argument('--expected', required=True)
+    said.add_argument('--actual', required=True)
+    said.add_argument('--step', action='append', default=[], help='One reproduction step; repeat')
+    said.add_argument('--evidence', action='append', default=[], help='Screenshot or video inside artifacts/; repeat')
+    proven = sub.add_parser('confirm', help='Bug bash: confirm a finding with a repro test that fails for its reason')
+    proven.add_argument('study')
+    proven.add_argument('finding', type=int)
+    proven.add_argument('--repro', required=True, help='The repro test file, relative to the project')
+    proven.add_argument('--expect-failure', required=True,
+                        help='Regular expression for the failing assertion that encodes the bug')
+    proven.add_argument('--timeout', type=int, default=300)
+    proven.epilog = 'Put the command that runs the repro test last, after --'
+    dropped = sub.add_parser('reject', help='Bug bash: close a finding that is not a product bug')
+    dropped.add_argument('study')
+    dropped.add_argument('finding', type=int)
+    dropped.add_argument('--bucket', choices=list(BUCKETS), required=True)
+    dropped.add_argument('--reason', required=True, help='The check that settled it')
+    summary = sub.add_parser('bugs', help='Bug bash: write bugs.md, confirmed bugs first')
+    summary.add_argument('study')
     report = sub.add_parser('report')
     report.add_argument('study')
     serve = sub.add_parser('serve')
     serve.add_argument('study')
     serve.add_argument('--port', type=int, default=0)
-    args = parser.parse_args()
+    argv = sys.argv[1:]
+    # `confirm` takes the repro command after `--`; split it off so its flags never reach argparse.
+    run_command = []
+    if argv[:1] == ['confirm'] and '--' in argv:
+        argv, run_command = argv[:argv.index('--')], argv[argv.index('--') + 1:]
+    args = parser.parse_args(argv)
     # New session artifacts/profile files should be private on POSIX.
     os.umask(0o077)
     try:
@@ -414,6 +617,25 @@ def main():
             note(args.study, args.step, args.text)
         elif args.command == 'walkthrough':
             print(walkthrough(args.study))
+        elif args.command == 'charter':
+            charter(args.study, args.slug, args.posture, args.goal)
+        elif args.command == 'claim':
+            number = claim(args.study, args.charter, args.kind, args.severity, args.title, args.where,
+                           args.expected, args.actual, args.step, args.evidence)
+            print(f'Finding {number} is claimed, not confirmed. Triage it, then `confirm` it with a failing repro '
+                  'test or `reject` it with the check that settled it')
+        elif args.command == 'confirm':
+            log = confirm(args.study, args.finding, args.repro, args.expect_failure, run_command, args.timeout)
+            print(f'Finding {args.finding} confirmed; log {log}')
+        elif args.command == 'reject':
+            reject(args.study, args.finding, args.bucket, args.reason)
+        elif args.command == 'bugs':
+            out, unverified = bugs(args.study)
+            print(out)
+            if unverified:
+                print(f'{unverified} finding(s) still unverified; confirm or reject each before reporting',
+                      file=sys.stderr)
+                return 1
         elif args.command == 'dashboard':
             if not 1 <= args.port <= 65535:
                 raise ValueError('Dashboard port must be between 1 and 65535')
