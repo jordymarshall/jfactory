@@ -556,19 +556,40 @@ class CoordTest(unittest.TestCase):
         self.assertEqual(archived, [])
         self.assertIn('timed out', ' '.join(notes))
 
-    def test_an_archive_that_outlives_the_time_limit_is_read_back(self):
+    def test_an_archive_that_outlives_its_call_is_read_back_within_the_budget(self):
         # Seen live on 2026-10-01: Conductor archived the workspace, but the CLI call timed out first.
         sys.path.insert(0, str(COORD.parent))
         import coord
         from unittest import mock
-        self.set_db(prs={'7': {'state': 'MERGED'}, '8': {'state': 'MERGED'}}, archive_slow=['w-7'], archive_fail=['w-8'],
-                    listed=[self.pr_workspace('w-7', 'verify-r-7'), self.pr_workspace('w-8', 'verify-r-8')],
-                    sessions={'s-7': 'idle', 's-8': 'idle'})
+        self.set_db(prs={'7': {'state': 'MERGED'}}, archive_slow=['w-7'],
+                    listed=[self.pr_workspace('w-7', 'verify-r-7')], sessions={'s-7': 'idle'})
         with mock.patch.dict(os.environ, self.env):
-            archived, notes = coord.archive_merged('o/r', budget=3)
+            started = time.monotonic()
+            archived, notes = coord.archive_merged('o/r', budget=4)
+        self.assertLess(time.monotonic() - started, 4.5)
         self.assertEqual(archived, ['archived workspace verify-r-7 (PR #7 merged)'])
-        # A failure that did not archive is still reported, not counted.
-        self.assertTrue(any('w-8' in n or 'failed' in n or 'not tidied' in n for n in notes), notes)
+
+    def test_a_failed_archive_is_reported_not_counted(self):
+        sys.path.insert(0, str(COORD.parent))
+        import coord
+        from unittest import mock
+        self.set_db(prs={'8': {'state': 'MERGED'}}, archive_fail=['w-8'],
+                    listed=[self.pr_workspace('w-8', 'verify-r-8')], sessions={'s-8': 'idle'})
+        with mock.patch.dict(os.environ, self.env):
+            archived, notes = coord.archive_merged('o/r', budget=5)
+        self.assertEqual(archived, [])
+        self.assertIn('archive failed', ' '.join(notes))
+
+    def test_the_read_back_never_outlasts_the_budget(self):
+        sys.path.insert(0, str(COORD.parent))
+        import coord
+        from unittest import mock
+        self.set_db(prs={'7': {'state': 'MERGED'}}, archive_slow=['w-7'], conductor_sleep_get=30,
+                    listed=[self.pr_workspace('w-7', 'verify-r-7')], sessions={'s-7': 'idle'})
+        with mock.patch.dict(os.environ, self.env):
+            started = time.monotonic()
+            coord.archive_merged('o/r', budget=3)
+        self.assertLess(time.monotonic() - started, 3.5)
 
     def test_launch_names_a_pr_workspace_by_convention(self):
         message = self.tmp / 'verify.md'

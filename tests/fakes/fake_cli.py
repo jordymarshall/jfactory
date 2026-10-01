@@ -84,6 +84,9 @@ if tool == 'conductor':
         limit = min(int(opt('--limit', '100')), db.get('page_size', 100))  # the server may cap a page
         done({'data': [{'id': i} for i in ids[offset:offset + limit]], 'offset': offset,
               'hasMore': offset + limit < len(ids)})
+    if args[:2] == ['workspace', 'get'] and db.get('conductor_sleep_get'):
+        import time
+        time.sleep(db['conductor_sleep_get'])
     if args[:2] == ['workspace', 'get']:
         done({'id': args[2], 'state': 'archived' if args[2] in db.get('archived', []) else 'ready'})
     if args[:2] == ['section', 'delete']:
