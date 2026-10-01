@@ -1,9 +1,11 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from threading import Thread
 from urllib.error import HTTPError
@@ -95,6 +97,25 @@ class StudyTests(unittest.TestCase):
             study.charter(self.folder, 'short', 'state', 'Check stuff')
         with self.assertRaisesRegex(ValueError, 'already exists'):
             study.charter(self.folder, 'cart', 'numbers', 'Starting at /cart, apply a coupon and check every total')
+
+    def test_bug_bash_confirm_refuses_a_timeout_and_stops_what_the_repro_started(self):
+        number = self.bash()
+        marker = self.root / 'child.pid'
+        command = self.repro('import subprocess, time\n'
+                             f'child = subprocess.Popen(["sleep", "120"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n'
+                             f'open({str(marker)!r}, "w").write(str(child.pid))\ntime.sleep(4)\n')
+        with self.assertRaisesRegex(ValueError, 'a timeout proves nothing'):
+            study.confirm(self.folder, number, 'repro_test.py', 'x', command, timeout=2)
+        pid = int(marker.read_text())
+        for _ in range(50):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            os.kill(pid, 9)
+            self.fail('The app or server a repro started must not outlive it')
 
     def test_bug_bash_cli_confirms_with_a_command_after_the_separator(self):
         number = self.bash()

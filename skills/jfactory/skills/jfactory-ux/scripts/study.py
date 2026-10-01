@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 from urllib.parse import quote, unquote, urlsplit
@@ -314,12 +315,23 @@ def confirm(folder, number, repro, expect_failure, command, timeout=300):
         raise ValueError('artifacts/bugs must not be a symlink')
     logs.mkdir(mode=0o700, parents=True, exist_ok=True)
     try:
-        result = subprocess.run(command, cwd=project, capture_output=True, timeout=timeout)
-        output, code = result.stdout + result.stderr, result.returncode
-    except subprocess.TimeoutExpired as error:
-        output, code = (error.stdout or b'') + (error.stderr or b''), None
+        # Its own process group, so an app the test runner started is stopped with it.
+        process = subprocess.Popen(command, cwd=project, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   start_new_session=True)
     except OSError as error:
         raise ValueError(f'The repro command could not start: {error}')
+    try:
+        output, _ = process.communicate(timeout=timeout)
+        code = process.returncode
+    except subprocess.TimeoutExpired:
+        code = None
+    finally:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    if code is None:
+        output, _ = process.communicate()
     log = logs / f'{number:03d}.log'
     log.write_bytes(output)
     text = output.decode(errors='replace')
