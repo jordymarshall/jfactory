@@ -41,7 +41,7 @@ BRIEF_FIELDS = ['OBJECTIVE', 'DECISIONS', 'SCOPE', 'CONTEXT', 'ACCEPTANCE', 'VER
 # very simple work, and `verify` checks another unit. `fallback` is used only when the primary has no usage
 # left. A verifier always comes from another family than the unit's actual implementer, so `alternate` covers
 # Codex-implemented units. `pin_efforts` fixes the effort per agent: Opus runs the fast and trivial fallbacks at
-# low effort only, and verifies at high effort only.
+# low effort only, and every verifier runs at the verify tier's effort (low), whatever the unit asks for.
 EFFORTS = ['low', 'medium', 'high']
 ROLE_TIERS = {'implement': 'frontier', 'fast': 'fast', 'trivial': 'trivial', 'verify': 'verify'}
 
@@ -52,6 +52,8 @@ def role_from_tier(tier):
             'fallback': {'agent': fb_agent, 'model': fb_model, 'fast': fb_fast}}
     if fb_effort:
         role['pin_efforts'] = {fb_agent: fb_effort}
+    if tier == 'verify' and effort:
+        role.setdefault('pin_efforts', {})[agent] = effort
     if tier == 'verify':
         role['alternate'] = dict(role['fallback'])
     return role

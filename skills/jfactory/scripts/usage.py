@@ -15,8 +15,9 @@ POLICY = {
     'frontier': [('claude', 'opus-5-5-1m', 'medium', False), ('codex', 'gpt-6-astra', None, False)],
     'fast': [('codex', 'gpt-6-sol', None, False), ('claude', 'opus-5-5-1m', 'low', False)],
     'trivial': [('codex', 'gpt-6-luna', None, False), ('claude', 'opus-5-5-1m', 'low', False)],
-    # Verification judges whether work is right, not only whether it passed: the strongest fast-enough reviewer.
-    'verify': [('codex', 'gpt-6.1-sol', 'high', False), ('claude', 'opus-5-5-1m', 'high', False)],
+    # Verification judges whether work is right: GPT Sol 6.1 at low effort in fast mode, so reviews keep pace (owner,
+    # 2026-10-01). The Opus fallback runs at low effort without fast mode (see references/models.md).
+    'verify': [('codex', 'gpt-6.1-sol', 'low', True), ('claude', 'opus-5-5-1m', 'low', False)],
 }
 PROBES = {'claude': ('haiku-4-5', None), 'codex': ('gpt-6-luna', 'low')}
 PROBE_MESSAGE = 'Reply with the single word ok. Do not use any tools.'
