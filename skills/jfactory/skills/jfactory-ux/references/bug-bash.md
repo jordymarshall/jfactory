@@ -4,7 +4,14 @@ A bug bash sends several explorers through the running app at once, one charter 
 
 Run one when the owner asks to bug bash, QA or hunt for bugs; before releasing a large change to screens users see; or after a redesign, when the scripted journeys no longer cover how people actually move through the app. It is not part of every PR: the independent verifier drives the changed journeys, while a bug bash looks for what nobody thought to check.
 
-The bundled helper keeps the bug bash's records in one study: `UX="python3 <bundle>/skills/jfactory-ux/scripts/study.py"`, then `$UX init bugbash-<date> --url <app> --objective "<area and why>"`. The procedure is adapted from the bug-bash guide in [tester-army/e2e](https://github.com/tester-army/e2e) (Apache-2.0).
+The bundled helper keeps the bug bash's records in one study, and its commands take the study's folder:
+
+```sh
+UX="python3 <bundle>/skills/jfactory-ux/scripts/study.py"
+STUDY="$($UX init bugbash-<date> --url <app> --objective "<area and why>")"
+```
+
+The procedure is adapted from the bug-bash guide in [tester-army/e2e](https://github.com/tester-army/e2e) (Apache-2.0).
 
 ## 1. Prepare
 
@@ -29,7 +36,7 @@ A charter is one sentence: the start route, one area and one posture. It names t
 Plan five to ten charters. Overlap is fine; duplicates are merged in step 4. One charter covers one area: a charter that spans the whole app runs out of steps after skimming everything. An `edge-input` charter lists its exact inputs, or the explorer spends its budget before judging any of them. Record each one:
 
 ```sh
-$UX charter bugbash-<date> cart --posture numbers "Starting at /cart, change quantities and apply a coupon; check every price, total and label against the rest of the page"
+$UX charter "$STUDY" cart --posture numbers "Starting at /cart, change quantities and apply a coupon; check every price, total and label against the rest of the page"
 ```
 
 **Give each posture its own stance.** A generic explorer walks past a total that contradicts the same total on another page. Brief a **skeptic** to distrust every number, date, count and claim on screen and cross-check each against everywhere else it appears. Brief a **fuzzer** to run its charter's input list at every field before anything else, judging each result before the next input, and never to take the happy path.
@@ -44,7 +51,7 @@ Run up to four explorers at a time. Each one gets its charter, account, context 
 For every defect it sees, the explorer reports a title, `issue` or `warning`, a severity from 1 (trivial) to 5 (critical), where it happened, expected against actual, the steps that reach it, and a screenshot or video. Record each one as a claim, with its evidence copied into the study's `artifacts/`:
 
 ```sh
-$UX claim bugbash-<date> --charter cart --severity 4 --title "Coupon applied twice" --where /cart --expected "Total \$9.00 for one item with SAVE10" --actual "Total \$8.10" --step "Open /cart" --step "Apply SAVE10" --evidence artifacts/cart-1.png
+$UX claim "$STUDY" --charter cart --severity 4 --title "Coupon applied twice" --where /cart --expected "Total \$9.00 for one item with SAVE10" --actual "Total \$8.10" --step "Open /cart" --step "Apply SAVE10" --evidence artifacts/cart-1.png
 ```
 
 ## 4. Merge
@@ -64,7 +71,7 @@ Read the source and sort every claim. Settle the explorer-artifact bucket first;
 | Candidate | None of the above | Verify it (step 6) |
 
 ```sh
-$UX reject bugbash-<date> 3 --bucket artifact --reason "The Docs link opens in a new tab; the destination loads when clicked with popups allowed"
+$UX reject "$STUDY" 3 --bucket artifact --reason "The Docs link opens in a new tab; the destination loads when clicked with popups allowed"
 ```
 
 ## 6. Verify each candidate with a repro test
@@ -76,14 +83,14 @@ Use separate verifiers, one per area with three to five candidates each, so the 
 3. Confirms it. `confirm` runs the test and accepts the finding only when the test fails with output matching the assertion that encodes the bug:
 
    ```sh
-   $UX confirm bugbash-<date> 1 --repro tests/bugbash/coupon.spec.ts --expect-failure 'Expected.*\$9\.00' -- npx playwright test tests/bugbash/coupon.spec.ts
+   $UX confirm "$STUDY" 1 --repro tests/bugbash/coupon.spec.ts --expect-failure 'Expected.*\$9\.00' -- npx playwright test tests/bugbash/coupon.spec.ts
    ```
 
    A passing test means the bug did not reproduce: reject the finding as `not-reproduced`, and keep the test only as an ordinary regression test if it is worth having. Any other failure, such as a missing locator, a timeout or a setup error, means the test is wrong: fix it and confirm again.
 
 ## 7. Report
 
-`$UX bugs bugbash-<date>` writes `bugs.md` and exits 1 while any claim is still unverified. It lists confirmed bugs first, most severe first, each with expected against actual, steps, repro test, log and evidence. Then the unverified claims, the rejected ones grouped by bucket, the warnings and the charters run. Add the environment risks that production users could hit, marked unverified, the total cost, and the areas no charter reached.
+`$UX bugs "$STUDY"` writes `bugs.md` and exits 1 while any claim is still unverified. It lists confirmed bugs first, most severe first, each with expected against actual, steps, repro test, log and evidence. Then the unverified claims, the rejected ones grouped by bucket, the warnings and the charters run. Add the environment risks that production users could hit, marked unverified, the total cost, and the areas no charter reached.
 
 The repro tests fail until their bugs are fixed, so keep them out of the gating suite: leave them uncommitted, or tag them and exclude the tag from CI. Offer to fix each bug as its own objective. The repro test becomes that fix's regression criterion, proven with [`evidence.py contrast`](../../../references/verification.md#prove-a-fix-fails-before-it-and-passes-after-it): it fails on the base and passes at the head. Remove its bug-bash tag once it passes.
 
