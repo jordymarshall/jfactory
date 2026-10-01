@@ -354,6 +354,22 @@ class SetupCheckTest(unittest.TestCase):
                          'jobs:\n  live:\n    steps:\n      - name: x\n        with:\n          list:\n'
                          f'            - cron: x\n        run: {run}\n')
         self.assertEqual(setup_check.scheduled_run(not_a_trigger, 'verify_plan.py', 'ci', '--live'), (False, None))
+        # Found by the fifth PR #45 check: multi-line flow mappings hide their keys from a line reader, so they
+        # fail closed, while braces in scripts, quoted strings and expressions do not count as structure.
+        flow_job = (f'  live: {{if: false,\n    runs-on: ubuntu-latest,\n    steps: [\n      {{\n'
+                    f'        run: "{run}"\n      }}\n    ]\n  }}\n')
+        flow_step = (f'  live:\n    runs-on: ubuntu-latest\n    steps:\n      - {{\n          if: false,\n'
+                     f'          run: "{run}"\n        }}\n')
+        self.assertFalse(setup_check.scheduled_run(
+            head + f'  live:\n    steps:\n      - {{if: false,\n         run: "{run}"}}\n',
+            'verify_plan.py', 'ci', '--live')[0])
+        for jobs in (flow_job, flow_step):
+            ok, why = setup_check.scheduled_run(head + jobs, 'verify_plan.py', 'ci', '--live')
+            self.assertFalse(ok, jobs)
+            self.assertIn('flow-style mapping', why or '', jobs)
+        braces = (f"  live:\n    if: ${{{{ !cancelled() }}}}\n    env:\n      X: '{{not a mapping}}'\n    steps:\n"
+                  f'      - run: |\n          f() {{ echo "${{HOME}}"; }}\n          {run}\n')
+        self.assertEqual(setup_check.scheduled_run(head + braces, 'verify_plan.py', 'ci', '--live'), (True, None))
         quoted = "'on':\n  schedule:\n    - cron: '0 6 * * 1'\njobs:\n" + list(cases)[0]
         self.assertEqual(setup_check.scheduled_run(quoted, 'verify_plan.py', 'ci', '--live'), (True, None))
         flow = head.replace('jobs:\n', '') + 'jobs: {live: {steps: [{run: "' + run + '"}]}}\n'

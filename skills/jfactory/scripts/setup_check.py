@@ -370,6 +370,23 @@ def triggered_on_schedule(text):
     return False
 
 
+def structure(lines):
+    """The lines as YAML structure only: block scalar bodies (such as `run: |` scripts), quoted strings and `${{ }}`
+    expressions are blanked, so braces inside them are not mistaken for flow mappings."""
+    result, scalar = [], None
+    for line in lines:
+        if scalar is not None and (not line.strip() or indent_of(line) > scalar):
+            result.append('')
+            continue
+        scalar = None
+        text = re.sub(r'\$\{\{.*?\}\}', '', line)
+        text = re.sub(r'"(?:[^"\\]|\\.)*"|\'(?:[^\']|\'\')*\'', '""', text)
+        if re.search(r':\s*[|>][-+0-9]*\s*(#.*)?$', text):
+            scalar = indent_of(line) + (2 if line.lstrip().startswith('- ') else 0)
+        result.append(text)
+    return result
+
+
 def conditions(lines, index):
     """The `if:` conditions on the step and the job that contain the line at `index`. Comment-only lines are
     ignored, since a comment never ends a YAML mapping. A job this line-based reader cannot locate (flow style, for
@@ -405,6 +422,9 @@ def conditions(lines, index):
             for i in range(job + 1, end):
                 if lines[i].strip() and indent_of(lines[i]) == child:
                     found += key_conditions(lines[i])
+            # A flow mapping can hold keys, such as `if:`, on any line, which this reader cannot follow.
+            if any('{' in line for line in structure(lines)[job:end]):
+                found.append('(a flow-style mapping jfactory could not read)')
     result = []
     for text in found:
         # A trailing comment is not part of the expression.
