@@ -26,6 +26,8 @@ CONFIG = {
     },
 }
 HEAD = 'a' * 40
+RULE = ('skills/jfactory/references/verification.md#independent-verdict: prescribes GPT Sol 6.1 at high effort, but '
+        'the owner moved the verify tier to low-effort fast mode; point to the verify tier in models.md instead')
 
 
 class PlanTest(unittest.TestCase):
@@ -437,7 +439,7 @@ class GateTest(unittest.TestCase):
         # Done means right: a failed verdict vetoes even a change that needed none.
         self.write(files=['lint/rules.py'], head='c' * 40, config=CONFIG)
         self.assertIn('success: Low-risk', self.run_script('check', '--pr', '5'))
-        self.run_script('verdict', '--pr', '5', '--head', 'c' * 40, '--verdict', 'failed', '--verifier', 'codex/gpt-6-sol',
+        self.run_script('verdict', '--pr', '5', '--head', 'c' * 40, '--verdict', 'failed', '--cause', 'change', '--verifier', 'codex/gpt-6-sol',
                         '--implementer', 'claude/opus-5-5-1m', '--evidence', 'https://evidence')
         self.assertIn('Latest verdict at ccccccc is failed', self.run_script('check', '--pr', '5', code=1))
 
@@ -519,7 +521,7 @@ class GateTest(unittest.TestCase):
         self.set_ci(('checks', 'completed', 'failure'), ('status', 'completed', 'success'))
         self.assertIn('CI did not pass at aaaaaaa (checks)', self.verdict(code=2))
         # A failed verdict can always be posted; the gate's own job is not CI evidence.
-        self.run_script('verdict', '--pr', '5', '--head', HEAD, '--verdict', 'failed', '--verifier', 'codex/gpt-6-sol',
+        self.run_script('verdict', '--pr', '5', '--head', HEAD, '--verdict', 'failed', '--cause', 'change', '--verifier', 'codex/gpt-6-sol',
                         '--implementer', 'claude/opus-5-5-1m', '--evidence', 'x')
         self.set_ci(('checks', 'completed', 'success'), ('lint', 'completed', 'skipped'), ('status', 'in_progress', None))
         self.verdict()
@@ -537,7 +539,7 @@ class GateTest(unittest.TestCase):
         self.assertIn('needs `checks: read`', self.run_script('check', '--pr', '5', code=1))
 
     def test_reverification_after_a_fix_checks_only_the_changes_since(self):
-        self.run_script('verdict', '--pr', '5', '--head', HEAD, '--verdict', 'failed', '--verifier', 'codex/gpt-6-sol',
+        self.run_script('verdict', '--pr', '5', '--head', HEAD, '--verdict', 'failed', '--cause', 'change', '--verifier', 'codex/gpt-6-sol',
                         '--implementer', 'claude/opus-5-5-1m', '--evidence', 'x')
         fixed = 'c' * 40
         self.write(files=['app/briefs/save.ts'], head=fixed)
@@ -617,6 +619,112 @@ class GateTest(unittest.TestCase):
     def test_static_only_passes_without_verifier(self):
         self.write(files=['docs/guide.md'])
         self.assertIn('success: Static-only', self.run_script('check', '--pr', '5'))
+
+    def failing(self, verdict='failed', *extra, code=0):
+        return self.run_script('verdict', '--pr', '5', '--head', HEAD, '--verdict', verdict, '--verifier',
+                               'codex/gpt-6-sol', '--implementer', 'claude/opus-5-5-1m', '--evidence', 'https://ev',
+                               *extra, code=code)
+
+    def last_record(self):
+        body = json.loads(self.state.read_text())['prs']['5']['comments'][-1]['body']
+        return json.loads(verify_plan.VERDICT_RE.search(body).group(1)), body
+
+    def rule_issues(self):
+        return {k: v for k, v in json.loads(self.state.read_text()).get('issues', {}).items()
+                if {'name': verify_plan.RULE_CHANGE_LABEL} in v['labels']}
+
+    def test_failed_and_blocked_verdicts_name_their_cause(self):
+        for verdict in ('failed', 'blocked'):
+            self.assertIn(f'A {verdict} verdict needs --cause', self.failing(verdict, code=2))
+        self.assertIn('applies only to failed or blocked', self.verdict('--cause', 'change', code=2))
+        self.assertIn('applies only to failed or blocked',
+                      self.failing('partially-verified', '--cause', 'rules', '--rule-change', RULE, code=2))
+        self.assertIn('--cause rules needs --rule-change', self.failing('failed', '--cause', 'rules', code=2))
+        self.assertIn('--cause rules needs --rule-change', self.failing('blocked', '--cause', 'both', code=2))
+        self.assertIn("must name the rule's file", self.failing(
+            'failed', '--cause', 'rules', '--rule-change', 'the model rule is stale and should go', code=2))
+        self.assertIn("must name the rule's file", self.failing(
+            'failed', '--cause', 'rules', '--rule-change', 'references/models.md', code=2))
+        self.assertIn('needs --cause rules or both', self.failing('failed', '--cause', 'change', '--rule-change', RULE,
+                                                                  code=2))
+        self.assertEqual(json.loads(self.state.read_text())['prs']['5']['comments'], [])
+        self.failing('failed', '--cause', 'change')
+        record, body = self.last_record()
+        self.assertEqual(record['cause'], 'change')
+        self.assertNotIn('rule_changes', record)
+        self.assertIn('**Cause: the change (fix the PR and re-verify)**', body)
+        self.assertEqual(self.rule_issues(), {})
+        self.assertIn('Latest verdict at aaaaaaa is failed', self.run_script('check', '--pr', '5', code=1))
+
+    def test_a_rules_verdict_asks_the_owner_once_per_pr_and_still_blocks(self):
+        out = self.failing('failed', '--cause', 'rules', '--rule-change', RULE)
+        self.assertIn('Opened rule-change issue', out)
+        record, body = self.last_record()
+        self.assertEqual((record['cause'], record['rule_changes']), ('rules', [RULE]))
+        self.assertIn('Cause: the rules', body)
+        self.assertIn(f'- {RULE}', body)
+        # The gate stays honest: a rules failure blocks merging like any other until the owner decides.
+        self.assertIn("is failed (cause: rules; waiting on the owner's decision",
+                      self.run_script('check', '--pr', '5', code=1))
+        issues = self.rule_issues()
+        self.assertEqual(len(issues), 1)
+        issue = next(iter(issues.values()))
+        self.assertEqual(issue['title'], 'Rule change needed for PR #5')
+        for part in (RULE, 'Change the rule as proposed', 'Keep the rule', 'aaaaaaa'):
+            self.assertIn(part, issue['body'])
+        self.assertIn(verify_plan.RULE_CHANGE_LABEL, json.loads(self.state.read_text())['labels'])
+        # A second rules verdict on the same PR updates the issue instead of opening another, even once closed.
+        self.assertIn('Updated rule-change issue #1', self.failing('blocked', '--cause', 'both', '--rule-change', RULE))
+        db = json.loads(self.state.read_text())
+        db['issues']['1']['state'] = 'CLOSED'
+        self.state.write_text(json.dumps(db))
+        self.failing('failed', '--cause', 'rules', '--rule-change', RULE)
+        issues = self.rule_issues()
+        self.assertEqual((len(issues), issues['1']['state'], len(issues['1']['comments'])), (1, 'OPEN', 2))
+        self.failing('failed', '--cause', 'both', '--rule-change', RULE)
+        self.assertIn('fix the change, and the owner decides', self.run_script('check', '--pr', '5', code=1))
+        self.assertEqual(len(self.rule_issues()['1']['comments']), 3)
+        # Inside a program the coordinator raises the owner decision instead, so no issue is opened.
+        self.assertIn('Program #9 records this', self.failing('failed', '--cause', 'rules', '--rule-change', RULE,
+                                                              '--program', '9'))
+        self.assertEqual(len(self.rule_issues()['1']['comments']), 3)
+        # No agent waives the rule: verifying afterwards needs a link to the owner's decision.
+        self.assertIn('Only the owner settles that', self.verdict(code=2))
+        self.assertIn('must link the owner', self.verdict('--rule-decision', 'owner said ok', code=2))
+        self.verdict('--rule-decision', 'https://github.test/issues/1#issuecomment-1')
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+        # A verified record written without the decision does not count either.
+        db = json.loads(self.state.read_text())
+        record, _ = self.last_record()
+        record.pop('rule_decision')
+        db['prs']['5']['comments'][-1]['body'] = f'<!-- jfactory-verdict {json.dumps(record)} -->'
+        self.state.write_text(json.dumps(db))
+        self.assertIn("said a rule is wrong; this verdict must link the owner's decision",
+                      self.run_script('check', '--pr', '5', code=1))
+
+    def test_a_fix_after_a_rules_verdict_also_links_the_decision(self):
+        self.failing('failed', '--cause', 'rules', '--rule-change', RULE)
+        fixed = 'c' * 40
+        self.write(files=['app/briefs/save.ts'], head=fixed)
+        self.assertIn('Only the owner settles that', self.verdict('--since', HEAD, head=fixed, code=2))
+        self.verdict('--since', HEAD, '--rule-decision', 'https://github.test/issues/1#c2', head=fixed)
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+
+    def test_old_verdicts_without_a_cause_still_evaluate(self):
+        old = {'head': HEAD, 'verdict': 'failed', 'features': ['briefs'], 'full': False, 'verifier': 'codex/gpt-6-sol',
+               'implementer': 'claude/opus-5-5-1m', 'evidence': ['x']}
+        self.assertEqual(verify_plan.verdict_cause(old), 'change')
+        self.assertIsNone(verify_plan.verdict_cause({**old, 'verdict': 'verified'}))
+        db = json.loads(self.state.read_text())
+        db['prs']['5']['comments'] = [{'authorAssociation': 'OWNER',
+                                       'body': f'<!-- jfactory-verdict {json.dumps(old)} -->'}]
+        self.state.write_text(json.dumps(db))
+        out = self.run_script('check', '--pr', '5', code=1)
+        self.assertIn('Latest verdict at aaaaaaa is failed', out)
+        self.assertNotIn('cause', out)
+        # An old failed verdict reads as a change failure: the next verdict needs no owner decision.
+        self.verdict()
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
 
     def test_untrusted_or_partial_verdicts_do_not_pass(self):
         self.write(files=['app/briefs/save.ts'], association='NONE')

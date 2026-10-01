@@ -145,6 +145,7 @@ if tool == 'gh' and args[:2] == ['pr', 'comment']:
 if tool == 'gh':
     issues = db.setdefault('issues', {})
     if args[:2] == ['label', 'create']:
+        db.setdefault('labels', []).append(args[2])
         done()
     if args[:2] == ['issue', 'create']:
         n = str(len(issues) + 1)
@@ -164,9 +165,14 @@ if tool == 'gh':
     if args[:2] == ['issue', 'close']:
         issues[args[2]]['state'] = 'CLOSED'
         done()
+    if args[:2] == ['issue', 'reopen']:
+        issues[args[2]]['state'] = 'OPEN'
+        done()
     if args[:2] == ['issue', 'list']:
-        done([{'number': int(k), 'title': v.get('title', 'x'), 'url': v['url']} for k, v in issues.items()
-              if v['state'] == opt('--state', 'open').upper()])
+        wanted = opt('--state', 'open').upper()
+        done([{'number': int(k), 'title': v.get('title', 'x'), 'url': v['url'], 'state': v['state']}
+              for k, v in issues.items() if wanted in ('ALL', v['state'])
+              and (not opt('--label') or opt('--label') in [label['name'] for label in v.get('labels', [])])])
     if args[:2] == ['pr', 'view']:
         done({'baseRefName': 'main', 'comments': [], 'isCrossRepository': False, **db['prs'][args[2]]})
     if args[:2] == ['pr', 'merge']:

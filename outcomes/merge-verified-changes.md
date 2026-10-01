@@ -20,7 +20,8 @@ Serves outcome 2 in [README.md](README.md). Feature: `coordination` (`verify_pla
 | Tests, agent instructions, screens and source-of-truth documents always get the independent verifier | `tests/test_verify_plan.py` `test_tests_instructions_and_screens_always_need_the_verifier`, `test_standards_and_journey_documents_are_always_reviewed` |
 | A PR cannot edit its own gate | `tests/test_verify_plan.py` `test_gate_files_always_need_full_verification`; the workflow runs from the base branch (`skills/jfactory/templates/jfactory-verified.yml`) |
 | A PR names the outcomes/ documents it serves and why it's right | `tests/test_verify_plan.py` `test_verdicts_name_the_standards_and_journeys_they_checked` |
-| Merged PRs that fell short are noticed, not assumed fine | `tests/test_method_audit.py`; the weekly `jfactory method audit` workflow |
+| Every failed or blocked verdict says whether the change or a rule is wrong; a wrong rule still blocks the merge, reaches the owner once per PR with a proposed adjustment, and is never waived by an agent | `tests/test_verify_plan.py` `test_failed_and_blocked_verdicts_name_their_cause`, `test_a_rules_verdict_asks_the_owner_once_per_pr_and_still_blocks`, `test_a_fix_after_a_rules_verdict_also_links_the_decision`, `test_old_verdicts_without_a_cause_still_evaluate` |
+| Merged PRs that fell short are noticed, not assumed fine, and rules flagged on more than one PR surface | `tests/test_method_audit.py`; the weekly `jfactory method audit` workflow |
 | GitHub enforces both checks with no bypass | `tests/test_setup_check.py` `test_ruleset_template_requires_both_checks_without_bypass` |
 
 ## Quality rubric
