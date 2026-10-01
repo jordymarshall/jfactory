@@ -451,6 +451,16 @@ class GateTest(unittest.TestCase):
         self.assertEqual((journey['level'], journey['overridden']), ('independent', {'docs': 'standards'}))
         self.assertTrue(verify_plan.plan(['docs/guide.md'], config)['static_only'])
 
+    def test_proof_headers_must_precede_a_table_separator(self):
+        methods = ('| Method | How it applies |\n| --- | --- |\n'
+                   '| Observe | Capture proof from the actual artifact |\n'
+                   '| Clean | Retain evidence |\n')
+        self.assertEqual(verify_plan.journey_proofs(methods), [])
+        goals = "| Goal | How it's proven |\n| --- | --- |\n| Preserve edits | Reload and read saved text |\n"
+        self.assertEqual(verify_plan.journey_proofs(methods + '\n' + goals),
+                         [('Preserve edits', 'Reload and read saved text')])
+        self.assertEqual(verify_plan.journey_proofs("| Goal | How it's proven |\n| Preserve edits | Reload |\n"), [])
+
     def test_tables_and_sources_parse_as_written(self):
         rows = verify_plan.journey_proofs("| Goal | How it's proven |\n| --- | --- |\n| Preserve A \\| B | |\n| Save | `e2e/a.spec.ts` |\n")
         self.assertEqual(rows, [('Preserve A | B', ''), ('Save', '`e2e/a.spec.ts`')])
