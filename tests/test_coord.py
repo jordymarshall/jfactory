@@ -624,7 +624,17 @@ class CoordTest(unittest.TestCase):
         # Checks still running past the wait: report it and leave the archive to the next jfactory command.
         self.set_db(prs={'47': {'state': 'OPEN', 'headRefOid': 'abc1234'}}, land_after=99)
         self.assertIn('still queued after', self.coord('land', '--pr', '47', '--interval', '0.01', '--wait', '0.001'))
-        # A push after queueing removes auto-merge; land stops instead of waiting out its time.
+        # Found by the PR #46 verifier: a writer's push keeps auto-merge queued for the new head. land cancels it.
+        self.set_db(prs={'49': {'state': 'OPEN', 'headRefOid': 'abc1234'}}, push_head='bbb2222', land_after=99)
+        self.assertIn('head moved to bbb2222', self.coord('land', '--pr', '49', '--interval', '0.01', ok=False))
+        self.assertEqual(self.db()['disabled'], ['49'])
+        # A head that changed and merged before land saw it is reported as unverified, after archiving.
+        self.set_db(prs={'50': {'state': 'MERGED', 'headRefOid': 'bbb2222', 'mergeCommit': {'oid': 'merge5555'}}},
+                    listed=[self.pr_workspace('w-50', 'verify-r-50')], sessions={'s-50': 'idle'})
+        out = self.coord('land', '--pr', '50', '--head', 'abc1234', '--interval', '0.01', ok=False)
+        self.assertIn('not the verified abc1234: what merged was not verified', out)
+        self.assertIn('w-50', self.db()['archived'])
+        # A failed check (or a push by someone without write access) removes auto-merge; land stops.
         self.set_db(prs={'48': {'state': 'OPEN', 'headRefOid': 'abc1234'}}, drop_auto_merge=True)
         self.assertIn('no longer queued', self.coord('land', '--pr', '48', '--interval', '0.01', ok=False))
 

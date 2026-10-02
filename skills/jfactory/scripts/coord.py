@@ -687,11 +687,16 @@ def cmd_land(args):
         deadline = time.monotonic() + args.wait * 60
         while True:
             pr = view()
+            if pr['state'] == 'OPEN' and pr['headRefOid'] != head:
+                # A push by someone with write access can keep auto-merge queued for the new, unverified head.
+                gh(args.repo, 'pr', 'merge', str(args.pr), '--disable-auto')
+                raise Refused(f"PR #{args.pr} head moved to {pr['headRefOid'][:7]} after the verified {head[:7]} was "
+                              'queued, so auto-merge is cancelled; verify the new head and land it again')
             if pr['state'] != 'OPEN':
                 break
             if not pr.get('autoMergeRequest'):
-                raise Refused(f'Auto-merge for #{args.pr} is no longer queued (a new push or a failed check '
-                              'removes it); verify the current head and land it again')
+                raise Refused(f'Auto-merge for #{args.pr} is no longer queued (a failed check, or a push by someone '
+                              'without write access, removes it); verify the current head and land it again')
             if time.monotonic() >= deadline:
                 print(f'#{args.pr} is still queued after {args.wait} min; GitHub merges it once its checks pass. '
                       'Its workspaces are archived by the next jfactory command after that (`coord.py tidy`, '
@@ -700,6 +705,8 @@ def cmd_land(args):
             time.sleep(args.interval)
     merged = (pr.get('mergeCommit') or {}).get('oid')
     print(f"#{args.pr} is {pr['state'].lower()}" + (f' as {merged[:7]}' if merged else ''), flush=True)
+    # The PR finished either way, so its workspaces are still archived; a different head is reported afterwards.
+    moved = pr['state'] == 'MERGED' and pr['headRefOid'] != head
     # A verifier or builder session may take a moment to go idle after its last message; give it that time.
     settle = time.monotonic() + args.settle
     while True:
@@ -710,8 +717,11 @@ def cmd_land(args):
         if not waiting or time.monotonic() >= settle:
             for note in notes:
                 print('Check: ' + note)
-            return
+            break
         time.sleep(args.interval)
+    if moved:
+        raise Refused(f"PR #{args.pr} merged at head {pr['headRefOid'][:7]}, not the verified {head[:7]}: what merged "
+                      'was not verified. Verify it on the base branch now, and fix forward in a new PR if needed')
 
 
 def verdict_at_head(state, unit):

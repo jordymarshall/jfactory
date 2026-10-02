@@ -191,7 +191,14 @@ if tool == 'gh':
                 pr.update(state='MERGED', mergeCommit={'oid': 'merge5555'}, autoMergeRequest=None)
         if db.get('drop_auto_merge'):
             pr['autoMergeRequest'] = None
+        # `push_head`: a writer pushes a new head after the merge is queued; auto-merge stays queued.
+        if pr.get('autoMergeRequest') and db.get('push_head'):
+            pr['headRefOid'] = db.pop('push_head')
         done({'baseRefName': 'main', 'comments': [], 'isCrossRepository': False, **pr})
+    if args[:2] == ['pr', 'merge'] and '--disable-auto' in args:
+        db['prs'][args[2]]['autoMergeRequest'] = None
+        db.setdefault('disabled', []).append(args[2])
+        done()
     if args[:2] == ['pr', 'merge']:
         db.setdefault('merged', []).append(args[2])
         if args[2] in db.get('prs', {}):

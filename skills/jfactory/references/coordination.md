@@ -30,7 +30,7 @@ Read the pinned originals this adapts: [orchestrate](../vendor/pstack/skills/pot
 | `set <issue> <unit> --state` | Coordinator | Marks a unit blocked, failed or abandoned with a note |
 | `close <issue>` | Coordinator | Closes the program only when every unit is merged, done (verifiers without their own PR) or abandoned |
 | `tidy` | Anyone | Archives finished PR workspaces and deletes finished `Program:` sidebar sections |
-| `land --pr N [--head SHA] [--wait MIN]` | Anyone delivering a verified PR outside a program | Queues protected squash auto-merge at the verified head, waits for GitHub to merge it (30 minutes by default), reads back the merge commit, then archives that PR's finished workspaces, giving their sessions up to two minutes to go idle. It stops if auto-merge is removed, for example by a new push |
+| `land --pr N [--head SHA] [--wait MIN]` | Anyone delivering a verified PR outside a program | Queues protected squash auto-merge at the verified head, waits for GitHub to merge it (30 minutes by default), reads back the merge commit, then archives that PR's finished workspaces, giving their sessions up to two minutes to go idle. On every read it compares the PR's head with the verified one: if the head moves while queued (a push by someone with write access keeps auto-merge queued), it cancels auto-merge and asks for a new verification. If auto-merge is removed, it stops. If the PR merged at a different head, it archives and then reports that what merged was not verified |
 
 `sync`, `verdict`, `merge`, `land`, `launch`, `close` and `tidy` also archive finished PR workspaces as they run; see [finished workspaces archive themselves](#finished-workspaces-archive-themselves).
 
