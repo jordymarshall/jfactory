@@ -257,7 +257,7 @@ class SetupCheckTest(unittest.TestCase):
         (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(
             {'static': ['README.md'], 'features': {'app': {'paths': ['src/**', 'AGENTS.md', '.jfactory/**', '.github/**', 'outcomes/**'],
                                                            'verify': 'independent'}}}))
-        self.assertIn('Risk levels set: 1 independent, 0 CI-only', self.check('--remote', '--repo', 'o/r'))
+        self.assertIn('Risk levels set: 1 independent, 0 review, 0 CI-only', self.check('--remote', '--repo', 'o/r'))
 
     def mapping(self, **extra):
         (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(

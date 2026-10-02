@@ -137,6 +137,19 @@ A worker whose task contract names a program issue:
 
 Run `sync` at natural points: after a critical step, on a scheduled wakeup, and before reporting to the owner. It prints counts, what changed, units whose session went idle without a final report, and units ready to launch. Use the host's scheduled wakeups with a long fallback interval rather than tight polling.
 
+### Waiting budget
+
+Every check spends tokens, and a check that finds nothing new moves nothing. These limits apply to every agent, coordinator, worker and verifier alike:
+
+- **Wait on events, not loops.** Prefer a notification, a background watch or one blocking command with a deadline (for example `coord.py land --wait`) over repeated status checks. Each check is a model turn.
+- **At most 5 checks per wait.** If polling can't be avoided, space checks at least 5 minutes apart and stop after 5 that find nothing new. `sync` enforces this for coordinators: the fifth quiet sync in a row prints `Stop:`.
+- **The same failure twice means stop.** Investigate once. If the second attempt fails the same way, report the blocker with its evidence; never retry the same thing in a loop.
+- **No progress means stop.** When 5 checks, or 30 minutes of waiting, show no change, report what each unit is waiting on and the one step that would unblock it, then end the turn.
+- **Don't launch into a stall.** While sessions are idle, failing or out of usage, launch nothing new; pause and report.
+- **Reviews are bounded too.** A `review`-level change gets one review and one re-check; a failing `independent` change gets new investigation, not identical retries.
+
+Resume only when a session, a PR or the owner reports something new.
+
 For detail, read `conductor session message <session> --after <last seen message id>` and the PR. Do not send a message to check progress; a message starts another turn and can redirect the worker. Send one with `conductor message create --session <session>` only to answer a question, deliver a changed dependency or correct scope, and restate the relevant standing orders when you do.
 
 A worker question becomes an open decision at `sync`. Answer it from recorded decisions when possible with `gate resolve` and a message to the worker. Otherwise batch it for the owner.

@@ -149,12 +149,13 @@ def check_verification(root, report, states):
         features = config.get('features', {})
         unset = sorted(f for f, v in features.items() if 'verify' not in v)
         low = sorted(f for f, v in features.items() if v.get('verify') == 'ci')
+        lighter = sorted(f for f, v in features.items() if v.get('verify') == 'review')
         if unset:
             report.add('WARN', f'{len(unset)} feature(s) have no risk level and default to independent verification: '
-                               f'{", ".join(unset[:8])}. Agree "verify": "independent" or "ci" with the owner')
+                               f'{", ".join(unset[:8])}. Agree "verify": "independent", "review" or "ci" with the owner')
         else:
-            report.add('PASS', f'Risk levels set: {len(features) - len(low)} independent, {len(low)} CI-only'
-                               + (f' ({", ".join(low)})' if low else ''))
+            report.add('PASS', f'Risk levels set: {len(features) - len(low) - len(lighter)} independent, '
+                               f'{len(lighter)} review, {len(low)} CI-only' + (f' (ci: {", ".join(low)})' if low else ''))
     if config is not None and tracked is not None:
         for level, text in verify_plan.audit(tracked, config, root):
             report.add(level, f'Map: {text}')

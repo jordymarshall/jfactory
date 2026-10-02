@@ -95,7 +95,7 @@ Then prove it in the place that matters: a new workspace (for Conductor, a new c
 
 ## 8. Set risk levels and when the whole suite runs
 
-Give every feature `"verify": "independent"` or `"ci"` using the [verification contract](verification.md#change-aware-verification-and-the-merge-gate), and confirm them with the owner. Screens users see, tests and agent instructions always get the independent verifier, so mark those features `independent`; `ci` is for code that has none of them. Mark a feature with screens but no journey suite yet `"screens": true`.
+Give every feature `"verify": "independent"`, `"review"` or `"ci"` using the [verification contract](verification.md#change-aware-verification-and-the-merge-gate), and confirm them with the owner. Keep full journeys (`independent`) for risky areas: money, sign-in and permissions, stored data and migrations, security, external side effects and agent instructions. Mark other features with screens `review`, so they get one strategic review with screenshots instead of the whole browser suite. `ci` is for code with no screens. Mark a feature with screens but no journey suite yet `"screens": true`.
 
 Then ask the owner when the **whole suite** runs, and record the answer as `"full_suite"`. Every other run executes only the suites the change needs. The whole suite catches what the map and coverage miss, and refreshes recorded coverage, but browser journeys cost time and compute: show the owner its measured total (the sum of every suite's `minutes`) and how often each option would run it:
 

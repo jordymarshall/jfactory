@@ -43,7 +43,9 @@ RULE_SOURCE = re.compile(r'[\w./-]*\w\.(?:md|py|json|ya?ml|toml|txt|cfg|ini)(?:[
 GATE_PATHS = ['.jfactory/**', '.github/workflows/**', '.github/rulesets/**']
 TRUSTED = {'OWNER', 'MEMBER', 'COLLABORATOR'}
 # Each feature declares how much proof its changes need. Unknown values fall back to the strictest level.
-LEVELS = ('independent', 'ci')
+# independent: risky; the affected journeys run in CI and a full verdict follows. review: one strategic model review
+# against the outcomes, standards and screenshots, with static CI only. ci: CI is the evidence.
+LEVELS = ('independent', 'review', 'ci')
 # Everything inside a test folder counts, fixtures and helpers included: an extra review costs less than a gap.
 # Prose the map marks static inside such a folder is the one exception (see `static_allowed`).
 TEST_FOLDERS = ['**/e2e/**', '**/tests/**', '**/test/**', '**/__tests__/**', '**/spec/**', '**/cypress/**',
@@ -202,7 +204,8 @@ def needs_screenshots(result, config):
 def needs_walkthrough(result, config):
     """A verdict on a change to screens users see links a step-by-step walkthrough. Its own opt-out, separate from
     screenshots."""
-    return bool(result['screen_features']) and config.get('require_walkthrough', True)
+    return (bool(result['screen_features']) and result.get('level') != 'review'
+            and config.get('require_walkthrough', True))
 
 
 def full_suite_mode(config, event, labels=()):
@@ -318,7 +321,7 @@ def load_config(ref=None, root=None):
         if not feature.get('paths'):
             raise Refused(f'Feature {fid} in {CONFIG} needs paths')
         if feature.get('verify', 'independent') not in LEVELS:
-            raise Refused(f'Feature {fid} in {CONFIG} has verify "{feature["verify"]}"; use independent or ci')
+            raise Refused(f'Feature {fid} in {CONFIG} has verify "{feature["verify"]}"; use independent, review or ci')
     standards = load_standards(ref, root)
     journeys = sorted({doc for f in config.get('features', {}).values() for doc in outcome_docs(f)})
     if standards is not None or journeys:
@@ -360,8 +363,20 @@ def plan(files, config, impact=None):
                for p in unmapped):
             visual = set(all_features)
     suites = set(config.get('always_suites', []))
+
+    def journey(suite):
+        return bool(config.get('suites', {}).get(suite, {}).get('target'))
+
+    # A review-level feature's journeys (suites that drive the app) don't run in CI: its verdict reviews the change
+    # against the outcomes, standards and screenshots instead. Full verification still runs everything it pulls in.
+    # `reviewed` holds only tests and agent instructions here (screens are added below); those keep their journeys.
+    lighter = {f for f in features if all_features[f].get('verify') == 'review' and f not in reviewed}
+    light = bool(features) and not full and lighter == set(features)
     for fid in features:
-        suites |= set(all_features[fid].get('suites', []))
+        own = set(all_features[fid].get('suites', []))
+        if fid in lighter and not full:
+            own = {s for s in own if not journey(s)}
+        suites |= own
     if full:
         suites |= set(config.get('full_suites', []))
     static_only = bool(files) and not features and not full
@@ -373,7 +388,7 @@ def plan(files, config, impact=None):
     for suite, executed in (impact or {}).items():
         if suite in config.get('suites', {}):
             hits = sorted(p for p in files if p in executed)
-            if hits and suite not in suites:
+            if hits and suite not in suites and not (light and journey(suite)):
                 because[suite] = hits
                 suites.add(suite)
     # A change needs an independent verdict unless every affected feature is low risk (`ci`). Screens users see,
@@ -382,22 +397,29 @@ def plan(files, config, impact=None):
     for fid in features:
         if fid not in reviewed and has_screens(all_features[fid], config):
             reviewed[fid] = 'screens users see'
-    independent = sorted(f for f in features if all_features[f].get('verify', 'independent') != 'ci' or f in reviewed)
+    # Tests and agent instructions are risky wherever they live; a screen in a low-risk feature needs a review.
+    risky = {f for f in features if all_features[f].get('verify', 'independent') == 'independent'
+             or (f in reviewed and reviewed[f] != 'screens users see')}
+    review = sorted(f for f in features if f not in risky
+                    and (all_features[f].get('verify') == 'review' or f in reviewed))
+    independent = sorted(risky | set(review))  # every feature the verdict must cover
     overridden = {f: reviewed[f] for f in sorted(features) if f in reviewed and all_features[f].get('verify') == 'ci'}
-    if full or independent:
+    if full or risky:
         level = 'independent'
+    elif review:
+        level = 'review'
     elif features:
         level = 'ci'
     else:
         level = 'static'
-    needs = level == 'independent' or (level == 'static' and config.get('verify_static', False))
+    needs = level in ('independent', 'review') or (level == 'static' and config.get('verify_static', False))
     live = live_suites(config, suites)
     suites -= set(live)
     minutes, untimed = cost(suites, config)
     shards = shard_count(config)
     return {'files': len(files), 'live_suites': live, 'features': sorted(features), 'unmapped': unmapped, 'gate': gate, 'full': full,
             'static_only': static_only, 'suites': sorted(suites), 'level': level,
-            'independent_features': independent, 'overridden': overridden,
+            'independent_features': independent, 'review_features': review, 'overridden': overridden,
             'screen_features': sorted(f for f in visual if has_screens(all_features[f], config)),
             'needs_verifier': needs, 'minutes': minutes, 'untimed_suites': untimed,
             'budget_minutes': config.get('pr_budget_minutes'), 'impact': because, 'shards': shards,
@@ -503,6 +525,10 @@ def render_plan(result):
     elif result['level'] == 'ci':
         head = (f"CI-only change: {len(result['features'])} low-risk feature(s); passing CI is required and no "
                 'independent verifier is needed. The change must still be right: CI is its evidence, not its finish line.')
+    elif result['level'] == 'review':
+        head = (f"Review change: {len(result['features'])} lower-risk feature(s). CI runs the static suites only; one "
+                'strategic model review checks the change against the outcomes, standards and job documents, with '
+                'screenshots of changed screens. At most one review and one re-check; then report to the owner.')
     elif result['unmapped']:
         head = (f"Full verification required: {len(result['unmapped'])} changed file(s) are not mapped to a "
                 'feature. Map them in .jfactory/verification.json; `ci` refuses to run until they are.')
@@ -587,7 +613,7 @@ def audit(files, config, root='.'):
             continue
         if has_screens(f, config):
             items.append(('WARN', f'Feature {fid} is marked ci but has screens users see, so every change to it gets '
-                                  'the independent verifier anyway. Set "verify": "independent"'))
+                                  'a model review anyway. Set "verify": "review" (or "independent" if it is risky)'))
             continue
         standards = config.get('_standards', ())
         kinds = sorted({review_reason(p, standards) for p in files
