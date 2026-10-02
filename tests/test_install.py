@@ -112,6 +112,11 @@ class InstallTests(unittest.TestCase):
                     # merely a wrapper that an agent can read without its source.
                     method_body = original.read_text().split('---\n', 2)[2].strip()
                     self.assertIn(method_body, adapter.read_text())
+                    if method == 'show-me':
+                        # Feedback can establish goals. The routed explanation
+                        # skill must load that method without another file hop.
+                        grilling = dest / 'vendor/mattpocock/skills/grilling/SKILL.md'
+                        self.assertIn(grilling.read_text().split('---\n', 2)[2].strip(), adapter.read_text())
                     self.assertEqual(receipt['files'][str(original.relative_to(dest))], installer.digest(original.read_bytes()))
                     self.assertIn(f'vendor/{source}/LICENSE', receipt['files'])
                 subprocess.run([sys.executable, str(dest / 'scripts/check-upstream.py')],
