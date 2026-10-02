@@ -228,12 +228,18 @@ def earliest_reset(reading, reserve):
     return min(times) if times else None
 
 
-def choose(tier, readings, reserve, implementer=None):
+def choose(tier, readings, reserve, implementer=None, allow_same_family=False):
     notes = []
     options = POLICY[tier]
     if tier == 'verify' and implementer:
-        notes = [f'{a} skipped: same family as the implementer' for a, *_ in options if a == implementer]
-        options = [option for option in options if option[0] != implementer]
+        other = [option for option in options if option[0] != implementer]
+        if allow_same_family:
+            # The repository accepts same-family verdicts, so a verifier from the implementer's family is the fallback
+            # when the other family has no usage, instead of holding the review.
+            options = other + [option for option in options if option[0] == implementer]
+        else:
+            notes = [f'{a} skipped: same family as the implementer' for a, *_ in options if a == implementer]
+            options = other
     for agent, model, effort, fast in options:
         choice = {'tier': tier, 'agent': agent, 'model': model, 'effort': effort, 'fast': fast}
         reading = readings.get(agent)
@@ -242,6 +248,8 @@ def choose(tier, readings, reserve, implementer=None):
         if not exhausted(reading, reserve):
             if agent == POLICY[tier][0][0]:
                 reason = 'primary'
+            elif tier == 'verify' and implementer == agent:
+                reason = 'same-family fallback'  # allowed by the repository's allow_same_family
             elif tier == 'verify' and implementer == POLICY[tier][0][0]:
                 reason = 'alternate'  # the family switch for a verifier, not a usage fallback
             else:
@@ -278,6 +286,13 @@ def collect(args):
     return readings
 
 
+def allow_same_family(path):
+    try:
+        return json.loads(Path(path).read_text()).get('allow_same_family') is True
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--tier', choices=sorted(POLICY), action='append',
@@ -288,11 +303,14 @@ def main():
     parser.add_argument('--max-age', type=float, default=20, help='minutes before a reading is refreshed by a probe')
     parser.add_argument('--no-probe', action='store_true', help='never launch a probe session')
     parser.add_argument('--codex-home', default=os.environ.get('CODEX_HOME') or str(Path.home() / '.codex'))
+    parser.add_argument('--map', default='.jfactory/verification.json',
+                        help='verification map whose "allow_same_family" lets a verifier fall back to the implementer\'s family')
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
 
     readings = collect(args)
-    choices = [choose(tier, readings, args.reserve, args.implementer) for tier in (args.tier or list(POLICY))]
+    same = allow_same_family(args.map)
+    choices = [choose(tier, readings, args.reserve, args.implementer, same) for tier in (args.tier or list(POLICY))]
     if args.json:
         print(json.dumps({'checked_at': iso(now()), 'reserve_percent': args.reserve, 'accounts': readings,
                           'choices': choices}, indent=2))
