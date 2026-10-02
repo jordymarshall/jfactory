@@ -33,7 +33,10 @@ LABEL = 'jfactory'
 # The container label that marks containers this script owns, so nothing else is ever touched.
 OWNER_LABEL = 'jfactory.runner'
 STATE = Path(os.environ.get('JFACTORY_RUNNER_STATE') or Path.home() / '.cache' / 'jfactory-runners')
+# The Playwright release whose system-library list the image installs; bump it with the projects' Playwright.
+PLAYWRIGHT_DEPS = '1.61.1'
 DOCKERFILE = r'''FROM ghcr.io/actions/actions-runner:latest
+ARG PLAYWRIGHT_DEPS
 USER root
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl git gnupg jq python3 python3-venv unzip xz-utils zip \
@@ -46,7 +49,7 @@ RUN apt-get update \
 RUN arch=$(dpkg --print-architecture | sed 's/amd64/x64/') \
  && curl -fsSL "https://nodejs.org/dist/latest-v22.x/node-$(curl -fsSL https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt | grep -o "v22[0-9.]*-linux-$arch.tar.xz" | head -1 | sed 's/-linux.*//')-linux-$arch.tar.xz" \
     | tar -xJ -C /opt \
- && PATH="$(echo /opt/node-v22*/bin):$PATH" npx -y playwright@latest install-deps chromium \
+ && PATH="$(echo /opt/node-v22*/bin):$PATH" npx -y playwright@${PLAYWRIGHT_DEPS} install-deps chromium \
  && rm -rf /opt/node-v22* /root/.npm /var/lib/apt/lists/*
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod 755 /entrypoint.sh
@@ -144,7 +147,8 @@ def build(pull=False):
     with tempfile.TemporaryDirectory() as tmp:
         Path(tmp, 'Dockerfile').write_text(DOCKERFILE)
         Path(tmp, 'entrypoint.sh').write_text(ENTRYPOINT)
-        result = subprocess.run(['docker', 'build', *(['--pull'] if pull else []), '-t', IMAGE, tmp])
+        result = subprocess.run(['docker', 'build', *(['--pull'] if pull else []), '--build-arg',
+                                 f'PLAYWRIGHT_DEPS={PLAYWRIGHT_DEPS}', '-t', IMAGE, tmp])
         if result.returncode:
             raise Refused('docker build failed; see the output above')
 
@@ -278,6 +282,10 @@ def cmd_down(args):
     deadline = time.monotonic() + args.wait * 60
     while True:
         remote = remote_runners(repo, name_prefix)
+        if remote is None and not args.force:
+            # Without GitHub's list we can't tell which runners are mid-job; stopping them all could kill a job.
+            raise Refused('GitHub did not list the runners, so running jobs are unknown; rerun when GitHub answers, '
+                          'or pass --force to stop them anyway')
         busy = {r['name'] for r in remote or [] if r['busy']}
         if not busy or args.force or time.monotonic() > deadline:
             break
@@ -290,7 +298,11 @@ def cmd_down(args):
             continue
         docker('rm', '-f', name, check=False)
         removed += 1
-    for runner in remote_runners(repo, name_prefix) or []:
+    leftover = remote_runners(repo, name_prefix)
+    if leftover is None:
+        failed.append('GitHub did not list the runners, so their registrations may remain; check Settings > Actions > '
+                      'Runners (single-use runners drop off once offline)')
+    for runner in leftover or []:
         if runner['busy'] and not args.force:
             continue
         if gh_api('-X', 'DELETE', f'repos/{repo}/actions/runners/{runner["id"]}', check=False).returncode:

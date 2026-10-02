@@ -92,6 +92,20 @@ class PlanTest(unittest.TestCase):
         code = verify_plan.plan(['app/launch/page.tsx', 'outcomes/launch.md'], config)
         self.assertEqual((code['level'], code['suites']), ('independent', ['launch-journeys', 'unit']))
 
+    def test_instructions_and_tests_stay_independent_whatever_else_they_are_and_in_any_order(self):
+        # Found by the jfactory#49 verifier at ba491c4.
+        config = {**CONFIG, 'always_suites': ['unit'], '_standards': ['app/AGENTS.md', 'docs/brand.md'],
+                  'suites': {'brand-journey': {'target': 'app'}, 'unit': {}},
+                  'features': {'brand': {'paths': ['app/**', 'docs/brand.md', 'src/brand/**'],
+                                         'suites': ['brand-journey'], 'verify': 'review'}}}
+        # An agent instruction that is also a standards source is still an instruction.
+        self.assertEqual(verify_plan.plan(['app/AGENTS.md'], config)['level'], 'independent')
+        # A changed test forces independent and keeps the journeys, whichever file comes first.
+        files = ['docs/brand.md', 'src/brand/__tests__/a.test.ts']
+        for order in (files, list(reversed(files))):
+            result = verify_plan.plan(order, config)
+            self.assertEqual((result['level'], result['suites']), ('independent', ['brand-journey', 'unit']), order)
+
     def test_tests_instructions_and_screens_always_need_the_verifier(self):
         # A `ci` feature stays CI-only for its ordinary code: the negative control.
         self.assertEqual(verify_plan.plan(['tools/x.py'], CONFIG)['level'], 'ci')

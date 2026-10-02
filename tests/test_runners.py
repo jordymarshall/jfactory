@@ -202,6 +202,16 @@ class RunnersTest(unittest.TestCase):
         self.cli('down', '--repo', 'acme/shop', '--force')
         self.assertEqual(list(self.containers()), ['jfactory-blog-box-ccc'])
 
+    def test_down_refuses_when_github_cannot_say_which_runners_are_busy(self):
+        self.write_config()
+        (self.state / 'containers.json').write_text(json.dumps({
+            'jfactory-shop-box-aaa': {'state': 'running', 'repo': 'acme/shop'}}))
+        out = self.cli('down', '--repo', 'acme/shop', '--wait', '0', code=1, FAKE_GH_FORBIDDEN='1')
+        self.assertIn('running jobs are unknown', out)
+        self.assertEqual(list(self.containers()), ['jfactory-shop-box-aaa'])
+        self.cli('down', '--repo', 'acme/shop', '--force', FAKE_GH_FORBIDDEN='1', code=1)
+        self.assertEqual(self.containers(), {})
+
     def test_down_fails_loudly_when_github_refuses_removal(self):
         self.write_config()
         (self.state / 'runners.json').write_text(json.dumps([

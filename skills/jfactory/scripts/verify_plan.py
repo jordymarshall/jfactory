@@ -109,6 +109,19 @@ def review_reason(path, standards=()):
     return next((kind for kind, patterns in ALWAYS_REVIEW.items() if matches(path, patterns)), None)
 
 
+def review_reasons(path, standards=()):
+    """Every reason a changed file needs review. A file can be several things at once, such as an agent instruction
+    that is also a standards source; the strictest reason must win, whatever order files arrive in."""
+    reasons = {kind for kind, patterns in ALWAYS_REVIEW.items() if matches(path, patterns)}
+    if path in standards or any(path.startswith(s.rstrip('/') + '/') for s in standards if s.endswith('/')):
+        reasons.add('standards')
+    return reasons
+
+
+# Changes to these can weaken what the checks prove, so they always get full verification.
+FORCE_INDEPENDENT = {'tests', 'agent instructions'}
+
+
 def parse_standards(text):
     """Rows of the standards map: {dimension: {'paths': [...], 'none': reason or None, 'check': text}}. A source is
     a backticked repository path (an optional `#anchor` is dropped); `none` must say why."""
@@ -336,15 +349,19 @@ def plan(files, config, impact=None):
     # Features whose code changed. Only these run their suites: verification follows what changed, so a feature
     # touched only by its documents (outcomes, standards, prose) or instructions gets a review, not its journeys.
     code = set()
+    forced = set()  # features hit by a changed test or agent instruction: always independent, journeys kept
     for path in files:
         if matches(path, GATE_PATHS):
             gate.append(path)
             continue
         hit = {fid for fid, f in config.get('features', {}).items() if matches(path, f['paths'])}
         reason = review_reason(path, config.get('_standards', ()))
+        reasons = review_reasons(path, config.get('_standards', ()))
         if hit:
             features |= hit
-            if not path.lower().endswith(TEXT_PROSE) and reason not in ('standards', 'agent instructions'):
+            if reasons & FORCE_INDEPENDENT:
+                forced |= hit
+            if not path.lower().endswith(TEXT_PROSE) and not reasons & {'standards', 'agent instructions'}:
                 code |= hit
             # Only files that can change what users see put a screen in scope: not tests, agent instructions or
             # plain-text prose. MDX can be a rendered page, so it counts.
@@ -375,8 +392,8 @@ def plan(files, config, impact=None):
 
     # A review-level feature's journeys (suites that drive the app) don't run in CI: its verdict reviews the change
     # against the outcomes, standards and screenshots instead. Full verification still runs everything it pulls in.
-    # `reviewed` holds only tests and agent instructions here (screens are added below); those keep their journeys.
-    lighter = {f for f in features if all_features[f].get('verify') == 'review' and f not in reviewed}
+    # A changed test or agent instruction keeps the feature's journeys, even at the review level.
+    lighter = {f for f in features if all_features[f].get('verify') == 'review' and f not in forced}
     light = bool(features) and not full and all(f in lighter or f not in code for f in features)
     for fid in features:
         if fid not in code:
@@ -409,7 +426,7 @@ def plan(files, config, impact=None):
     # A feature touched only by its documents gets a review of those documents, whatever its level.
     def level_of(f):
         verify = all_features[f].get('verify', 'independent')
-        if reviewed.get(f) in ('tests', 'agent instructions'):
+        if f in forced:
             return 'independent'
         if f not in code:
             return 'review' if verify != 'ci' or f in reviewed else 'ci'
