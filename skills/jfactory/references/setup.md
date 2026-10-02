@@ -41,6 +41,8 @@ Use the existing homes for these facts; these are sections, not four mandatory n
 
 ### Record the sources of truth verifiers check against
 
+Use the bundled [grilling skill](../skills/grilling/SKILL.md) to establish the owner interview, job goals and next objective, carrying settled answers forward. Use [show-me](../skills/show-me/SKILL.md) to explain proposed job maps, workflow changes and choices needing feedback. Their answers belong in the canonical sources below, not another parallel product record.
+
 Tests prove behavior; the project's own documents say what good looks like. Verifiers need both, so record them explicitly:
 
 - **Standards map.** Create `.jfactory/standards.md` from [the template](../templates/standards.md). For each dimension (product goals and customer, brand, voice and copy, visual design system, UX principles, accessibility, performance and scale, security, privacy and data, engineering conventions, definition of done) name the one canonical document as a backticked path, or write `none` and the owner's reason. Say how changes are proven against it: a CI check, a judgment rubric, reviewed screenshots or a measure. Find the documents during reconciliation; ask the owner where a dimension has none, and offer a draft built from what exists. Mark every older document that claims the same authority as superseded.

@@ -31,3 +31,9 @@ The [coordination procedure](coordination.md) adapts pstack's orchestration play
 Upstream autonomous shipping and its preference to act without asking stay subordinate to jfactory's objective contract, product interview and the repository's authorization.
 
 Use host-native visualization and progress conventions. Current user instructions and host constraints take precedence over upstream formatting and default tool choices.
+
+## Interview and visual explanation methods
+
+The bundled [grilling adapter](../skills/grilling/SKILL.md) reads Matt Pocock's pinned original, and [show-me](../skills/show-me/SKILL.md) reads HumanLayer's pinned original. Their snapshots, licenses and receipts are in `vendor/mattpocock` and `vendor/humanlayer`; `scripts/check-upstream.py` checks these as well as pstack. Read the adapters directly when nested skills are not discovered or a Skill tool is absent. The installer-managed entry instructions provide that routing on every supported layout; native discovery remains host-dependent.
+
+The adapters carry the owner's settled decisions and authorization forward, translate grilling's question formatting and delegation to the host, and invoke show-me proactively despite its original manual-only flag. Use supported previews or linked artifacts for cloud HTML rather than macOS `open`. Product facts and resulting decisions stay in consumer-owned canonical documents, never in these snapshots or adapters.

@@ -74,7 +74,7 @@
       "verify": "independent"
     },
     "repository-tests": {
-      "paths": ["tests/test_links.py", "scripts/render_diagrams.py", "tests/run_parallel.py"],
+      "paths": ["tests/test_links.py", "tests/test_upstream.py", "scripts/render_diagrams.py", "tests/run_parallel.py"],
       "recipe": "Run the full unittest suite and a negative control for the changed test",
       "suites": ["checks"],
       "verify": "ci"

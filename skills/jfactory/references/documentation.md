@@ -42,6 +42,8 @@ Outcome and standards documents (`outcomes/`, `.jfactory/standards.md`) are the 
 
 ## Keep it current during work
 
+Use [grilling](../skills/grilling/SKILL.md) when a change or feedback reveals unresolved product, engineering or UI/UX intent, and [show-me](../skills/show-me/SKILL.md) when the owner needs to understand the change or choice. Carry the resulting decisions into the affected sources and job goals before verification; preserve settled answers and mark any consequential unresolved intent as a blocker for dependent work.
+
 Update a fact in its canonical home in the same change that alters it. Feature status should distinguish proposed, implemented, verified at a specific scope/revision, and owner-accepted. Link to evidence and the task/PR instead of copying logs. Keep current next steps in one task record; archive completed task context according to the repo's convention.
 
 AGENTS.md remains the short entry point with product brief, system map, feature/status map and agent instructions. Details belong at the linked homes. A new document needs a distinct purpose and a discoverable link; another status report for the same task does not.
