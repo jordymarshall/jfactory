@@ -26,7 +26,7 @@ Required checks still have to come from GitHub Actions. A ruleset accepts `jfact
    python3 .agents/skills/jfactory/scripts/runners.py up --count 4 --memory 6g
    python3 .agents/skills/jfactory/scripts/runners.py status
    ```
-   - The default count is half the machine's CPUs.
+   - The default count is half the machine's CPUs, but at most one runner per 6 GB of memory. Real type checks and test runners need 4 GB or more each, and runners that outgrow the machine get killed mid-job (the log says `Killed`). Add swap as a margin.
    - `--memory` caps each runner, but only where Docker has the cgroup memory controller (some sandboxed VMs refuse it, and every container then fails to start). `--shm-size` (default `2g`) is the shared memory Chromium needs.
    - The supervisor logs to `~/.cache/jfactory-runners/` and doesn't survive a reboot. Run `up` again, or start it from the machine's service manager.
 3. **Route the jobs** once runners show `online`: `gh variable set JFACTORY_RUNNER --body '["self-hosted","jfactory"]'`, or Settings > Secrets and variables > Actions > Variables.

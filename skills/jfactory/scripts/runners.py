@@ -297,13 +297,25 @@ def cmd_status(args):
     return 0
 
 
+def default_count():
+    """Half the CPUs, but at most one runner per 6 GB: type checks and test runners for a real app need 4 GB or more
+    each, and runners without a memory limit that outgrow the machine get killed mid-job."""
+    cpus = max(1, (os.cpu_count() or 2) // 2)
+    try:
+        memory_gb = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES') / 2 ** 30
+    except (ValueError, OSError, AttributeError):
+        return cpus
+    return max(1, min(cpus, int(memory_gb // 6)))
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     sub = p.add_subparsers(dest='command', required=True)
     up = sub.add_parser('up', help='Build the image if needed and start the supervisor that keeps runners ready')
     up.add_argument('--repo', help='owner/name; defaults to the current checkout')
-    up.add_argument('--count', type=int, default=max(1, (os.cpu_count() or 2) // 2),
-                    help='Runners kept ready for jobs at once on this machine (default: half the CPUs)')
+    up.add_argument('--count', type=int, default=default_count(),
+                    help='Runners kept ready for jobs at once on this machine (default: half the CPUs, at most one '
+                         'per 6 GB of memory)')
     up.add_argument('--labels', default='', help='Extra comma-separated labels after self-hosted and jfactory')
     up.add_argument('--host', help='Machine name used in runner names (default: hostname)')
     up.add_argument('--cpus', type=float, help='CPU limit per runner')

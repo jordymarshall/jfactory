@@ -1,4 +1,5 @@
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -463,6 +464,45 @@ class SetupCheckTest(unittest.TestCase):
         self.assertIn('    environment: production\n', text)
         self.assertIn('git merge-base --is-ancestor "$SHA" "origin/$BASE"', text)
         self.assertEqual(text.count('&& exit 1'), 2, 'unfilled placeholder steps must fail, not skip')
+
+    def test_ci_workflows_can_move_to_machines_the_owner_runs(self):
+        out = self.check('--remote', '--repo', 'o/r')
+        self.assertIn('PASS: CI workflows choose their runner from the JFACTORY_RUNNER variable', out)
+        self.assertNotIn('billed runners', out)
+        gate = self.root / '.github' / 'workflows' / 'jfactory-verified.yml'
+        template = gate.read_text()
+        gate.write_text(re.sub(r'runs-on: .*', 'runs-on: ubuntu-latest', template))
+        out = self.check('--remote', '--repo', 'o/r')
+        self.assertIn('WARN: These CI jobs have a fixed runner', out)
+        self.assertIn('.github/workflows/jfactory-verified.yml:', out)
+        # Reading the variable without the fork guard would let a fork PR run on the owner's machines.
+        gate.write_text(re.sub(r'runs-on: .*', "runs-on: ${{ fromJSON(vars.JFACTORY_RUNNER || '\"ubuntu-latest\"') }}", template))
+        self.assertIn('send fork PRs to the JFACTORY_RUNNER machines', self.check('--remote', '--repo', 'o/r', code=1))
+        gate.write_text(template)
+
+        state = json.loads(self.state.read_text())
+        state['repo'] = {**state['repo'], 'private': True}
+        self.state.write_text(json.dumps(state))
+        self.assertIn("CI runs on GitHub's billed runners", self.check('--remote', '--repo', 'o/r'))
+        record_path = self.root / '.jfactory' / 'setup.md'
+        record_path.write_text(record_path.read_text() + '\nCI runners: GitHub-hosted (owner, public budget is fine)\n')
+        self.assertNotIn("billed runners", self.check('--remote', '--repo', 'o/r'))
+
+        state = json.loads(self.state.read_text())
+        state['variables'] = {'JFACTORY_RUNNER': '["self-hosted","jfactory"]'}
+        self.state.write_text(json.dumps(state))
+        self.assertIn('but no such runner is online', self.check('--remote', '--repo', 'o/r'))
+        state['runners'] = [{'name': 'a', 'status': 'offline', 'labels': [{'name': 'self-hosted'}, {'name': 'jfactory'}]},
+                            {'name': 'b', 'status': 'online', 'labels': [{'name': 'self-hosted'}, {'name': 'other'}]}]
+        self.state.write_text(json.dumps(state))
+        self.assertIn('but no such runner is online', self.check('--remote', '--repo', 'o/r'))
+        state['runners'].append({'name': 'c', 'status': 'online',
+                                 'labels': [{'name': 'self-hosted'}, {'name': 'jfactory'}]})
+        self.state.write_text(json.dumps(state))
+        self.assertIn('PASS: CI runs on machines the owner runs: 1 runner(s) online', self.check('--remote', '--repo', 'o/r'))
+        state['variables'] = {'JFACTORY_RUNNER': 'self-hosted'}
+        self.state.write_text(json.dumps(state))
+        self.assertIn('JFACTORY_RUNNER is not JSON', self.check('--remote', '--repo', 'o/r', code=1))
 
 
 if __name__ == '__main__':

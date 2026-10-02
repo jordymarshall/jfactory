@@ -141,6 +141,15 @@ if tool == 'gh' and args[:1] == ['api'] and len(args) == 2:
         done(db['protection'])
     if '/rules/branches/' in args[1]:
         done(db.get('rules', []))
+    if '/actions/variables/' in args[1]:
+        name = args[1].rsplit('/', 1)[1]
+        if name not in db.get('variables', {}):
+            path.write_text(json.dumps(db))
+            sys.stderr.write('Not Found (HTTP 404)')
+            sys.exit(1)
+        done({'name': name, 'value': db['variables'][name]})
+    if args[1].endswith('/actions/runners'):
+        done({'total_count': len(db.get('runners', [])), 'runners': db.get('runners', [])})
     if args[1].count('/') == 2:
         done(db.get('repo', {'default_branch': 'main', 'allow_auto_merge': False}))
 if tool == 'gh' and args[:3] == ['api', '-X', 'POST']:
