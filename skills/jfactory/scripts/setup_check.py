@@ -532,6 +532,33 @@ def check_standards(root, report, states):
         report.add('PASS', f'Standards map covers {len(rows)} dimensions with {len(sources)} source document(s)')
 
 
+# A goal test is a spec under a goals/ folder (references/goal-tests.md), or an optional e2e `*.e2e.ts` file.
+GOAL_TEST = re.compile(r'(?:\bgoals/[\w./-]*\.(?:spec|test)\.[cm]?[jt]sx?|[\w./-]+\.e2e\.[cm]?[jt]s)\b')
+
+
+def check_goal_tests(root, report):
+    """Job documents of features with screens prove their key goals with goal tests (references/goal-tests.md): at
+    least one of them links a goal test file in its "How it's proven" column. A product without screens has none."""
+    try:
+        config = verify_plan.load_config(root=root)
+    except (verify_plan.Refused, ValueError):
+        return
+    names = sorted({doc for f in config.get('features', {}).values() if verify_plan.has_screens(f, config)
+                    for doc in verify_plan.outcome_docs(f) if doc.startswith('outcomes/')})
+    docs = [root / name for name in names if (root / name).is_file()]
+    if not docs:
+        return
+    linked = [d for d in docs
+              if any(GOAL_TEST.search(proof) for _, proof in verify_plan.journey_proofs(d.read_text(errors='replace')))]
+    if linked:
+        report.add('PASS', f'{len(linked)} of {len(docs)} job document(s) with screens link a goal test in '
+                           '"How it\'s proven"')
+    else:
+        report.add('WARN', f'None of the {len(docs)} job document(s) for features with screens links a goal test '
+                           '(a spec under a goals/ folder) in its "How it\'s proven" column. Setup writes one goal test per key '
+                           'goal, starting with the most important journeys (references/goal-tests.md)')
+
+
 def check_delivery(root, report, states):
     path = root / '.jfactory' / 'coordination.json'
     config = json.loads(path.read_text()) if path.is_file() else {}
@@ -699,6 +726,7 @@ def main(argv=None):
     states = check_record(root, args.record, report)
     check_verification(root, report, states)
     check_standards(root, report, states)
+    check_goal_tests(root, report)
     check_delivery(root, report, states)
     check_runners(root, report, states)
     remote_ok = False

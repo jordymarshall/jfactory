@@ -37,6 +37,8 @@ class InstallTests(unittest.TestCase):
         # Every adopting repository's agents get these as standing rules, not only inside the skill.
         block = installer.managed_block('.agents/skills/jfactory')
         self.assertIn('Verify only what changed', block)
+        self.assertIn('goal tests (Playwright specs from job goals)', block)
+        self.assertIn('UX explore of each changed journey', block)
         self.assertIn('review the diff and the features it touches, not unrelated areas', block)
         self.assertIn('at most 5 checks per wait', block)
         self.assertIn('ASD-STE100 writing rules (.agents/skills/jfactory/references/writing.md)', block)

@@ -39,7 +39,7 @@ Separate **observed facts**, **inferred design intent**, **recommendations for o
 
 ## Bug bash our own app
 
-When the owner asks to bug bash, QA or hunt for bugs, or before releasing a large change to screens, follow the [bug bash procedure](references/bug-bash.md). Plan five to ten one-sentence charters, each with one area and one stance, and run up to four explorers in parallel. Record what they report as claims. Triage each against the source, and confirm a claim only with a repro test that fails for the reason it reports (`study.py confirm`). Report confirmed bugs only; an explorer's finding is a hypothesis until then.
+When the owner asks to bug bash, QA or hunt for bugs, or before releasing a large change to screens, follow the [bug bash procedure](references/bug-bash.md). Plan five to ten one-sentence charters, each with one area and one stance, and run up to four explorers in parallel. Record what they report as claims. Triage each against the source, and confirm a claim only with a repro test that fails for the reason it reports (`study.py confirm`). Report confirmed bugs only; an explorer's finding is a hypothesis until then. The verifier also explores each changed journey for UX review, with a charter built from the job document and the standards map ([explore for UX review](references/bug-bash.md#explore-for-ux-review)).
 
 ## Return a reviewable result
 

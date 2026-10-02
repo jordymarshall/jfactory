@@ -94,6 +94,35 @@ Use separate verifiers, one per area with three to five candidates each, so the 
 
 The repro tests fail until their bugs are fixed, so keep them out of the gating suite: leave them uncommitted, or tag them and exclude the tag from CI. Offer to fix each bug as its own objective. The repro test becomes that fix's regression criterion, proven with [`evidence.py contrast`](../../../references/verification.md#prove-a-fix-fails-before-it-and-passes-after-it): it fails on the base and passes at the head. Remove its bug-bash tag once it passes.
 
+## Explore for UX review
+
+An explorer finds more than bugs. It also meets confusing steps, dead ends, slow states and unclear copy, which are what a first-time user feels. So the verifier explores the changed journey for UX review, not only the owner's bug bash. The verifier does it in its own session, with the step-by-step helper: `study.py step` performs one action and captures the screen, and `study.py note` records what the verifier saw ([step-by-step walkthroughs](browser.md#step-by-step-walkthroughs)). No CI job and no model API key are involved.
+
+Build the charter from the project's own sources of truth:
+
+1. **The job.** Take the user, the trigger and the outcome from the job document (`outcomes/<job>.md`), and the start route from its recipe.
+2. **The posture.** Explore like a first-time user, unless the job names another user.
+3. **The standards.** Name the rows of `.jfactory/standards.md` that apply: the UX principles, the copy rules and the performance budget.
+4. **The boundaries.** Say what the explorer must not do: no purchases, no invitations, no deletion of real data.
+
+A charter template:
+
+> Explore <job, in the user's words> like <the user from the job document>, starting at <route>. Report confusing steps, dead ends, slow states, unclear copy and bugs, judged against <UX principles and copy rules from the standards map>. Stop before <boundary>.
+
+For example: "Explore planning a brief like a first-time user, starting at /briefs. Report confusing steps, dead ends, slow states, unclear copy and bugs, judged against the brand's writing rules. Stop before starting production."
+
+Record the charter as the study's objective (`study.py init <name> --url <app> --objective "<charter>"`). Keep the budget small: about 8 actions and 10 minutes per journey. Never explore production: use a local app, a PR preview or staging.
+
+### UX explore as verifier evidence
+
+The verifier of a change to screens includes one UX explore of each changed journey in its walkthrough ([verification contract](../../../references/verification.md#change-aware-verification-and-the-merge-gate)). For a `review`-level change, this one explore is the walkthrough.
+
+1. Explore with the charter above, one action at a time, and note what each screenshot shows.
+2. Check each finding against its screenshot and the page. Drop findings the evidence contradicts.
+3. Report the rest as findings in the verdict's evidence, each with its screenshot, and link the rendered walkthrough.
+
+A finding is not an automatic failure of the gate. A finding fails the verdict only when the verifier confirms it breaks a job goal, a standard or a criterion of the change. Otherwise it goes to the PR as a note or a proposed objective.
+
 ## Rules
 
 - Never report an unverified finding as a bug. "The explorer reported" is not "confirmed".

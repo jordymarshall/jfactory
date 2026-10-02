@@ -71,6 +71,8 @@ Some projects write journeys as goals in plain language that a model carries out
 
 Install such a tool in the project, with its own skill if it ships one, not inside the jfactory bundle.
 
+The default is simpler: setup writes [goal tests](goal-tests.md), which are ordinary Playwright specs that an agent writes from each job document's key goals. They need no model in CI. A model-driven tool is an optional add-on.
+
 Set `shards` to the number of parallel CI jobs. `ci --shard I/N` runs its share of the planned suites, balanced by recorded minutes, so a 40-minute plan across four jobs takes about 10 minutes of waiting. It still uses 40 minutes of compute.
 
 ## 7. Define where the app runs, and prove it starts
