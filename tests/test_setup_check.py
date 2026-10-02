@@ -297,7 +297,7 @@ class SetupCheckTest(unittest.TestCase):
         self.assertIn(missing, self.check('--remote', '--repo', 'o/r', code=1))
         live.write_text(template.replace("  schedule:\n    # Mondays, off the hour to avoid the scheduler's peak.\n    - cron: '23 5 * * 1'\n", ''))
         self.assertIn(missing, self.check('--remote', '--repo', 'o/r', code=1))
-        live.write_text(template.replace('    runs-on: ubuntu-latest\n    timeout-minutes: 90', '    if: false\n    runs-on: ubuntu-latest\n    timeout-minutes: 90'))
+        live.write_text(template.replace('  live:\n', '  live:\n    if: false\n'))
         self.assertIn(missing, self.check('--remote', '--repo', 'o/r', code=1))
         # Found by the PR #45 re-check: a job guard that skips scheduled events must not count, and an unrelated
         # disabled step must not discount a live job that does run.

@@ -24,7 +24,8 @@ env:
   JFACTORY_DIR: .agents/skills/jfactory
 jobs:
   live:
-    runs-on: ubuntu-latest
+    # Machines you own when the JFACTORY_RUNNER variable says so (references/ci-runners.md), otherwise GitHub's.
+    runs-on: ${{ fromJSON(vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 90
     env:
       JFACTORY_RUN_ID: gh-live-${{ github.run_id }}-${{ github.run_attempt }}
