@@ -30,8 +30,9 @@ Read the pinned originals this adapts: [orchestrate](../vendor/pstack/skills/pot
 | `set <issue> <unit> --state` | Coordinator | Marks a unit blocked, failed or abandoned with a note |
 | `close <issue>` | Coordinator | Closes the program only when every unit is merged, done (verifiers without their own PR) or abandoned |
 | `tidy` | Anyone | Archives finished PR workspaces and deletes finished `Program:` sidebar sections |
+| `land --pr N [--head SHA] [--wait MIN]` | Anyone delivering a verified PR outside a program | Queues protected squash auto-merge at the verified head, waits for GitHub to merge it (30 minutes by default), reads back the merge commit, then archives that PR's finished workspaces, giving their sessions up to two minutes to go idle. It stops if auto-merge is removed, for example by a new push |
 
-`sync`, `verdict`, `merge`, `close` and `tidy` also archive finished PR workspaces as they run; see [finished workspaces archive themselves](#finished-workspaces-archive-themselves).
+`sync`, `verdict`, `merge`, `land`, `launch`, `close` and `tidy` also archive finished PR workspaces as they run; see [finished workspaces archive themselves](#finished-workspaces-archive-themselves).
 
 The issue body has one writer, the coordinator. Workers never edit it; they add report comments, and the newest report after the coordinator's last change to that unit wins at the next `sync`. This avoids concurrent edits to one body. Anyone with comment access could post a report, so the coordinator still checks each claim against the actual PR.
 
@@ -163,7 +164,7 @@ Finished workspaces are archived as soon as their unit finishes, not at program 
 
 Conductor records no branch or PR on a workspace and has no archive-on-merge, so jfactory names every workspace it launches for a PR `<role>-<repo name>-<PR number>` (role `verify`, `build` or `fix`) with `coord.py launch --role <role> --pr <number>`. The name is how a later command finds the PR.
 
-jfactory-launched workspaces are archived automatically, the next time any of `sync`, `verdict` (in `coord.py` or `verify_plan.py`), `merge`, `close` or `tidy` runs after their PR merges or closes. Nobody has to remember to do it. Each of these lists your own (`--mine`) workspaces and archives one only when all of these hold:
+jfactory-launched workspaces are archived automatically, the next time any of `sync`, `verdict` (in `coord.py` or `verify_plan.py`), `merge`, `land`, `launch`, `close` or `tidy` runs after their PR merges or closes. GitHub merges a queued auto-merge later, on its own, so a sweep that runs when the merge is queued still finds the PR open. That is why a verified PR outside a program is delivered with `land`: it waits for the merge to land and then archives. A program's `sync` and `close` run after merges anyway. Every `launch` also sweeps, as a safety net for a merge that landed after the last command. Each of these lists your own (`--mine`) workspaces and archives one only when all of these hold:
 
 - its whole name is exactly `<role>-<repo name>-<PR number>`: a lowercase role of `verify`, `build` or `fix`, the repository's name (in any letter case, as GitHub treats it), and a PR number without leading zeros. Nothing may come before or after it, not even a space or a newline;
 - its repository URL, as an HTTPS, SSH or `git@host:owner/name` remote, is exactly this repository on GitHub: same host, owner and name, with nothing extra in the path;

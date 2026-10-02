@@ -670,6 +670,50 @@ def cmd_launch_pr(args):
     print(f'It is archived automatically once PR #{args.pr} merges or closes and its sessions are idle.')
 
 
+def cmd_land(args):
+    """Queue protected auto-merge for one PR at its verified head, wait for GitHub to merge it, then archive the PR's
+    finished workspaces. GitHub merges asynchronously, so a sweep run when merge is queued finds the PR still open;
+    this one runs after the merge lands."""
+    view = lambda: json.loads(gh(args.repo, 'pr', 'view', str(args.pr), '--json',  # noqa: E731
+                                 'state,headRefOid,mergeCommit,autoMergeRequest'))
+    pr = view()
+    head = args.head or pr['headRefOid']
+    if pr['state'] == 'OPEN':
+        if pr['headRefOid'] != head:
+            raise Refused(f"PR #{args.pr} head is {pr['headRefOid'][:7]}, not the verified {head[:7]}")
+        # GitHub's required checks still decide; --match-head-commit refuses a head pushed after verification.
+        gh(args.repo, 'pr', 'merge', str(args.pr), '--auto', '--squash', '--match-head-commit', head)
+        print(f'Queued protected auto-merge for #{args.pr} at {head[:7]}', flush=True)
+        deadline = time.monotonic() + args.wait * 60
+        while True:
+            pr = view()
+            if pr['state'] != 'OPEN':
+                break
+            if not pr.get('autoMergeRequest'):
+                raise Refused(f'Auto-merge for #{args.pr} is no longer queued (a new push or a failed check '
+                              'removes it); verify the current head and land it again')
+            if time.monotonic() >= deadline:
+                print(f'#{args.pr} is still queued after {args.wait} min; GitHub merges it once its checks pass. '
+                      'Its workspaces are archived by the next jfactory command after that (`coord.py tidy`, '
+                      '`launch`, `sync` or a verdict)')
+                return
+            time.sleep(args.interval)
+    merged = (pr.get('mergeCommit') or {}).get('oid')
+    print(f"#{args.pr} is {pr['state'].lower()}" + (f' as {merged[:7]}' if merged else ''), flush=True)
+    # A verifier or builder session may take a moment to go idle after its last message; give it that time.
+    settle = time.monotonic() + args.settle
+    while True:
+        archived, notes = archive_merged(args.repo)
+        for line in archived:
+            print('Tidied: ' + line)
+        waiting = [n for n in notes if f'PR #{args.pr} ' in n and 'still working' in n]
+        if not waiting or time.monotonic() >= settle:
+            for note in notes:
+                print('Check: ' + note)
+            return
+        time.sleep(args.interval)
+
+
 def verdict_at_head(state, unit):
     for row in reversed(state['ledger']):
         if row['pr'] == unit.get('pr') and row['head'] == unit.get('head'):
@@ -796,7 +840,11 @@ def cmd_launch(args):
             raise Refused('Use either `launch <issue> <unit>` for a program unit or `launch --role --pr` for a PR')
         if not args.role or not args.pr:
             raise Refused('launch needs <issue> <unit>, or --role verify|build|fix with --pr')
-        return cmd_launch_pr(args)
+        cmd_launch_pr(args)
+        if not args.dry_run:
+            # Also a safety net: archive finished PR workspaces whose merge landed after the last jfactory command.
+            sweep(args.repo)
+        return
     if not args.unit or not args.brief:
         raise Refused('launch <issue> <unit> needs --brief')
     state = load(args.repo, args.program)
@@ -894,6 +942,7 @@ def cmd_launch(args):
     save(args.repo, args.program, state)
     comment(args.repo, args.program, f"Launched `{args.unit}` on {role['agent']}/{role['model']}: {unit['link']}")
     print(f"Launched {args.unit}: {unit['link']}")
+    sweep(args.repo)
 
 
 def cmd_report(args):
@@ -1231,6 +1280,15 @@ def main(argv=None):
     p.add_argument('--decision', choices=['change-rule', 'keep-rule'],
                    help='For a rule-change decision: the owner\'s choice, which sets the waiting unit\'s next step')
     p.set_defaults(func=cmd_gate)
+    p = sub.add_parser('land', help='Queue protected auto-merge for a verified PR, wait for it to merge, then archive '
+                                    'its finished workspaces')
+    p.add_argument('--pr', type=int, required=True)
+    p.add_argument('--head', help='The verified head; defaults to the PR\'s current head')
+    p.add_argument('--wait', type=float, default=30, help='Minutes to wait for GitHub to merge (default 30)')
+    p.add_argument('--settle', type=float, default=120,
+                   help='Seconds to wait for the PR\'s workspace sessions to go idle after the merge (default 120)')
+    p.add_argument('--interval', type=float, default=15, help=argparse.SUPPRESS)
+    p.set_defaults(func=cmd_land)
     p = sub.add_parser('tidy', help='Archive finished PR workspaces and delete finished Program sidebar sections')
     p.set_defaults(func=cmd_tidy)
     p = sub.add_parser('close', help='Close a finished program, archive its workspaces and delete its section')

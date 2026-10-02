@@ -183,9 +183,19 @@ if tool == 'gh':
               and (not opt('--label') or opt('--label') in [label['name'] for label in v.get('labels', [])])
               and (not opt('--search') or opt('--search').split('"')[1] in v.get('title', ''))][:int(opt('--limit', '30'))])
     if args[:2] == ['pr', 'view']:
-        done({'baseRefName': 'main', 'comments': [], 'isCrossRepository': False, **db['prs'][args[2]]})
+        pr = db['prs'][args[2]]
+        # `land_after`: GitHub merges a queued auto-merge after this many more views.
+        if pr.get('autoMergeRequest') and 'land_after' in db:
+            db['land_after'] -= 1
+            if db['land_after'] <= 0:
+                pr.update(state='MERGED', mergeCommit={'oid': 'merge5555'}, autoMergeRequest=None)
+        if db.get('drop_auto_merge'):
+            pr['autoMergeRequest'] = None
+        done({'baseRefName': 'main', 'comments': [], 'isCrossRepository': False, **pr})
     if args[:2] == ['pr', 'merge']:
         db.setdefault('merged', []).append(args[2])
+        if args[2] in db.get('prs', {}):
+            db['prs'][args[2]]['autoMergeRequest'] = {'mergeMethod': 'SQUASH'}
         done()
 sys.stderr.write(f'fake: unsupported {tool} {args}\n')
 sys.exit(1)
