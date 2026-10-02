@@ -28,15 +28,18 @@ if args[0] == 'build':
     (state / 'image').write_text('built')
 elif args[0] == 'ps':
     repo = next(a for a in args if a.startswith('label=')).split('=', 2)[2]
+    slots = 'jfactory.slot' in ' '.join(args)
     for name, box in boxes.items():
         if box['repo'] == repo:
-            print(f"{name}\t{box['state']}")
+            print(box.get('slot', '') if slots else f"{name}\t{box['state']}")
 elif args[0] == 'create':
     if os.environ.get('FAKE_DOCKER_FAIL'):
         print('no space left on device', file=sys.stderr)
         sys.exit(1)
     name = args[args.index('--name') + 1]
-    boxes[name] = {'state': 'created', 'repo': args[args.index('--label') + 1].split('=', 1)[1]}
+    labels = [args[i + 1] for i, a in enumerate(args) if a == '--label']
+    boxes[name] = {'state': 'created', 'repo': labels[0].split('=', 1)[1],
+                   'slot': next((l.split('=', 1)[1] for l in labels if l.startswith('jfactory.slot=')), '')}
     save()
 elif args[0] == 'cp':
     name = args[2].split(':')[0]
@@ -132,6 +135,9 @@ class RunnersTest(unittest.TestCase):
             self.assertFalse(any('jit-for-' in a for a in args), args)
         create = next(a for a in self.log('docker.log') if a[0] == 'create')
         self.assertIn('--rm', create)
+        # Each runner gets its own CPUs, so tools that start a worker per CPU don't multiply across runners.
+        slices = [a[a.index('--cpuset-cpus') + 1] for a in self.log('docker.log') if a[0] == 'create']
+        self.assertEqual(len(set(slices)), 2, slices)
         self.assertEqual(create[create.index('--memory') + 1], '6g')
         jit = next(a for a in self.log('gh.log') if 'generate-jitconfig' in ' '.join(a))
         self.assertEqual([a for a in jit if a.startswith('labels[]=')],

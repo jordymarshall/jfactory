@@ -149,6 +149,22 @@ def build(pull=False):
             raise Refused('docker build failed; see the output above')
 
 
+def cpu_slice(slot, count):
+    """The CPUs runner `slot` of `count` may use. Tools size their workers by the CPUs they can see (Vitest and Jest
+    start one worker per CPU), so an unpinned container on a big machine starts many workers per job and the machine
+    runs out of memory; a slice makes each job behave as on a hosted runner with the same CPUs."""
+    total = os.cpu_count() or 1
+    size = max(1, total // count)
+    first = (slot * size) % total
+    return f'{first}-{min(first + size, total) - 1}'
+
+
+def free_slot(repo, count):
+    out = docker('ps', '-a', '--filter', f'label={OWNER_LABEL}={repo}', '--format', '{{.Label "jfactory.slot"}}').stdout
+    used = {int(x) for x in out.split() if x.isdigit()}
+    return next((n for n in range(count) if n not in used), 0)
+
+
 def start_one(repo, config):
     """Mint a single-use runner configuration and start one fresh container with it."""
     name = f'{config["prefix"]}-{secrets.token_hex(3)}'
@@ -156,7 +172,11 @@ def start_one(repo, config):
     minted = json.loads(gh_api('-X', 'POST', f'repos/{repo}/actions/runners/generate-jitconfig', '-f', f'name={name}',
                                '-F', 'runner_group_id=1', '-f', 'work_folder=_work',
                                *[x for label in labels for x in ('-f', f'labels[]={label}')]).stdout)
-    cmd = ['create', '--rm', '--name', name, '--label', f'{OWNER_LABEL}={repo}', '--shm-size', config['shm_size']]
+    slot = free_slot(repo, config['count'])
+    cmd = ['create', '--rm', '--name', name, '--label', f'{OWNER_LABEL}={repo}', '--label', f'jfactory.slot={slot}',
+           '--shm-size', config['shm_size']]
+    if config.get('pin_cpus', True):
+        cmd += ['--cpuset-cpus', cpu_slice(slot, config['count'])]
     if config.get('cpus'):
         cmd += ['--cpus', str(config['cpus'])]
     if config.get('memory'):
