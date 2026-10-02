@@ -26,7 +26,8 @@ jobs:
     if: >-
       (github.event_name == 'pull_request_target' && !github.event.pull_request.head.repo.fork) ||
       (github.event_name == 'issue_comment' && github.event.issue.pull_request)
-    runs-on: ubuntu-latest
+    # Machines you own when the JFACTORY_RUNNER variable says so (references/ci-runners.md), otherwise GitHub's; fork PRs always GitHub's.
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}
     steps:
       - name: Resolve the PR's base branch
         id: base

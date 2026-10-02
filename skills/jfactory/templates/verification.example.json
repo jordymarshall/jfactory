@@ -11,7 +11,8 @@
     "unit": {"run": "npm test", "minutes": 3},
     "smoke": {"run": "npx playwright test e2e/smoke.spec.ts", "minutes": 1, "target": "local"},
     "browser-briefs": {"run": "npx playwright test e2e/briefs.spec.ts", "minutes": 4, "target": "local"},
-    "browser-sign-in": {"run": "npx playwright test e2e/sign-in.spec.ts", "minutes": 3, "target": "local"}
+    "browser-sign-in": {"run": "npx playwright test e2e/sign-in.spec.ts", "minutes": 3, "target": "local"},
+    "browser-marketing": {"run": "npx playwright test e2e/marketing.spec.ts", "minutes": 2, "target": "local"}
   },
   "targets": {
     "local": {
@@ -57,6 +58,13 @@
       "recipe": "Build, run the unit suite and the smoke journey; journeys the change does not select run only in a whole-suite run (full_suite)",
       "suites": ["unit", "smoke"],
       "verify": "independent"
+    },
+    "marketing-pages": {
+      "paths": ["app/src/app/(marketing)/**", "app/src/components/marketing/**"],
+      "outcome": "outcomes/understand-the-product.md",
+      "recipe": "Review the diff against the outcome, the copy and design standards, and screenshots of each changed page at desktop and phone",
+      "suites": ["unit", "browser-marketing"],
+      "verify": "review"
     },
     "internal-tooling": {
       "paths": ["scripts/**", "app/src/lib/logging/**"],

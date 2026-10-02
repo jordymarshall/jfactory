@@ -149,12 +149,13 @@ def check_verification(root, report, states):
         features = config.get('features', {})
         unset = sorted(f for f, v in features.items() if 'verify' not in v)
         low = sorted(f for f, v in features.items() if v.get('verify') == 'ci')
+        lighter = sorted(f for f, v in features.items() if v.get('verify') == 'review')
         if unset:
             report.add('WARN', f'{len(unset)} feature(s) have no risk level and default to independent verification: '
-                               f'{", ".join(unset[:8])}. Agree "verify": "independent" or "ci" with the owner')
+                               f'{", ".join(unset[:8])}. Agree "verify": "independent", "review" or "ci" with the owner')
         else:
-            report.add('PASS', f'Risk levels set: {len(features) - len(low)} independent, {len(low)} CI-only'
-                               + (f' ({", ".join(low)})' if low else ''))
+            report.add('PASS', f'Risk levels set: {len(features) - len(low) - len(lighter)} independent, '
+                               f'{len(lighter)} review, {len(low)} CI-only' + (f' (ci: {", ".join(low)})' if low else ''))
     if config is not None and tracked is not None:
         for level, text in verify_plan.audit(tracked, config, root):
             report.add(level, f'Map: {text}')
@@ -562,9 +563,87 @@ def check_release(config, target, report, states):
                           ' under "release" in .jfactory/coordination.json (see references/release.md)')
         return
     report.add('PASS', 'Release procedure recorded: ' + ', '.join(fields))
+    standing = config.get('release_after_merge')
+    if standing is not None:
+        if not isinstance(standing, dict) or not all(str(standing.get(k) or '').strip() for k in ('owner', 'date')):
+            report.add('FAIL', '"release_after_merge" must record the owner and date of the standing authorization '
+                               '(references/release.md#release-after-every-merge)')
+        else:
+            report.add('PASS', f"Every verified merge is released to production (owner {standing['owner']}, "
+                               f"{standing['date']}" + (f", until {standing['until']}" if standing.get('until') else '') + ')')
     if not str(release.get('approval') or '').strip():
         report.add('WARN', 'No "approval" gate is recorded for production, so only instructions stop an early '
                            'release; protect the production environment where the host allows it')
+
+
+def check_runners(root, report, states):
+    """CI and gate workflows read JFACTORY_RUNNER, so CI can move to machines the owner runs (references/ci-runners.md)."""
+    workflows = root / '.github' / 'workflows'
+    if not workflows.is_dir():
+        return
+    fixed, unguarded = [], []
+    for path in sorted(workflows.glob('*.y*ml')):
+        text = path.read_text()
+        if 'verify_plan.py' not in text and 'method_audit.py' not in text:
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            if not re.match(r'\s*runs-on:', line):
+                continue
+            where = f'{path.relative_to(root)}:{number}'
+            if 'JFACTORY_RUNNER' not in line:
+                fixed.append(where)
+            elif 'head.repo.fork' not in line:
+                unguarded.append(where)
+    if unguarded:
+        report.add('FAIL', 'These jobs send fork PRs to the JFACTORY_RUNNER machines, so a fork could run its code on '
+                           'them; use the templates\' runs-on, which keeps forks on GitHub\'s runners: ' + ', '.join(unguarded))
+    if fixed:
+        report.add('WARN', 'These CI jobs have a fixed runner, so CI cannot move to machines the owner runs when hosted '
+                           'minutes cost too much or run out; use the templates\' runs-on (references/ci-runners.md): '
+                           + ', '.join(fixed))
+    elif not unguarded:
+        report.add('PASS', 'CI workflows choose their runner from the JFACTORY_RUNNER variable')
+
+
+def check_remote_runners(repo, info, record_text, report):
+    """Where CI runs: a private repository on GitHub's billed runners is an owner choice, and routed jobs need runners."""
+    try:
+        value = json.loads(verify_plan.run('gh', 'api', f'repos/{repo}/actions/variables/JFACTORY_RUNNER')).get('value')
+    except verify_plan.Refused as error:
+        if '404' not in str(error) and 'Not Found' not in str(error):
+            report.add('INFO', f'Could not read the JFACTORY_RUNNER variable ({error}); where CI runs is unconfirmed')
+            return
+        value = None
+    except ValueError:
+        value = None
+    decided = re.search(r'^CI runners:\s*(?!<)\S', record_text, re.M)
+    if not value:
+        if info.get('private') and not decided:
+            report.add('WARN', 'CI runs on GitHub\'s billed runners, and a spending limit stops every required check; '
+                               'ask the owner whether CI runs on machines they own (references/ci-runners.md) and '
+                               'record the answer as a "CI runners:" line in the setup record')
+        return
+    try:
+        labels = json.loads(value)
+        labels = [labels] if isinstance(labels, str) else list(labels)
+    except ValueError:
+        report.add('FAIL', f'JFACTORY_RUNNER is not JSON ({value!r}); every routed job would fail to start')
+        return
+    if labels == ['ubuntu-latest'] or not any(label == 'self-hosted' for label in labels):
+        return
+    try:
+        runners = json.loads(verify_plan.run('gh', 'api', f'repos/{repo}/actions/runners')).get('runners', [])
+    except (verify_plan.Refused, ValueError) as error:
+        report.add('WARN', f'JFACTORY_RUNNER routes CI to {labels}, but the runners could not be listed ({error}); '
+                           'confirm one is online or jobs will wait')
+        return
+    online = [r for r in runners if r.get('status') == 'online'
+              and set(labels) <= {label.get('name') for label in r.get('labels', [])}]
+    if online:
+        report.add('PASS', f'CI runs on machines the owner runs: {len(online)} runner(s) online with {labels}')
+    else:
+        report.add('WARN', f'JFACTORY_RUNNER routes CI to {labels}, but no such runner is online, so jobs wait and then '
+                           'fail; start them (scripts/runners.py up) or delete the variable to use GitHub\'s runners')
 
 
 def check_remote(repo, branch, report, states):
@@ -621,6 +700,7 @@ def main(argv=None):
     check_verification(root, report, states)
     check_standards(root, report, states)
     check_delivery(root, report, states)
+    check_runners(root, report, states)
     remote_ok = False
     if args.remote:
         repo = args.repo
@@ -632,6 +712,13 @@ def main(argv=None):
                 report.add(level, f'Could not identify the GitHub repository: {error}')
         if repo:
             remote_ok = check_remote(repo, args.branch, report, states)
+            try:
+                info = json.loads(verify_plan.run('gh', 'api', f'repos/{repo}'))
+            except (verify_plan.Refused, ValueError):
+                info = None
+            if info is not None:
+                record = root / args.record
+                check_remote_runners(repo, info, record.read_text() if record.is_file() else '', report)
     else:
         report.add('INFO', 'GitHub settings not checked; rerun with --remote before calling PR delivery verified')
 

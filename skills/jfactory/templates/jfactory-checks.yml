@@ -23,7 +23,8 @@ env:
   JFACTORY_DIR: .agents/skills/jfactory
 jobs:
   mode:
-    runs-on: ubuntu-latest
+    # Machines you own when the JFACTORY_RUNNER variable says so (references/ci-runners.md), otherwise GitHub's; fork PRs always GitHub's.
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}
     outputs:
       mode: ${{ steps.mode.outputs.mode }}
     steps:
@@ -39,7 +40,7 @@ jobs:
   suites:
     needs: mode
     if: needs.mode.outputs.mode != 'skip'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -90,7 +91,7 @@ jobs:
   checks:
     needs: [mode, suites]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}
     steps:
       - name: Require every parallel job to pass
         env:

@@ -213,10 +213,24 @@ class UsageTests(unittest.TestCase):
     def test_verify_holds_rather_than_same_family_when_other_family_is_exhausted(self):
         self.claude(50, 95, 1)
         self.codex_log(10, 1)
-        out = self.run_usage('--tier', 'verify', '--implementer', 'codex')
+        out = self.run_usage('--tier', 'verify', '--implementer', 'codex', '--map', str(self.state / 'no-map.json'))
         self.assertEqual(out['returncode'], 3)
         self.assertEqual(out['choice']['verify'], (None, None, None))
         self.assertIn('same family as the implementer', out['choices'][0]['reason'])
+
+    def test_verify_falls_back_to_the_implementers_family_when_the_repository_allows_it(self):
+        self.claude(5, 1, 1)
+        self.codex_log(95, 1)
+        allowed = self.state / 'allowed.json'
+        allowed.write_text(json.dumps({'version': 1, 'allow_same_family': True}))
+        out = self.run_usage('--tier', 'verify', '--implementer', 'claude', '--map', str(allowed))
+        self.assertEqual(out['returncode'], 0)
+        self.assertEqual(out['choice']['verify'], ('claude', 'opus-5-5-1m', 'low'))
+        self.assertIn('same-family fallback', out['choices'][0]['reason'])
+        # The other family still comes first while it has usage.
+        self.codex_log(10, 1)
+        out = self.run_usage('--tier', 'verify', '--implementer', 'claude', '--map', str(allowed))
+        self.assertEqual(out['choice']['verify'], ('codex', 'gpt-6.1-sol', 'low'))
 
     def test_codex_exhaustion_moves_verification_to_opus_low_without_fast_mode(self):
         self.claude(5, 1, 1)

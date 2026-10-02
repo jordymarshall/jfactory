@@ -133,6 +133,20 @@ class CoordTest(unittest.TestCase):
         self.assertIn('workspace not archived', out)
         self.assertNotIn('deleted_sections', self.db())
 
+    def test_sync_tells_the_coordinator_to_stop_after_five_quiet_checks(self):
+        self.start(['a', '--objective', 'x'], limit=1)
+        for _ in range(4):
+            self.assertNotIn('Stop:', self.coord('sync', '1'))
+        self.coord('sync', '1', '--dry-run')  # a dry run doesn't count either way
+        out = self.coord('sync', '1')
+        self.assertIn('Stop: 5 syncs in a row changed nothing', out)
+        self.assertIn('Report to the owner', out)
+        # Something new resets the budget.
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'aaa1111')
+        self.assertNotIn('Stop:', self.coord('sync', '1'))
+
     def test_sync_reports_status_and_archive_failures_without_crashing(self):
         self.start(['a', '--objective', 'x'], ['b', '--objective', 'y'], ['c', '--objective', 'z'], limit=3)
         for uid in ('a', 'b', 'c'):

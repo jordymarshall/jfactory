@@ -15,6 +15,12 @@ Last reviewed <date> against `<base>` at `<commit>`.
 | Environments | <state> | <evidence, or the gap and who acts next> |
 | PR delivery | <state> | <evidence, or the gap and who acts next> |
 
+CI runners: <machines the owner runs (`JFACTORY_RUNNER`, which machines, proving PR) | GitHub-hosted, and the owner's reason>
+
+Release: <production only on request (default) | every verified merge until <condition> (`release_after_merge`, owner, date)>
+
+Verifier family: <another model family (default) | same family allowed when the other has no usage (`allow_same_family`, owner, date)>
+
 States: `verified`, `configured but unverified`, `blocked`, `not run by request`, `not applicable` (never for PR delivery; use `blocked` until PRs and required checks work).
 
 ## Owner interview

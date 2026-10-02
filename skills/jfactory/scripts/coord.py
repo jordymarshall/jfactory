@@ -972,6 +972,9 @@ def cmd_report(args):
         print(f'PROGRAM ON HOLD: stop at a safe boundary, push your work and report {args.unit} as blocked.')
 
 
+QUIET_LIMIT = 5
+
+
 def cmd_sync(args):
     state = load(args.repo, args.program)
     changes = fold_reports(state) + refresh_prs(state, args.repo)
@@ -993,10 +996,18 @@ def cmd_sync(args):
             # A verifier checks its target's PR before it merges, on the target's branch.
             stack = [d for d in unit['depends'] if state['units'][d]['state'] != 'merged']
             ready.append(f"{name} (--stack-on {' '.join(stack)})")
+    # Waiting budget (references/coordination.md#waiting-budget): checking again when nothing changes spends tokens
+    # and moves nothing, so the fifth quiet sync in a row tells the coordinator to stop and report instead.
     if not args.dry_run:
+        state['quiet_syncs'] = 0 if changes else state.get('quiet_syncs', 0) + 1
         save(args.repo, args.program, state)
     print(summary(state))
     print('Changed: ' + ('; '.join(changes) if changes else 'nothing'))
+    quiet = state.get('quiet_syncs', 0)
+    if quiet >= QUIET_LIMIT:
+        print(f'Stop: {quiet} syncs in a row changed nothing. Do not check again. Report to the owner what each '
+              'active unit is waiting on and the one step that would unblock it, then end the turn; resume only when '
+              'a session, PR or the owner reports something new.')
     for note in notes:
         print('Check: ' + note)
     running = sum(v['state'] in ACTIVE for v in state['units'].values())

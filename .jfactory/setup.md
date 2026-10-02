@@ -27,6 +27,8 @@ Initial readiness reviewed 2026-09-28 against `main` at `6ae1299`. Contract reco
 
 ## Open owner decisions
 
+**Settled 2026-10-02 (owner):** this repository accepts independent verdicts from the same model family as the implementer (`"allow_same_family": true`), so review doesn't stall when one provider's usage runs out. The verifier is still a separate session judging the current head. The bundle's default for other repositories is unchanged.
+
 None required to finalize the five-job contract. The owner confirmed it on 2026-10-01 and delegated completion of jfactory only; numeric targets remain repository/objective-owned. The external `loopcraft-status` Production deployments that surfaced during remote verification came from an accidental Git link, removed on 2026-10-01, so merges deploy nothing and auto-merge is allowed. Requiring `jfactory verified` on main was applied by the owner on 2026-09-28.
 
 ## Job-map review
