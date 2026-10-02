@@ -33,6 +33,14 @@ class InstallTests(unittest.TestCase):
         receipt = json.loads((dest / '.jfactory-install.json').read_text())
         self.assertIn('vendor/pstack/LICENSE', receipt['files'])
 
+    def test_installed_instructions_carry_the_spending_rules(self):
+        # Every adopting repository's agents get these as standing rules, not only inside the skill.
+        block = installer.managed_block('.agents/skills/jfactory')
+        self.assertIn('Verify only what changed', block)
+        self.assertIn('review the diff and the features it touches, not unrelated areas', block)
+        self.assertIn('at most 5 checks per wait', block)
+        self.assertIn('the same failure twice means stop and report', block)
+
     def test_installs_without_git_and_records_unknown_revision(self):
         real = installer.subprocess.check_output
 
