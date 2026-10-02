@@ -600,6 +600,53 @@ class CoordTest(unittest.TestCase):
             self.assertIn(f'w-{number}', self.db().get('archived', []), f'{step[0]} did not archive: {out}')
             self.assertIn(f'archived workspace verify-r-{number}', out)
 
+    def test_land_waits_for_the_merge_then_archives_its_workspaces(self):
+        # The gap behind PR #45: auto-merge lands after the last jfactory command, so nothing archived its verifier.
+        self.set_db(prs={'45': {'state': 'OPEN', 'headRefOid': 'abc1234', 'headRefName': 'feat/x'}},
+                    land_after=2, listed=[self.pr_workspace('w-45', 'verify-r-45')], sessions={'s-45': 'idle'})
+        out = self.coord('land', '--pr', '45', '--interval', '0.01')
+        merge = next(c for c in self.db()['calls'] if c[1:3] == ['pr', 'merge'])
+        self.assertIn('--auto', merge)
+        self.assertEqual(merge[merge.index('--match-head-commit') + 1], 'abc1234')
+        self.assertIn('#45 is merged as merge55', out)
+        self.assertEqual(self.db()['archived'], ['w-45'])
+        self.assertIn('archived workspace verify-r-45 (PR #45 merged)', out)
+
+    def test_land_waits_for_a_working_session_and_refuses_a_stale_or_dropped_merge(self):
+        self.set_db(prs={'45': {'state': 'MERGED', 'headRefOid': 'abc1234', 'mergeCommit': {'oid': 'merge5555'}}},
+                    listed=[self.pr_workspace('w-45', 'verify-r-45')], sessions={'s-45': 'working'})
+        out = self.coord('land', '--pr', '45', '--interval', '0.01', '--settle', '0.2')
+        self.assertNotIn('archived', self.db())
+        self.assertIn('verify-r-45 kept: PR #45 is merged but a session is still working', out)
+        self.assertFalse(any(c[1:3] == ['pr', 'merge'] for c in self.db()['calls']), 'A merged PR is not queued again')
+        self.set_db(prs={'46': {'state': 'OPEN', 'headRefOid': 'new9999'}})
+        self.assertIn('not the verified abc1234', self.coord('land', '--pr', '46', '--head', 'abc1234', ok=False))
+        # Checks still running past the wait: report it and leave the archive to the next jfactory command.
+        self.set_db(prs={'47': {'state': 'OPEN', 'headRefOid': 'abc1234'}}, land_after=99)
+        self.assertIn('still queued after', self.coord('land', '--pr', '47', '--interval', '0.01', '--wait', '0.001'))
+        # Found by the PR #46 verifier: a writer's push keeps auto-merge queued for the new head. land cancels it.
+        self.set_db(prs={'49': {'state': 'OPEN', 'headRefOid': 'abc1234'}}, push_head='bbb2222', land_after=99)
+        self.assertIn('head moved to bbb2222', self.coord('land', '--pr', '49', '--interval', '0.01', ok=False))
+        self.assertEqual(self.db()['disabled'], ['49'])
+        # A head that changed and merged before land saw it is reported as unverified, after archiving.
+        self.set_db(prs={'50': {'state': 'MERGED', 'headRefOid': 'bbb2222', 'mergeCommit': {'oid': 'merge5555'}}},
+                    listed=[self.pr_workspace('w-50', 'verify-r-50')], sessions={'s-50': 'idle'})
+        out = self.coord('land', '--pr', '50', '--head', 'abc1234', '--interval', '0.01', ok=False)
+        self.assertIn('not the verified abc1234: what merged was not verified', out)
+        self.assertIn('w-50', self.db()['archived'])
+        # A failed check (or a push by someone without write access) removes auto-merge; land stops.
+        self.set_db(prs={'48': {'state': 'OPEN', 'headRefOid': 'abc1234'}}, drop_auto_merge=True)
+        self.assertIn('no longer queued', self.coord('land', '--pr', '48', '--interval', '0.01', ok=False))
+
+    def test_launch_archives_finished_workspaces_left_from_earlier_prs(self):
+        self.set_db(prs={'44': {'state': 'MERGED'}, '45': {'state': 'OPEN', 'headRefName': 'feat/x'}},
+                    listed=[self.pr_workspace('w-44', 'verify-r-44')], sessions={'s-44': 'idle'})
+        message = self.tmp / 'message.md'
+        message.write_text('Verify PR 45')
+        out = self.coord('launch', '--role', 'verify', '--pr', '45', '--message-file', str(message))
+        self.assertEqual(self.db()['archived'], ['w-44'])
+        self.assertIn('archived workspace verify-r-44 (PR #44 merged)', out)
+
     def test_missing_or_failing_conductor_never_fails_verdict_sync_or_merge(self):
         self.start(['a', '--objective', 'x'])
         self.coord('launch', '1', 'a', '--brief', str(self.brief))
