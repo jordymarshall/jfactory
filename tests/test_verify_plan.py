@@ -78,6 +78,20 @@ class PlanTest(unittest.TestCase):
         changed_test = verify_plan.plan(['app/layout/page.test.tsx'], config)
         self.assertEqual((changed_test['level'], changed_test['suites']), ('independent', ['journey', 'unit']))
 
+    def test_verification_follows_what_changed_not_the_whole_feature(self):
+        config = {**CONFIG, 'always_suites': ['unit'], '_standards': ['outcomes/launch.md'],
+                  'suites': {'launch-journeys': {'target': 'app'}, 'unit': {}},
+                  'features': {'launch': {'paths': ['outcomes/launch.md', 'app/launch/**', 'docs/launch/**'],
+                                          'suites': ['launch-journeys'], 'verify': 'independent'}}}
+        # A one-line edit to the feature's outcome document is reviewed, but runs none of its journeys.
+        doc = verify_plan.plan(['outcomes/launch.md'], config)
+        self.assertEqual((doc['level'], doc['suites'], doc['needs_verifier']), ('review', ['unit'], True))
+        self.assertEqual((doc['screen_features'], verify_plan.needs_walkthrough(doc, config)), ([], False))
+        self.assertEqual(verify_plan.plan(['docs/launch/notes.md'], config)['suites'], ['unit'])
+        # Changing the feature's code runs its journeys and needs the full verdict.
+        code = verify_plan.plan(['app/launch/page.tsx', 'outcomes/launch.md'], config)
+        self.assertEqual((code['level'], code['suites']), ('independent', ['launch-journeys', 'unit']))
+
     def test_tests_instructions_and_screens_always_need_the_verifier(self):
         # A `ci` feature stays CI-only for its ordinary code: the negative control.
         self.assertEqual(verify_plan.plan(['tools/x.py'], CONFIG)['level'], 'ci')
@@ -475,7 +489,9 @@ class GateTest(unittest.TestCase):
         brand = verify_plan.plan(['docs/brand.md'], config)
         self.assertEqual((brand['unmapped'], brand['full'], brand['static_only']), (['docs/brand.md'], True, False))
         journey = verify_plan.plan(['docs/journeys/briefs.md'], config)
-        self.assertEqual((journey['level'], journey['overridden']), ('independent', {'docs': 'standards'}))
+        # Still always reviewed, but as a document review: nothing else changed.
+        self.assertEqual((journey['level'], journey['overridden'], journey['needs_verifier']),
+                         ('review', {'docs': 'standards'}, True))
         self.assertTrue(verify_plan.plan(['docs/guide.md'], config)['static_only'])
 
     def test_proof_headers_must_precede_a_table_separator(self):

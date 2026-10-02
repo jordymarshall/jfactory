@@ -333,6 +333,9 @@ def load_config(ref=None, root=None):
 def plan(files, config, impact=None):
     """Plan a change. `impact` maps suites to the files they executed (from `load_impact`); it only adds suites."""
     features, static, unmapped, gate, reviewed, visual = set(), [], [], [], {}, set()
+    # Features whose code changed. Only these run their suites: verification follows what changed, so a feature
+    # touched only by its documents (outcomes, standards, prose) or instructions gets a review, not its journeys.
+    code = set()
     for path in files:
         if matches(path, GATE_PATHS):
             gate.append(path)
@@ -341,6 +344,8 @@ def plan(files, config, impact=None):
         reason = review_reason(path, config.get('_standards', ()))
         if hit:
             features |= hit
+            if not path.lower().endswith(TEXT_PROSE) and reason not in ('standards', 'agent instructions'):
+                code |= hit
             # Only files that can change what users see put a screen in scope: not tests, agent instructions or
             # plain-text prose. MDX can be a rendered page, so it counts.
             if not reason and not path.lower().endswith(TEXT_PROSE):
@@ -358,6 +363,7 @@ def plan(files, config, impact=None):
     all_features = config.get('features', {})
     if unmapped:
         features = set(all_features)
+        code = set(all_features)
         # An unmapped file that could render (a new screen) puts every screen in scope, like every feature.
         if any(not review_reason(p, config.get('_standards', ())) and not p.lower().endswith(TEXT_PROSE)
                for p in unmapped):
@@ -371,8 +377,10 @@ def plan(files, config, impact=None):
     # against the outcomes, standards and screenshots instead. Full verification still runs everything it pulls in.
     # `reviewed` holds only tests and agent instructions here (screens are added below); those keep their journeys.
     lighter = {f for f in features if all_features[f].get('verify') == 'review' and f not in reviewed}
-    light = bool(features) and not full and lighter == set(features)
+    light = bool(features) and not full and all(f in lighter or f not in code for f in features)
     for fid in features:
+        if fid not in code:
+            continue
         own = set(all_features[fid].get('suites', []))
         if fid in lighter and not full:
             own = {s for s in own if not journey(s)}
@@ -398,10 +406,19 @@ def plan(files, config, impact=None):
         if fid not in reviewed and has_screens(all_features[fid], config):
             reviewed[fid] = 'screens users see'
     # Tests and agent instructions are risky wherever they live; a screen in a low-risk feature needs a review.
-    risky = {f for f in features if all_features[f].get('verify', 'independent') == 'independent'
-             or (f in reviewed and reviewed[f] != 'screens users see')}
-    review = sorted(f for f in features if f not in risky
-                    and (all_features[f].get('verify') == 'review' or f in reviewed))
+    # A feature touched only by its documents gets a review of those documents, whatever its level.
+    def level_of(f):
+        verify = all_features[f].get('verify', 'independent')
+        if reviewed.get(f) in ('tests', 'agent instructions'):
+            return 'independent'
+        if f not in code:
+            return 'review' if verify != 'ci' or f in reviewed else 'ci'
+        if verify == 'independent':
+            return 'independent'
+        return 'review' if verify == 'review' or f in reviewed else 'ci'
+    levels = {f: level_of(f) for f in features}
+    risky = {f for f, lv in levels.items() if lv == 'independent'}
+    review = sorted(f for f, lv in levels.items() if lv == 'review')
     independent = sorted(risky | set(review))  # every feature the verdict must cover
     overridden = {f: reviewed[f] for f in sorted(features) if f in reviewed and all_features[f].get('verify') == 'ci'}
     if full or risky:
