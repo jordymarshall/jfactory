@@ -1,6 +1,6 @@
 # Set up or reconcile a repository
 
-First read the [grilling adapter](../skills/grilling/SKILL.md) and [Matt Pocock's original method](../vendor/mattpocock/skills/grilling/SKILL.md). Do this on first adoption and every setup/update before the procedure below; settled answers are carried forward after loading the method.
+First read the complete [grilling skill](../skills/grilling/SKILL.md), including its full pinned method and jfactory integration. Do this on first adoption and every setup/update before the procedure below; settled answers are carried forward after loading the method.
 
 Setup has five steps, and each leaves something `scripts/setup_check.py` can check:
 

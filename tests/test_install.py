@@ -108,6 +108,10 @@ class InstallTests(unittest.TestCase):
                     self.assertIn(str(adapter.relative_to(target)), (target / filename).read_text())
                     self.assertIn(f'../../vendor/{source}/skills/{method}/SKILL.md', adapter.read_text())
                     self.assertEqual(original.read_bytes(), (ROOT / 'skills/jfactory' / original.relative_to(dest)).read_bytes())
+                    # Loading one routed skill must load the actual method, not
+                    # merely a wrapper that an agent can read without its source.
+                    method_body = original.read_text().split('---\n', 2)[2].strip()
+                    self.assertIn(method_body, adapter.read_text())
                     self.assertEqual(receipt['files'][str(original.relative_to(dest))], installer.digest(original.read_bytes()))
                     self.assertIn(f'vendor/{source}/LICENSE', receipt['files'])
                 subprocess.run([sys.executable, str(dest / 'scripts/check-upstream.py')],
