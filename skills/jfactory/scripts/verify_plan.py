@@ -55,6 +55,10 @@ TEST_FILES = ['**/*.test.*', '**/*.spec.*', '**/*.cy.*', '**/*_test.*', '**/*_sp
               '**/conftest.py', '**/pytest.ini', '**/.rspec', '**/playwright.config.*', '**/vitest.config.*',
               '**/jest.config.*', '**/cypress.config.*', '**/karma.conf.*', '**/.mocharc.js', '**/.mocharc.cjs',
               '**/.mocharc.mjs', '**/.mocharc.json', '**/.mocharc.jsonc', '**/.mocharc.yml', '**/.mocharc.yaml']
+# Code users cannot see: server logic, data and APIs. On a PR a change here runs no journey suites; the push after
+# merge runs them. The mapping's `backend_paths` replaces this list (`[]` treats all code as able to change screens).
+BACKEND_PATHS = ['**/api/**', '**/db/**', '**/migrations/**', '**/*.sql', '**/prisma/**', '**/jobs/**',
+                 '**/workers/**']
 # When the whole suite runs, chosen with the owner at setup (`full_suite`). Every other run executes only the
 # suites the change needs. Unset keeps the earlier default, nightly, and audit asks for a choice.
 FULL_SUITE = {
@@ -233,7 +237,9 @@ def full_suite_mode(config, event, labels=()):
     if event == 'schedule':
         return 'full' if policy == 'nightly' else 'skip'
     if event == 'push':
-        return 'full' if policy == 'merge' else 'skip'
+        # The push after a merge runs the journeys of every feature whose code changed, even behind the scenes,
+        # because the PR ran journeys only for changes users can see.
+        return 'full' if policy == 'merge' else 'planned'
     return 'planned'
 
 
@@ -343,12 +349,21 @@ def load_config(ref=None, root=None):
     return config
 
 
-def plan(files, config, impact=None):
-    """Plan a change. `impact` maps suites to the files they executed (from `load_impact`); it only adds suites."""
+def plan(files, config, impact=None, screens_only=False):
+    """Plan a change. `impact` maps suites to the files they executed (from `load_impact`); it only adds suites.
+
+    `screens_only` is for a PR: journey suites (suites with a `target`) run only for features whose changed files
+    can change what users see, or whose tests or agent instructions changed. A behind-the-scenes change runs only
+    its feature's other suites on the PR. The push to the base branch after merge plans with `screens_only` off,
+    so it runs the journeys of every feature whose code changed, before a release."""
     features, static, unmapped, gate, reviewed, visual = set(), [], [], [], {}, set()
     # Features whose code changed. Only these run their suites: verification follows what changed, so a feature
     # touched only by its documents (outcomes, standards, prose) or instructions gets a review, not its journeys.
     code = set()
+    # Features whose change users can see: a file that can render, outside `backend_paths`. On a PR only these run
+    # journeys. `visual` (which also counts backend code) still decides which verdicts need screenshots.
+    seen, shown = set(), set()  # `shown`: the changed files behind `seen`, plus changed tests and instructions
+    backend = config.get('backend_paths', BACKEND_PATHS)
     forced = set()  # features hit by a changed test or agent instruction: always independent, journeys kept
     for path in files:
         if matches(path, GATE_PATHS):
@@ -361,12 +376,16 @@ def plan(files, config, impact=None):
             features |= hit
             if reasons & FORCE_INDEPENDENT:
                 forced |= hit
+                shown.add(path)
             if not path.lower().endswith(TEXT_PROSE) and not reasons & {'standards', 'agent instructions'}:
                 code |= hit
             # Only files that can change what users see put a screen in scope: not tests, agent instructions or
             # plain-text prose. MDX can be a rendered page, so it counts.
             if not reason and not path.lower().endswith(TEXT_PROSE):
                 visual |= hit
+                if not matches(path, backend):
+                    seen |= hit
+                    shown.add(path)
             if reason:
                 for fid in hit:
                     reviewed.setdefault(fid, reason)
@@ -374,6 +393,7 @@ def plan(files, config, impact=None):
             static.append(path)
         else:
             unmapped.append(path)
+            shown.add(path)
     # Unmapped code could affect anything, so it pulls in every feature. A gate-only change needs a full
     # verdict (a reviewer reads the gate change) but only the fast full_suites, never every feature's journeys.
     full = bool(unmapped or gate)
@@ -385,6 +405,7 @@ def plan(files, config, impact=None):
         if any(not review_reason(p, config.get('_standards', ())) and not p.lower().endswith(TEXT_PROSE)
                for p in unmapped):
             visual = set(all_features)
+            seen = set(all_features)
     suites = set(config.get('always_suites', []))
 
     def journey(suite):
@@ -395,11 +416,13 @@ def plan(files, config, impact=None):
     # A changed test or agent instruction keeps the feature's journeys, even at the review level.
     lighter = {f for f in features if all_features[f].get('verify') == 'review' and f not in forced}
     light = bool(features) and not full and all(f in lighter or f not in code for f in features)
+    # On a PR, a feature whose change users can't see runs no journeys; the push after merge runs them.
+    hidden = {f for f in code if f not in seen and f not in forced} if screens_only else set()
     for fid in features:
         if fid not in code:
             continue
         own = set(all_features[fid].get('suites', []))
-        if fid in lighter and not full:
+        if (fid in lighter or fid in hidden) and not full:
             own = {s for s in own if not journey(s)}
         suites |= own
     if full:
@@ -413,7 +436,10 @@ def plan(files, config, impact=None):
     for suite, executed in (impact or {}).items():
         if suite in config.get('suites', {}):
             hits = sorted(p for p in files if p in executed)
-            if hits and suite not in suites and not (light and journey(suite)):
+            # On a PR, coverage adds a journey only for a changed file users can see (or a changed test or
+            # instruction); the push after merge adds the rest.
+            unseen = screens_only and not full and not shown & set(hits)
+            if hits and suite not in suites and not ((light or unseen) and journey(suite)):
                 because[suite] = hits
                 suites.add(suite)
     # A change needs an independent verdict unless every affected feature is low risk (`ci`). Screens users see,
@@ -447,12 +473,13 @@ def plan(files, config, impact=None):
     else:
         level = 'static'
     needs = level in ('independent', 'review') or (level == 'static' and config.get('verify_static', False))
+    after_merge = sorted({x for f in hidden for x in all_features[f].get('suites', []) if journey(x)} - suites)
     live = live_suites(config, suites)
     suites -= set(live)
     minutes, untimed = cost(suites, config)
     shards = shard_count(config)
     return {'files': len(files), 'live_suites': live, 'features': sorted(features), 'unmapped': unmapped, 'gate': gate, 'full': full,
-            'static_only': static_only, 'suites': sorted(suites), 'level': level,
+            'static_only': static_only, 'suites': sorted(suites), 'level': level, 'after_merge': after_merge,
             'independent_features': independent, 'review_features': review, 'overridden': overridden,
             'screen_features': sorted(f for f in visual if has_screens(all_features[f], config)),
             'needs_verifier': needs, 'minutes': minutes, 'untimed_suites': untimed,
@@ -587,6 +614,9 @@ def render_plan(result):
         lines += ['', 'Added from recorded coverage:'] + [
             f"- `{suite}` executes {', '.join(f'`{p}`' for p in files[:5])}" for suite, files in result['impact'].items()]
     lines += ['', 'CI suites: ' + (', '.join(result['suites']) or 'none')]
+    if result.get('after_merge'):
+        lines.append('Journeys run after merge, on the push to the base branch (users cannot see this change): '
+                     + ', '.join(result['after_merge']))
     if result.get('live_suites'):
         lines.append('Live-model suites, not run on this PR (scheduled `ci --live`; the verifier may run them): '
                      + ', '.join(result['live_suites']))
@@ -1166,10 +1196,18 @@ def body_file(text):
 
 # Commands
 
+def screens_only_mode(args):
+    """PR planning runs journeys only for changes users can see. An explicit --pr or --push wins; otherwise the
+    GitHub event decides: pull_request means a PR. Anything else (a push, a local run) plans every journey."""
+    if getattr(args, 'event', None):
+        return args.event == 'pr'
+    return os.environ.get('GITHUB_EVENT_NAME') == 'pull_request'
+
+
 def cmd_plan(args):
     config = load_config(args.config_ref)
     files = args.files or git_files(args.base)
-    result = plan(files, config, load_impact(args.impact) if args.impact else None)
+    result = plan(files, config, load_impact(args.impact) if args.impact else None, screens_only_mode(args))
     print(json.dumps(result, indent=1) if args.json else render_plan(result))
 
 
@@ -1246,7 +1284,7 @@ def cmd_ci(args):
         impact = load_impact(args.impact) if args.impact else None
         if args.impact and not impact:
             print(f'No recorded coverage at {args.impact}; planning from the map only')
-        result = plan(git_files(args.base), config, impact)
+        result = plan(git_files(args.base), config, impact, screens_only_mode(args))
         print(render_plan(result) + '\n')
         suites = result['suites']
     if args.shard:
@@ -1556,6 +1594,16 @@ def shard_arg(value):
     return int(match.group(1)), int(match.group(2))
 
 
+def add_event_flags(p):
+    group = p.add_mutually_exclusive_group()
+    group.add_argument('--pr', dest='event', action='store_const', const='pr',
+                       help='Plan a PR: journeys only for changes users can see (default when GITHUB_EVENT_NAME '
+                            'is pull_request)')
+    group.add_argument('--push', dest='event', action='store_const', const='push',
+                       help='Plan the push after merge: journeys of every feature whose code changed (the default '
+                            'otherwise)')
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--repo', help='OWNER/NAME; defaults to the current repository')
@@ -1568,6 +1616,7 @@ def main(argv=None):
     p.add_argument('--files', type=listing, help='Comma-separated paths instead of git diff')
     p.add_argument('--json', action='store_true')
     p.add_argument('--impact', help='Recorded coverage (file or directory) that adds suites executing changed files')
+    add_event_flags(p)
     p.set_defaults(func=cmd_plan)
     p = sub.add_parser('audit', help='Check the map covers every tracked file, defines its suites and fits the budget')
     p.set_defaults(func=cmd_audit)
@@ -1589,6 +1638,7 @@ def main(argv=None):
     p.add_argument('--shard', type=shard_arg, help='Run group I of N (I/N), balanced by recorded minutes')
     p.add_argument('--impact', help='Recorded coverage (file or directory) that adds suites executing changed files')
     p.add_argument('--impact-out', help='Record which tracked files each suite executed, for later --impact')
+    add_event_flags(p)
     p.set_defaults(func=cmd_ci)
     p = sub.add_parser('smoke', help='Prove a target starts and answers where verification runs')
     p.add_argument('--target', required=True)
