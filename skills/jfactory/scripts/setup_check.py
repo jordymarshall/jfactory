@@ -563,6 +563,14 @@ def check_release(config, target, report, states):
                           ' under "release" in .jfactory/coordination.json (see references/release.md)')
         return
     report.add('PASS', 'Release procedure recorded: ' + ', '.join(fields))
+    standing = config.get('release_after_merge')
+    if standing is not None:
+        if not isinstance(standing, dict) or not all(str(standing.get(k) or '').strip() for k in ('owner', 'date')):
+            report.add('FAIL', '"release_after_merge" must record the owner and date of the standing authorization '
+                               '(references/release.md#release-after-every-merge)')
+        else:
+            report.add('PASS', f"Every verified merge is released to production (owner {standing['owner']}, "
+                               f"{standing['date']}" + (f", until {standing['until']}" if standing.get('until') else '') + ')')
     if not str(release.get('approval') or '').strip():
         report.add('WARN', 'No "approval" gate is recorded for production, so only instructions stop an early '
                            'release; protect the production environment where the host allows it')

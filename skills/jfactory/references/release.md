@@ -52,6 +52,16 @@ Add a `release` block beside `merge_deploys` in `.jfactory/coordination.json`:
 
 The `revision` step is what makes a release checkable. If neither environment can report the commit it runs, add that first, for example a version endpoint or build metadata, through a normal PR.
 
+## Release after every merge
+
+Before a product has customers, an owner may choose to have every verified merge reach production at once. Record it as a standing authorization in `.jfactory/coordination.json`, with who decided and when:
+
+```json
+"release_after_merge": {"owner": "<name>", "date": "<YYYY-MM-DD>", "until": "<for example: the first customer>"}
+```
+
+With it recorded, after each merge lands (and staging runs it), follow [release when the owner asks](#release-when-the-owner-asks) for that commit without asking again: check staging, promote, check production and report. The authorization approves the irreversible steps that come with a merge, such as the PR's migrations, but name them in the report, and still stop on a failed staging or production check. Merges keep landing on staging first; nothing bypasses the release procedure, its approval gate or rollback. Remove the record when the condition in `until` arrives, such as the first customer.
+
 ## Release when the owner asks
 
 A release request names production, such as "release", "ship it to production" or "promote staging". A merge, green checks, a verified verdict or a standing auto-merge authorization is never one. When the request is ambiguous, ask which revision and environment.
@@ -63,4 +73,4 @@ A release request names production, such as "release", "ship it to production" o
 5. **Check production.** Confirm with `revision` that production runs the promoted commit. Run read-only checks there: the critical journey's non-mutating steps, health endpoints and error rates. Never run destructive tests, seeds or paid provider tasks against production. Record `deployed` evidence.
 6. **Report.** Name the commit, the PRs it shipped, the approval, the production checks and any gaps.
 
-If the production check fails and the release included no irreversible step, run `rollback` to the previous production commit, confirm it with `revision`, and report both. Otherwise stop and report, because a rollback might make the damage worse. The owner's request covers one release. It does not authorize later releases, and it is not a standing production permission.
+If the production check fails and the release included no irreversible step, run `rollback` to the previous production commit, confirm it with `revision`, and report both. Otherwise stop and report, because a rollback might make the damage worse. The owner's request covers one release. It does not authorize later releases, and it is not a standing production permission; only a recorded `release_after_merge` is.

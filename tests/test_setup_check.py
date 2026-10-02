@@ -504,6 +504,16 @@ class SetupCheckTest(unittest.TestCase):
         self.state.write_text(json.dumps(state))
         self.assertIn('JFACTORY_RUNNER is not JSON', self.check('--remote', '--repo', 'o/r', code=1))
 
+    def test_a_standing_release_after_merge_records_who_decided(self):
+        coordination = self.root / '.jfactory' / 'coordination.json'
+        config = json.loads(coordination.read_text())
+        coordination.write_text(json.dumps({**config, 'release_after_merge': {'owner': 'Ana'}}))
+        self.assertIn('must record the owner and date', self.check('--remote', '--repo', 'o/r', code=1))
+        coordination.write_text(json.dumps({**config, 'release_after_merge': {
+            'owner': 'Ana', 'date': '2026-10-02', 'until': 'the first customer'}}))
+        self.assertIn('Every verified merge is released to production (owner Ana, 2026-10-02, until the first customer)',
+                      self.check('--remote', '--repo', 'o/r'))
+
 
 if __name__ == '__main__':
     unittest.main()
