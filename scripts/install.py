@@ -50,6 +50,7 @@ def managed_block(skill_path):
             'Required application behavior needs application evidence; component checks alone cannot close it. '
             'Verify only what changed: run the suites of features whose code changed, give a document-only edit a review of those documents, '
             'keep full journeys and full verdicts for risky areas, and review the diff and the features it touches, not unrelated areas. '
+            f'Write everything people read with the ASD-STE100 writing rules ({skill_path}/references/writing.md): short sentences, one point each, active voice, common words, and technical terms explained. '
             'Obey the waiting budget: wait on notifications, at most 5 checks per wait, the same failure twice means stop and report, '
             'and launch nothing while sessions are idle, failing or out of usage. '
             'Deliver authorized changes as a ready-for-review PR on a task branch by default; use drafts only when requested or required by repository rules. '

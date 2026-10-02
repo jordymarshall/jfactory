@@ -39,6 +39,7 @@ class InstallTests(unittest.TestCase):
         self.assertIn('Verify only what changed', block)
         self.assertIn('review the diff and the features it touches, not unrelated areas', block)
         self.assertIn('at most 5 checks per wait', block)
+        self.assertIn('ASD-STE100 writing rules (.agents/skills/jfactory/references/writing.md)', block)
         self.assertIn('the same failure twice means stop and report', block)
 
     def test_installs_without_git_and_records_unknown_revision(self):
