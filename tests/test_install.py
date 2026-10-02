@@ -113,6 +113,10 @@ class InstallTests(unittest.TestCase):
                     method_body = original.read_text().split('---\n', 2)[2].strip()
                     self.assertIn(method_body, adapter.read_text())
                     if method == 'show-me':
+                        # Critical workflow guidance precedes the long upstream
+                        # examples, so a first-page read cannot hide it.
+                        self.assertLess(adapter.read_text().index('# jfactory integration'),
+                                        adapter.read_text().index(method_body))
                         # Feedback can establish goals. The routed explanation
                         # skill must load that method without another file hop.
                         grilling = dest / 'vendor/mattpocock/skills/grilling/SKILL.md'
