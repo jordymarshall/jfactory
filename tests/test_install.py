@@ -90,6 +90,49 @@ class InstallTests(unittest.TestCase):
                 self.assertTrue((target / directory / 'SKILL.md').is_file())
                 self.assertIn(directory, (target / filename).read_text())
 
+    def test_installed_methods_are_reachable_and_pinned_on_every_host(self):
+        for host, (directory, filename) in installer.LAYOUTS.items():
+            with self.subTest(host=host):
+                target = self.target / host
+                target.mkdir()
+                # Preserve an existing owner skill outside the managed bundle.
+                owner_skill = target / Path(directory).parent / 'show-me/SKILL.md'
+                owner_skill.parent.mkdir(parents=True)
+                owner_skill.write_text('Owner method')
+                dest = installer.install(ROOT, target, host)
+                receipt = json.loads((dest / '.jfactory-install.json').read_text())
+                for method, source in (('show-me', 'humanlayer'), ('grilling', 'mattpocock')):
+                    adapter = dest / f'skills/{method}/SKILL.md'
+                    original = dest / f'vendor/{source}/skills/{method}/SKILL.md'
+                    self.assertTrue(adapter.is_file())
+                    self.assertIn(str(adapter.relative_to(target)), (target / filename).read_text())
+                    self.assertIn(f'../../vendor/{source}/skills/{method}/SKILL.md', adapter.read_text())
+                    self.assertEqual(original.read_bytes(), (ROOT / 'skills/jfactory' / original.relative_to(dest)).read_bytes())
+                    # Loading one routed skill must load the actual method, not
+                    # merely a wrapper that an agent can read without its source.
+                    method_body = original.read_text().split('---\n', 2)[2].strip()
+                    self.assertIn(method_body, adapter.read_text())
+                    if method == 'show-me':
+                        # Critical workflow guidance precedes the long upstream
+                        # examples, so a first-page read cannot hide it.
+                        self.assertLess(adapter.read_text().index('# jfactory integration'),
+                                        adapter.read_text().index(method_body))
+                        # Feedback can establish goals. The routed explanation
+                        # skill must load that method without another file hop.
+                        grilling = dest / 'vendor/mattpocock/skills/grilling/SKILL.md'
+                        self.assertIn(grilling.read_text().split('---\n', 2)[2].strip(), adapter.read_text())
+                    self.assertEqual(receipt['files'][str(original.relative_to(dest))], installer.digest(original.read_bytes()))
+                    self.assertIn(f'vendor/{source}/LICENSE', receipt['files'])
+                subprocess.run([sys.executable, str(dest / 'scripts/check-upstream.py')],
+                               check=True, capture_output=True, cwd=target)
+                installer.install(ROOT, target, host, update=True)
+                self.assertEqual(owner_skill.read_text(), 'Owner method')
+                original.write_text('Consumer customization')
+                before = installer.payload(target)
+                with self.assertRaisesRegex(ValueError, 'modified'):
+                    installer.install(ROOT, target, host, update=True)
+                self.assertEqual(before, installer.payload(target))
+
     def test_bundle_gitignore_keeps_bytecode_out_of_the_installing_repository(self):
         git = lambda *args: subprocess.run(['git', '-C', str(self.target), *args], check=True,
                                            capture_output=True, text=True).stdout

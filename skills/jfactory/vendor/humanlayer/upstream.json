@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/humanlayer/skills",
+  "commit": "ca7c8088db69e315a8b2deea43820270457f8f3c",
+  "files": {
+    "LICENSE": "5f13c18ea00ea5c1384f41745feeca774079164f7f59a92e4ac0899ad217b26f",
+    "skills/show-me/SKILL.md": "434a2346cc95e313b0d367d477dda2e23ba642dd2181757415a09500664af100"
+  },
+  "source_paths": {
+    "LICENSE": "LICENSE",
+    "skills/show-me/SKILL.md": "plugins/show-me/skills/show-me/SKILL.md"
+  }
+}

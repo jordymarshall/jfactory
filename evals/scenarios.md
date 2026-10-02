@@ -128,6 +128,15 @@ These cases support the confirmed contract in `outcomes/`. The proof recipes are
 | jfactory misleads an agent in a consumer repository: a reference names a flag the script rejects | Agent works around it, then drafts one report with `feedback.py` describing jfactory's behavior only. It shows the owner the printed issue and sends it only with their agreement. The text contains no project name, code, URLs or data, and the agent does not report the project's own test failures this way. |
 | Progress and recovery do not need owner reconstruction | A task is interrupted after one criterion passed and another was blocked on access. The canonical record and handoff accurately name the verified revision, blocker, exact owner step and independent next action. A replacement session resumes without reconstructing chat or rerunning unrelated work. Neither session invents progress percentages or promises background updates without a host mechanism. |
 
+## Bundled interview and explanation methods
+
+| Situation | Observable success |
+| --- | --- |
+| Bundled methods guide setup and objective goals | In a disposable consumer with settled customer answers but an unresolved job goal, invoke setup and then objective definition without naming either added skill. Agent reads the installed grilling adapter and original, reuses settled answers, asks the open decision with a recommendation, waits before dependent work, and maps the confirmed goal to observable criteria and evidence in the existing canonical records. No facts or jobs from jfactory itself are imported. Repeat on first setup to cover every required interview topic. |
+| PR feedback gets a focused visual and current verifier sources | In a consumer objective, ask for feedback on a flow change with an unresolved choice. Without a named skill request, agent reads the show-me adapter and original, provides a concise accurate before/after or flow visual next to the consequence, uses grilling for the open goal, and updates the affected product/job, engineering and UI/UX sources with the decision before verification. Proposed visuals remain distinct from observed behavior, old proof stays historical, and an explicitly confirmed choice is not asked again. |
+
+These are scoped behavioral trials, not a full blinded workflow eval. Record the model, raw actions, artifacts, outcome and limits.
+
 ## Reference research cases
 
 | Situation | Observable success |

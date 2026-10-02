@@ -6,11 +6,8 @@ import json
 from pathlib import Path
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1] / 'vendor' / 'pstack')
-    args = parser.parse_args()
-    root = args.root.resolve()
+def check(root):
+    root = root.resolve()
     receipt = json.loads((root / 'upstream.json').read_text())
     failures = []
     for name, expected in receipt['files'].items():
@@ -28,8 +25,24 @@ def main():
     if failures:
         print('\n'.join(failures))
         return 1
-    print(f"PASS: {len(receipt['files'])} upstream files match pstack {receipt['version']} at {receipt['commit']}")
+    print(f"PASS: {len(receipt['files'])} upstream files match {root.name} at {receipt['commit']}")
     return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--root', type=Path, help='Check one snapshot instead of all bundled sources')
+    args = parser.parse_args()
+    vendor = Path(__file__).resolve().parents[1] / 'vendor'
+    roots = [args.root] if args.root else [vendor / name for name in ('pstack', 'humanlayer', 'mattpocock')]
+    results = []
+    for root in roots:
+        try:
+            results.append(check(root))
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            print(f'FAIL: {root.name}: {error}')
+            results.append(1)
+    return int(any(results))
 
 
 if __name__ == '__main__':

@@ -1,5 +1,7 @@
 # Set up or reconcile a repository
 
+First read the complete [grilling skill](../skills/grilling/SKILL.md), including its full pinned method and jfactory integration. Do this on first adoption and every setup/update before the procedure below; settled answers are carried forward after loading the method.
+
 Setup has five steps, and each leaves something `scripts/setup_check.py` can check:
 
 1. **Inspect and resume:** install or update the bundle, then read the setup record at `.jfactory/setup.md`.
@@ -40,6 +42,8 @@ Apply [documentation reconciliation](documentation.md), including nested agent i
 Use the existing homes for these facts; these are sections, not four mandatory new files. Keep the installation-managed block intact. Avoid maintaining separate competing instructions for different agent hosts; link their entry points to shared project policy where supported.
 
 ### Record the sources of truth verifiers check against
+
+Use the bundled [grilling skill](../skills/grilling/SKILL.md) to establish the owner interview, job goals and next objective, carrying settled answers forward. Use [show-me](../skills/show-me/SKILL.md) to explain proposed job maps, workflow changes and choices needing feedback. Their answers belong in the canonical sources below, not another parallel product record.
 
 Tests prove behavior; the project's own documents say what good looks like. Verifiers need both, so record them explicitly:
 

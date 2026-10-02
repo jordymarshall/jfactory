@@ -41,6 +41,8 @@ On 2026-10-01 the owner confirmed speed, resource efficiency and predictable pro
 
 ## Next objective
 
+On 2026-10-02 the owner requested bundled HumanLayer `show-me` and Matt Pocock `grilling` with proactive workflow routing ([objective #47](https://github.com/jordymarshall/jfactory/issues/47)). Setup and objective/goal definition use grilling, preserving settled answers; changes, PR explanations and feedback use show-me. Product, engineering and UI/UX intent stays in canonical project-owned sources and job goals for verifiers. The adapters and pinned originals are installed with jfactory; packaging checks and model trials are separate evidence, and neither installation nor a diagram proves workflow compliance.
+
 Task location: GitHub issues in this repository labelled `jfactory-objective`
 
 [#22 Run blinded cross-model evals of jfactory setup](https://github.com/jordymarshall/jfactory/issues/22): agreed, not started.

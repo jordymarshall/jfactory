@@ -101,6 +101,8 @@ Blue boxes are instructions the agent follows, grey boxes are records in your pr
 | `SKILL.md` and `references/` | The procedures: setup, objectives, verification, delivery, auto-merge, coordination | Instructions |
 | pstack skills | Lauren Tan's engineering techniques, which jfactory calls for specific situations ([table below](#relationship-to-lauren-tans-pstack)) | Instructions |
 | `jfactory-ux` skill | Drives a real browser to review your product or research other apps | Instructions and a helper script |
+| `grilling` skill | Matt Pocock's interview method establishes setup and objective goals, reusing settled answers and recording intent for verifiers | Instructions |
+| `show-me` skill | HumanLayer's visual explanation method clarifies changes, PRs and choices needing feedback | Instructions |
 | `AGENTS.md` sections | The short entry point: product brief, system map, feature/status map, agent instructions | Record |
 | `.jfactory/setup.md` | Readiness per area, the owner interview answers, open decisions and where objectives live | Record |
 | Objectives | What "done" means for each piece of work, with the evidence each criterion needs | Record |
@@ -192,6 +194,8 @@ The agent stops at the agreed objective. It proposes the next one instead of qui
 **What triggers one.** Installing jfactory adds a short managed block to `AGENTS.md` telling the agent to use jfactory for engineering work. When you ask for a change, the agent loads `SKILL.md`, which says that every request that changes behavior starts from an objective. You don't have to ask for one.
 
 **Where it's written.** Each objective also records its route through the loops. During setup you choose the task location, for example GitHub issues labelled `jfactory-objective` or your existing tracker. It's recorded in `.jfactory/setup.md`. Each objective is written there using [the objective template](skills/jfactory/templates/objective.md) and updated as work progresses. A small fix can use a few lines in the PR description instead. A resumed session reads the objective rather than asking you to repeat yourself.
+
+**Skills you get automatically.** Every supported installation includes [grilling](skills/jfactory/skills/grilling/SKILL.md) and [show-me](skills/jfactory/skills/show-me/SKILL.md). The managed instructions route setup and objective/goal definition to grilling, and explanations of changes, PRs and choices needing feedback to show-me. You do not need to name them. Grilling asks unresolved decisions with recommendations, carries confirmed answers forward and records decisions in the canonical product, engineering and UI/UX sources and job goals that verifiers read. Show-me chooses a focused comparison, diagram or HTML artifact when it helps you understand and respond. These are agent instructions; installation does not prove host discovery, compliance or workflow effectiveness. The adapters can be read directly without a host-specific Skill tool.
 
 **When it asks you.** Only when a consequential choice is still open, such as who the feature is for, what trade-off to make, or what's out of scope. Each question comes with a recommended answer. Routine fixes with settled behavior go straight ahead. Before a substantial feature, the agent reviews the customer outcome with you in depth.
 
@@ -410,7 +414,7 @@ The tools inside the bundle:
 | `coord.py` | Runs parallel programs: issue dashboard, launches, reports, verdicts, merges and clean-up |
 | `usage.py` | Reads remaining Claude and Codex usage and picks the model for each tier |
 | `evidence.py` | Optionally records real check runs and rejects failed, stale or wrong-scope evidence |
-| `check-upstream.py` | Confirms the vendored pstack files match their pinned upstream bytes |
+| `check-upstream.py` | Confirms the vendored pstack, HumanLayer and Matt Pocock files match their pinned upstream bytes |
 | `jfactory-ux/scripts/study.py` | Drives an isolated browser for UX research and sign-in handoff, and renders walkthroughs |
 | `templates/` | The setup record, objective, verification map example and `jfactory verified` workflow |
 
@@ -516,3 +520,5 @@ CI uses disposable local pages, not real accounts. Test changes to jfactory's in
 ## Attribution
 
 pstack files are unchanged: MIT, copyright Lauren Tan 2026, version 0.15.5 at `ecc249f1e306fc64ddf83c7bed16cacf7c2239db`. See [provenance](skills/jfactory/vendor/pstack/UPSTREAM.md) and [license](skills/jfactory/vendor/pstack/LICENSE). jfactory additions are MIT, copyright Jordan Marshall 2026. This is an independent adaptation. Microsoft Playwright CLI is an optional runtime dependency; its upstream skill is not vendored.
+
+HumanLayer's `show-me` and Matt Pocock's `grilling` are also vendored unchanged with their MIT licenses and pinned receipts: [HumanLayer provenance](skills/jfactory/vendor/humanlayer/UPSTREAM.md), [license](skills/jfactory/vendor/humanlayer/LICENSE); [Matt Pocock provenance](skills/jfactory/vendor/mattpocock/UPSTREAM.md), [license](skills/jfactory/vendor/mattpocock/LICENSE). jfactory adapters include the full pinned method bodies, then add automatic routing and host translations. Loading a routed skill therefore loads the actual method without depending on a second file read; installer tests enforce completeness. Show-me also includes grilling for feedback that establishes or revises a goal, with a handoff into the objective and affected job documents before implementation. A settled explanation needs no interview. HumanLayer's original manual-only setting remains intact in the snapshot; the adapter enables the proactive use requested here.

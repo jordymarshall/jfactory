@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/mattpocock/skills",
+  "commit": "d81f3a183412e71a5b1e84ca21bc1a35eea03a60",
+  "files": {
+    "LICENSE": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5",
+    "skills/grilling/SKILL.md": "10ff989e7498b23b5acb49d5048f11dcd906757d2f79c5cdf8a00001381296f2"
+  },
+  "source_paths": {
+    "LICENSE": "LICENSE",
+    "skills/grilling/SKILL.md": "skills/productivity/grilling/SKILL.md"
+  }
+}
