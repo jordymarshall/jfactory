@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "allow_same_family": true,
   "static": ["LICENSE", "evals/**", ".gitignore", "docs/**"],
   "static_suites": ["checks"],
   "always_suites": ["checks"],
