@@ -27,7 +27,7 @@ Required checks still have to come from GitHub Actions. A ruleset accepts `jfact
    python3 .agents/skills/jfactory/scripts/runners.py status
    ```
    - The default count is half the machine's CPUs.
-   - `--memory` caps each runner, and `--shm-size` (default `2g`) is the shared memory Chromium needs.
+   - `--memory` caps each runner, but only where Docker has the cgroup memory controller (some sandboxed VMs refuse it, and every container then fails to start). `--shm-size` (default `2g`) is the shared memory Chromium needs.
    - The supervisor logs to `~/.cache/jfactory-runners/` and doesn't survive a reboot. Run `up` again, or start it from the machine's service manager.
 3. **Route the jobs** once runners show `online`: `gh variable set JFACTORY_RUNNER --body '["self-hosted","jfactory"]'`, or Settings > Secrets and variables > Actions > Variables.
 4. **Prove it** with a PR whose checks run on the runners: the job log's "Set up job" step names the runner. Record the result in the setup record.

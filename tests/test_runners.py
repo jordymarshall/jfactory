@@ -66,7 +66,7 @@ if args[:2] == ['repo', 'view']:
     print('acme/shop')
 elif 'generate-jitconfig' in ' '.join(args):
     name = next(a for a in args if a.startswith('name=')).split('=', 1)[1]
-    print('jit-for-' + name)
+    print(json.dumps({'runner': {'id': 77, 'name': name}, 'encoded_jit_config': 'jit-for-' + name}))
 elif args[:3] == ['api', '-X', 'DELETE']:
     pass
 elif args[:1] == ['api'] and args[1].endswith('/actions/runners'):
@@ -147,6 +147,8 @@ class RunnersTest(unittest.TestCase):
         self.write_config(count=1)
         out = self.cli('serve', '--repo', 'acme/shop', '--once', FAKE_DOCKER_FAIL='1')
         self.assertIn('no space left on device', out)
+        # The registration minted for the failed container is removed, not left online with no runner behind it.
+        self.assertIn(['api', '-X', 'DELETE', 'repos/acme/shop/actions/runners/77'], self.log('gh.log'))
         out = self.cli('serve', '--repo', 'acme/shop', '--once', FAKE_GH_FORBIDDEN='1')
         self.assertIn('Administration: read and write', out)
         self.assertEqual(self.containers(), {})

@@ -153,22 +153,30 @@ def start_one(repo, config):
     """Mint a single-use runner configuration and start one fresh container with it."""
     name = f'{config["prefix"]}-{secrets.token_hex(3)}'
     labels = ['self-hosted', *config['labels']]
-    jit = gh_api('-X', 'POST', f'repos/{repo}/actions/runners/generate-jitconfig', '-f', f'name={name}',
-                 '-F', 'runner_group_id=1', '-f', 'work_folder=_work',
-                 *[x for label in labels for x in ('-f', f'labels[]={label}')], '-q', '.encoded_jit_config').stdout.strip()
+    minted = json.loads(gh_api('-X', 'POST', f'repos/{repo}/actions/runners/generate-jitconfig', '-f', f'name={name}',
+                               '-F', 'runner_group_id=1', '-f', 'work_folder=_work',
+                               *[x for label in labels for x in ('-f', f'labels[]={label}')]).stdout)
     cmd = ['create', '--rm', '--name', name, '--label', f'{OWNER_LABEL}={repo}', '--shm-size', config['shm_size']]
     if config.get('cpus'):
         cmd += ['--cpus', str(config['cpus'])]
     if config.get('memory'):
         cmd += ['--memory', config['memory']]
-    docker(*cmd, IMAGE)
-    # Copied in, never passed as an argument or variable, so `docker inspect` and the process list don't show it.
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp, '.jit')
-        path.write_text(jit)
-        path.chmod(0o644)
-        docker('cp', str(path), f'{name}:/home/runner/.jit')
-    docker('start', name)
+    try:
+        docker(*cmd, IMAGE)
+        # Copied in, never passed as an argument or variable, so `docker inspect` and the process list don't show it.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, '.jit')
+            path.write_text(minted['encoded_jit_config'])
+            path.chmod(0o644)
+            docker('cp', str(path), f'{name}:/home/runner/.jit')
+        docker('start', name)
+    except Refused:
+        # A half-made runner would count as ready and stay registered on GitHub; remove both.
+        docker('rm', '-f', name, check=False)
+        runner_id = (minted.get('runner') or {}).get('id')
+        if runner_id:
+            gh_api('-X', 'DELETE', f'repos/{repo}/actions/runners/{runner_id}', check=False)
+        raise
     return name
 
 
@@ -299,7 +307,7 @@ def main(argv=None):
     up.add_argument('--labels', default='', help='Extra comma-separated labels after self-hosted and jfactory')
     up.add_argument('--host', help='Machine name used in runner names (default: hostname)')
     up.add_argument('--cpus', type=float, help='CPU limit per runner')
-    up.add_argument('--memory', help='Memory limit per runner, for example 6g')
+    up.add_argument('--memory', help='Memory limit per runner, for example 6g; needs Docker with the cgroup memory controller')
     up.add_argument('--shm-size', default='2g', help='Shared memory per runner; browsers need more than the default')
     up.add_argument('--build', action='store_true', help='Rebuild the image even when it exists')
     up.add_argument('--pull', action='store_true', help='Pull the newest base image when building')
