@@ -25,6 +25,10 @@ Initial readiness reviewed 2026-09-28 against `main` at `6ae1299`. Contract reco
 | What is out of scope? | Anything that only works for one specific repository or product. jfactory must apply to any repository and bring engineering best practices to it. Routines and scheduled automation are acceptable where they help. | 2026-09-28 |
 | What is the next bounded objective? | Run blinded cross-model evals ([#22](https://github.com/jordymarshall/jfactory/issues/22)). | 2026-09-28 |
 
+## Model defaults
+
+On 2026-10-03 the owner requested standard mode for every default model to avoid fast-mode credits. The bundle policy and model guidance now use `fast: false` for every primary and fallback. Models, efforts and review requirements stay the same. App favorites, existing sessions and copied program policies have separate settings.
+
 ## Open owner decisions
 
 **Settled 2026-10-02 (owner):** this repository accepts independent verdicts from the same model family as the implementer (`"allow_same_family": true`), so review doesn't stall when one provider's usage runs out. The verifier is still a separate session judging the current head. The bundle's default for other repositories is unchanged.
