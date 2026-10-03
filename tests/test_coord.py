@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 COORD = ROOT / 'skills' / 'jfactory' / 'scripts' / 'coord.py'
 FAKE = ROOT / 'tests' / 'fakes' / 'fake_cli.py'
 RULE = ('skills/jfactory/references/verification.md#independent-verdict: prescribes GPT Sol 6.1 at high effort, but '
-        'the owner moved the verify tier to low-effort fast mode; point to the verify tier in models.md instead')
+        'the owner moved the verify tier to low effort in standard mode; point to the verify tier in models.md instead')
 BRIEF = '\n'.join(f'{field} filled in' for field in [
     'OBJECTIVE', 'DECISIONS', 'SCOPE', 'CONTEXT', 'ACCEPTANCE', 'VERIFY', 'SHARED', 'LIMITS', 'FORBIDDEN',
     'DELIVERY', 'REPORT'])
@@ -66,7 +66,7 @@ class CoordTest(unittest.TestCase):
         self.coord('launch', '1', 'a', '--brief', str(self.brief))
         workspace = self.db()['workspaces'][0]
         self.assertEqual((workspace['agent'], workspace['model'], workspace['effort'], workspace['fast'],
-                          workspace['branch']), ('claude', 'opus-5-5-1m', 'medium', True, 'main'))
+                          workspace['branch']), ('claude', 'opus-5-5-1m', 'medium', False, 'main'))
         command = next(line.strip() for line in workspace['message'].splitlines() if '--state in-review' in line)
         self.assertIn('--repo o/r report 1 a --state in-review', command)
         # The printed command must parse exactly as a worker would run it.
@@ -258,7 +258,7 @@ class CoordTest(unittest.TestCase):
         self.coord('launch', '1', 'r', '--brief', str(self.brief))
         verifier = self.db()['workspaces'][-1]
         self.assertEqual((verifier['agent'], verifier['model'], verifier['effort'], verifier['fast']),
-                         ('codex', 'gpt-6.1-sol', 'low', True))
+                         ('codex', 'gpt-6.1-sol', 'low', False))
         for _ in range(2):
             self.coord('set', '1', 'r', '--state', 'failed')
             self.coord('launch', '1', 'r', '--brief', str(self.brief))
@@ -298,7 +298,7 @@ class CoordTest(unittest.TestCase):
         self.coord('close', '1')
 
     def test_open_decision_and_unsupported_fast_mode_block_launch(self):
-        # Verify runs in fast mode by default; a model without fast mode in Conductor's catalog is refused.
+        # An explicit fast-mode override still refuses a model without support in the Conductor catalog.
         (self.tmp / '.jfactory').mkdir(exist_ok=True)
         (self.tmp / '.jfactory' / 'coordination.json').write_text(json.dumps({'roles': {'verify': {'fast': True}}}))
         self.start(['a', '--objective', 'x'], ['v', '--objective', 'verify', '--role', 'verify'], limit=3)
@@ -742,7 +742,7 @@ class CoordTest(unittest.TestCase):
         workspace = self.db()['workspaces'][0]
         self.assertEqual((workspace['name'], workspace['branch'], workspace['agent'], workspace['model'],
                           workspace['effort'], workspace['fast'], workspace['repo_url'], workspace['project']),
-                         ('verify-r-7', 'feat/a', 'codex', 'gpt-6.1-sol', 'low', True, 'https://github.com/o/r', None))
+                         ('verify-r-7', 'feat/a', 'codex', 'gpt-6.1-sol', 'low', False, 'https://github.com/o/r', None))
         self.set_db(projects=[{'id': 'p-other', 'gitRemote': 'https://github.com/o/r-other'},
                               {'id': 'p-r', 'gitRemote': 'https://github.com/o/r'}])
         self.coord('launch', '--role', 'fix', '--pr', '7', '--branch', 'feat/a', '--message-file', str(message))

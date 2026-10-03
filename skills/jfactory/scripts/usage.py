@@ -12,14 +12,12 @@ from pathlib import Path
 # Keep in step with references/models.md.
 # Each option is (agent, model, effort, fast mode).
 POLICY = {
-    # Owner, 2026-10-01: core coding defaults to Opus 5.5 at medium effort in fast mode, with GPT Astra 6 for big work
-    # when Claude usage is low; routine work runs GPT Sol 6.1 in fast mode.
-    'frontier': [('claude', 'opus-5-5-1m', 'medium', True), ('codex', 'gpt-6-astra', None, False)],
-    'fast': [('codex', 'gpt-6.1-sol', None, True), ('claude', 'opus-5-5-1m', 'low', False)],
+    # Owner, 2026-10-03: all primary and fallback defaults use standard mode to avoid fast-mode credits.
+    'frontier': [('claude', 'opus-5-5-1m', 'medium', False), ('codex', 'gpt-6-astra', None, False)],
+    'fast': [('codex', 'gpt-6.1-sol', None, False), ('claude', 'opus-5-5-1m', 'low', False)],
     'trivial': [('codex', 'gpt-6-luna', None, False), ('claude', 'opus-5-5-1m', 'low', False)],
-    # Verification judges whether work is right: GPT Sol 6.1 at low effort in fast mode, so reviews keep pace (owner,
-    # 2026-10-01). The Opus fallback runs at low effort without fast mode (see references/models.md).
-    'verify': [('codex', 'gpt-6.1-sol', 'low', True), ('claude', 'opus-5-5-1m', 'low', False)],
+    # Verification keeps low effort and the same evidence requirements.
+    'verify': [('codex', 'gpt-6.1-sol', 'low', False), ('claude', 'opus-5-5-1m', 'low', False)],
 }
 PROBES = {'claude': ('haiku-4-5', None), 'codex': ('gpt-6-luna', 'low')}
 PROBE_MESSAGE = 'Reply with the single word ok. Do not use any tools.'

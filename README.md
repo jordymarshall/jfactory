@@ -385,10 +385,12 @@ When jfactory launches another agent, the task decides the tier, and remaining u
 
 | Tier (coordination role) | Used for | First choice | When that account is out of usage |
 | --- | --- | --- | --- |
-| Frontier (`implement`) | Features, fixes, debugging, architecture | Claude Opus 5.5, medium effort, fast mode | GPT Astra 6 |
-| Fast (`fast`) | Routine edits, fixes with a known cause, CI triage | GPT Sol 6.1, fast mode | Opus 5.5, low effort |
+| Frontier (`implement`) | Features, fixes, debugging, architecture | Claude Opus 5.5, medium effort | GPT Astra 6 |
+| Fast (`fast`) | Routine edits, fixes with a known cause, CI triage | GPT Sol 6.1 | Opus 5.5, low effort |
 | Trivial (`trivial`) | Renames, formatting, lookups | GPT Luna 6 | Opus 5.5, low effort |
-| Verify (`verify`) | Judging whether another agent's PR is right | GPT Sol 6.1, low effort, fast mode | Opus 5.5, low effort |
+| Verify (`verify`) | Judging whether another agent's PR is right | GPT Sol 6.1, low effort | Opus 5.5, low effort |
+
+All defaults use standard mode to avoid fast-mode credits. The Fast tier names routine work; it does not enable fast mode. App favorites and existing sessions have separate settings.
 
 A verifier always comes from a different family than the implementer, so Codex-written work is verified by Opus 5.5 at low effort. Before launching, agents run `scripts/usage.py`. It reads your Claude and Codex usage from Conductor session records and Codex logs, starts a tiny probe session if a reading is missing or stale, and prints the model to use. It never reads credential files. Override the policy per repository in `.jfactory/coordination.json`. See [model selection](skills/jfactory/references/models.md).
 

@@ -127,8 +127,8 @@ class UsageTests(unittest.TestCase):
                                          'fast': ('codex', 'gpt-6.1-sol', None),
                                          'trivial': ('codex', 'gpt-6-luna', None),
                                          'verify': ('codex', 'gpt-6.1-sol', 'low')})
-        # Owner, 2026-10-01: Opus core coding and the Sol 6.1 tiers run in fast mode; Luna does not.
-        self.assertEqual(out['fast'], {'frontier': True, 'fast': True, 'trivial': False, 'verify': True})
+        # Owner, 2026-10-03: all tiers use standard mode.
+        self.assertEqual(out['fast'], {'frontier': False, 'fast': False, 'trivial': False, 'verify': False})
         self.assertEqual(out['accounts']['claude']['windows'][1], {'name': 'weekly', 'used_percent': 1.0,
                                                                    'resets_at': '2026-10-02T17:00:00Z'})
         self.assertNotIn('session create', self.calls())
@@ -140,8 +140,8 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(out['choice']['frontier'], ('codex', 'gpt-6-astra', None))
         self.assertEqual(out['choice']['fast'], ('codex', 'gpt-6.1-sol', None))
         self.assertIn('claude has no usage remaining', out['choices'][0]['reason'])
-        # Astra runs without fast mode; routine work keeps Sol 6.1 in fast mode.
-        self.assertEqual((out['fast']['frontier'], out['fast']['fast']), (False, True))
+        # Both the fallback and routine work use standard mode.
+        self.assertEqual((out['fast']['frontier'], out['fast']['fast']), (False, False))
 
     def test_just_below_reserve_keeps_primary(self):
         self.claude(89, 89, 1)
@@ -199,12 +199,12 @@ class UsageTests(unittest.TestCase):
         self.assertEqual([w['name'] for w in out['accounts']['codex']['windows']], ['five_hour', 'weekly'])
         self.assertEqual(out['choice']['fast'], ('claude', 'opus-5-5-1m', 'low'))
 
-    def test_verify_uses_sol_low_fast_and_switches_family_for_codex_work(self):
+    def test_verify_uses_sol_low_standard_and_switches_family_for_codex_work(self):
         self.claude(5, 1, 1)
         self.codex_log(10, 1)
         out = self.run_usage('--tier', 'verify')
         self.assertEqual(out['choice']['verify'], ('codex', 'gpt-6.1-sol', 'low'))
-        self.assertTrue(out['fast']['verify'])
+        self.assertFalse(out['fast']['verify'])
         out = self.run_usage('--tier', 'verify', '--implementer', 'codex')
         self.assertEqual(out['choice']['verify'], ('claude', 'opus-5-5-1m', 'low'))
         self.assertFalse(out['fast']['verify'])
