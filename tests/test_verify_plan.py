@@ -863,6 +863,74 @@ class GateTest(unittest.TestCase):
         self.assertIn('misses features: auth', self.run_script('check', '--pr', '5', code=1))
 
 
+class BaseMergeCarryTest(unittest.TestCase):
+    """A verdict carries over a commit that only merges the base branch into a verified head."""
+    V, M1, NEW, BASE_OLD = 'a' * 40, 'm' * 40, 'n' * 40, 'o' * 40
+
+    def api(self, overrides=None):
+        pr = [{'filename': 'app/briefs/save.ts', 'status': 'modified', 'sha': 'pr1'}]
+        base = [{'filename': 'lib/other.ts', 'status': 'modified', 'sha': 'base1'}]
+        data = {
+            f'commits/{self.M1}': {'parents': [{'sha': self.V}, {'sha': self.NEW}]},
+            f'compare/{self.NEW}...main': {'status': 'ahead'},
+            f'compare/{self.NEW}...{self.V}': {'files': pr},
+            f'compare/{self.V}...{self.NEW}': {'files': base},
+            f'compare/{self.NEW}...{self.M1}': {'files': pr},
+            **(overrides or {}),
+        }
+        return lambda path: data[path]
+
+    def carry(self, **overrides):
+        return verify_plan.base_merge_source(self.M1, {self.V}, 'main', self.api(overrides))
+
+    def test_a_clean_base_merge_keeps_the_verdict(self):
+        self.assertEqual(self.carry(), self.V)
+
+    def test_anything_beyond_the_base_changes_needs_a_new_verdict(self):
+        pr = [{'filename': 'app/briefs/save.ts', 'status': 'modified', 'sha': 'pr1'}]
+        # The base changed one of the PR's files, so the merge result was never verified.
+        self.assertIsNone(self.carry(**{f'compare/{self.V}...{self.NEW}': {'files': pr}}))
+        # The merge edited the PR's file (a conflict resolution or a sneaked-in change).
+        self.assertIsNone(self.carry(**{f'compare/{self.NEW}...{self.M1}': {'files': [dict(pr[0], sha='other')]}}))
+        # The merge added a file of its own.
+        extra = pr + [{'filename': 'x.ts', 'status': 'added', 'sha': 'x'}]
+        self.assertIsNone(self.carry(**{f'compare/{self.NEW}...{self.M1}': {'files': extra}}))
+        # The merged-in side is not on the base branch.
+        self.assertIsNone(self.carry(**{f'compare/{self.NEW}...main': {'status': 'diverged'}}))
+        # An ordinary commit, not a merge.
+        self.assertIsNone(self.carry(**{f'commits/{self.M1}': {'parents': [{'sha': self.V}]}}))
+        # Too many files to compare, or an API failure, never carries.
+        many = [{'filename': f'f{i}', 'status': 'added', 'sha': str(i)} for i in range(300)]
+        self.assertIsNone(self.carry(**{f'compare/{self.NEW}...{self.V}': {'files': many}}))
+        self.assertIsNone(verify_plan.base_merge_source(self.M1, {self.V}, 'main', lambda path: {}[path]))
+
+    def test_repeated_base_merges_chain_back_to_the_verdict(self):
+        m2, newer = '2' * 40, '3' * 40
+        pr = [{'filename': 'app/briefs/save.ts', 'status': 'modified', 'sha': 'pr1'}]
+        api = self.api({f'commits/{m2}': {'parents': [{'sha': self.M1}, {'sha': newer}]},
+                        f'compare/{newer}...main': {'status': 'identical'},
+                        f'compare/{newer}...{self.M1}': {'files': pr},
+                        f'compare/{self.M1}...{newer}': {'files': [{'filename': 'lib/b.ts', 'status': 'added', 'sha': 'b'}]},
+                        f'compare/{newer}...{m2}': {'files': pr}})
+        self.assertEqual(verify_plan.base_merge_source(m2, {self.V}, 'main', api), self.V)
+
+    def test_the_status_counts_a_carried_verdict_and_says_so(self):
+        verdict = {'head': self.V, 'verdict': 'verified', 'features': ['auth', 'briefs'], 'full': False,
+                   'verifier': 'codex/gpt-6-sol', 'implementer': 'claude/opus-5-5-1m', 'evidence': ['x']}
+        pr = {'headRefOid': self.M1, 'baseRefName': 'main', 'files': ['app/briefs/save.ts'],
+              'body': '## Objective\nSave briefs.\n',
+              'comments': [{'authorAssociation': 'OWNER', 'body': '<!-- jfactory-verdict ' + json.dumps(verdict) + ' -->'}]}
+        carry = lambda head, verified: verify_plan.base_merge_source(head, verified, 'main', self.api())
+        state, text = verify_plan.evaluate(pr, CONFIG, lambda head: None, carry)
+        self.assertEqual(state, 'success', text)
+        self.assertIn(f'{self.M1[:7]} only merges main', text)
+        # CI must still be green at the new head.
+        state, text = verify_plan.evaluate(pr, CONFIG, lambda head: 'CI is still running', carry)
+        self.assertEqual((state, text), ('failure', 'CI is still running'))
+        # Without the carry rule, the new head has no verdict.
+        self.assertEqual(verify_plan.evaluate(pr, CONFIG, lambda head: None)[0], 'failure')
+
+
 if __name__ == '__main__':
     unittest.main()
 
