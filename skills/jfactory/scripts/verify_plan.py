@@ -1124,9 +1124,49 @@ def ci_refusal(repo, head):
     return None
 
 
-def evaluate(pr, config, ci_check=None):
+# GitHub's compare API lists at most 300 files; a longer list cannot prove a merge was clean.
+COMPARE_FILE_LIMIT = 300
+
+
+def base_merge_source(head, verified, base, api, depth=5):
+    """The verified head that `head` only merged the base branch into, or None.
+
+    A verdict carries over a merge commit when its first parent is a verified head (or carries one),
+    its second parent is on the base branch, the base side changed none of the PR's files, and the
+    merge result is exactly the base side plus the PR's own file versions (same blobs). Anything else,
+    such as a conflict resolution or an edit inside the merge, needs a new verdict.
+    `api(path)` returns parsed JSON for `repos/<repo>/<path>`."""
+    def files(path):
+        listed = api(path).get('files') or []
+        if len(listed) >= COMPARE_FILE_LIMIT:
+            raise Refused('too many files to compare')
+        return {f['filename']: (f.get('status'), f.get('sha')) for f in listed}
+
+    try:
+        for _ in range(depth):
+            parents = [p['sha'] for p in api(f'commits/{head}').get('parents', [])]
+            if len(parents) != 2:
+                return None
+            pr_side, base_side = parents
+            if api(f'compare/{base_side}...{base}').get('status') not in ('identical', 'ahead'):
+                return None
+            pr_files = files(f'compare/{base_side}...{pr_side}')
+            base_files = files(f'compare/{pr_side}...{base_side}')
+            if set(pr_files) & set(base_files) or files(f'compare/{base_side}...{head}') != pr_files:
+                return None
+            if pr_side in verified:
+                return pr_side
+            head = pr_side
+    except (Refused, ValueError, KeyError, TypeError):
+        return None
+    return None
+
+
+def evaluate(pr, config, ci_check=None, carry=None):
     """Return (state, description) for the jfactory verified status at the PR head. `ci_check(head)` returns why
-    CI at the head can't be relied on, or None; a verified verdict counts only while CI there is green."""
+    CI at the head can't be relied on, or None; a verified verdict counts only while CI there is green.
+    `carry(head, verified_heads)` returns the verified head this head only merged the base branch into
+    (`base_merge_source`), so updating a verified PR with its base keeps its verdict."""
     result = plan(pr['files'], config)
     if result['level'] != 'static' and config.get('require_objective', True) and not states_objective(pr.get('body')):
         return 'failure', 'PR description must start with its objective: an Objective heading (such as "## Objective") or "Objective:" line'
@@ -1150,6 +1190,12 @@ def evaluate(pr, config, ci_check=None):
     head = pr['headRefOid']
     verdicts = trusted_verdicts(pr)
     current = [v for v in verdicts if v.get('head') == head]
+    source = head
+    if not current and carry:
+        found = carry(head, {v.get('head') for v in verdicts if v.get('verdict') == 'verified'})
+        if found:
+            source = found
+            current = [v for v in verdicts if v.get('head') == found]
     if not current:
         return 'failure', f'No verdict for head {head[:7]}'
     verdict = current[-1]
@@ -1176,8 +1222,8 @@ def evaluate(pr, config, ci_check=None):
                            + ')')
     if verdict.get('since') and not any(v.get('head') == verdict['since'] for v in verdicts):
         return 'failure', f"Verdict re-checks changes since {verdict['since'][:7]}, which has no earlier verdict"
-    earlier = verdicts[:max(i for i, v in enumerate(verdicts) if v.get('head') == head)]
-    flagged = rule_decision_needed(earlier, head, verdict.get('since'))
+    earlier = verdicts[:max(i for i, v in enumerate(verdicts) if v.get('head') == source)]
+    flagged = rule_decision_needed(earlier, source, verdict.get('since'))
     if flagged and not verdict.get('rule_decision'):
         return 'failure', (f"An earlier verdict at {flagged['head'][:7]} said a rule is wrong; this verdict must link "
                            "the owner's decision on it (--rule-decision)")
@@ -1188,6 +1234,9 @@ def evaluate(pr, config, ci_check=None):
     problem = ci_check(head) if ci_check else None
     if problem:
         return 'failure', problem
+    if source != head:
+        return 'success', (f"Verified at {source[:7]} by {verdict.get('verifier')}; {head[:7]} only merges "
+                           f"{pr.get('baseRefName', 'the base')} into it")
     return 'success', f"Verified at {head[:7]} by {verdict.get('verifier')}"
 
 
@@ -1218,7 +1267,10 @@ def cmd_plan(args):
 def cmd_check(args):
     pr = pr_info(args.repo, args.pr)
     config = load_config(args.config_ref or f"origin/{pr['baseRefName']}")
-    state, description = evaluate(pr, config, lambda head: ci_refusal(args.repo, head))
+    def api(path):
+        return json.loads(run('gh', 'api', f'repos/{args.repo}/{path}'))
+    state, description = evaluate(pr, config, lambda head: ci_refusal(args.repo, head),
+                                  lambda head, verified: base_merge_source(head, verified, pr['baseRefName'], api))
     print(f'{state}: {description}')
     if args.set_status:
         run('gh', 'api', '-X', 'POST', f"repos/{args.repo}/statuses/{pr['headRefOid']}",
