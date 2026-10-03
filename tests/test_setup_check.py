@@ -64,6 +64,8 @@ class SetupCheckTest(unittest.TestCase):
         shutil.copy(WORKFLOW, self.root / '.github' / 'workflows' / 'jfactory-verified.yml')
         shutil.copy(ROOT / 'skills' / 'jfactory' / 'templates' / 'jfactory-method-audit.yml',
                     self.root / '.github' / 'workflows' / 'jfactory-method-audit.yml')
+        shutil.copy(ROOT / 'skills' / 'jfactory' / 'templates' / 'jfactory-pr-health.yml',
+                    self.root / '.github' / 'workflows' / 'jfactory-pr-health.yml')
         (self.root / 'outcomes').mkdir()
         (self.root / 'outcomes' / 'README.md').write_text('# Outcomes\n')
         (self.root / 'src').mkdir()
@@ -140,6 +142,20 @@ class SetupCheckTest(unittest.TestCase):
         self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
         audit.unlink()
         self.assertIn('No workflow runs `method_audit.py`', self.check('--remote', '--repo', 'o/r', code=1))
+
+    def test_warns_without_the_scheduled_stuck_pr_check(self):
+        self.assertIn('PASS: The scheduled stuck-PR check watches open PRs', self.check('--remote', '--repo', 'o/r'))
+        health = self.root / '.github' / 'workflows' / 'jfactory-pr-health.yml'
+        # Manual only, or scheduled without --act (a report that changes nothing), does not count.
+        health.write_text(health.read_text().replace("  schedule:\n    - cron: '*/30 * * * *'\n", ''))
+        self.assertIn('WARN: No scheduled workflow runs `pr_health.py --act`', self.check('--remote', '--repo', 'o/r'))
+        shutil.copy(ROOT / 'skills' / 'jfactory' / 'templates' / 'jfactory-pr-health.yml', health)
+        health.write_text(health.read_text().replace(' --act', ''))
+        self.assertIn('WARN: No scheduled workflow runs `pr_health.py --act`', self.check('--remote', '--repo', 'o/r'))
+        health.unlink()
+        out = self.check('--remote', '--repo', 'o/r')
+        self.assertIn('WARN: No scheduled workflow runs `pr_health.py --act`', out)
+        self.assertIn('install templates/jfactory-pr-health.yml', out)
 
     def test_only_an_executed_audit_command_counts(self):
         head = "on:\n  schedule:\n    - cron: '0 7 * * 1'\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n"
