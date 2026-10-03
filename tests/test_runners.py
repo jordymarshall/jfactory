@@ -31,7 +31,8 @@ elif args[0] == 'ps':
     slots = 'jfactory.slot' in ' '.join(args)
     for name, box in boxes.items():
         if box['repo'] == repo:
-            print(box.get('slot', '') if slots else f"{name}\t{box['state']}")
+            pool = box.get('pool', '')
+            print(f"{box.get('slot', '')}\t{pool}" if slots else f"{name}\t{box['state']}\t{pool}")
 elif args[0] == 'create':
     if os.environ.get('FAKE_DOCKER_FAIL'):
         print('no space left on device', file=sys.stderr)
@@ -39,7 +40,8 @@ elif args[0] == 'create':
     name = args[args.index('--name') + 1]
     labels = [args[i + 1] for i, a in enumerate(args) if a == '--label']
     boxes[name] = {'state': 'created', 'repo': labels[0].split('=', 1)[1],
-                   'slot': next((l.split('=', 1)[1] for l in labels if l.startswith('jfactory.slot=')), '')}
+                   'slot': next((l.split('=', 1)[1] for l in labels if l.startswith('jfactory.slot=')), ''),
+                   'pool': next((l.split('=', 1)[1] for l in labels if l.startswith('jfactory.pool=')), '')}
     save()
 elif args[0] == 'cp':
     name = args[2].split(':')[0]
@@ -260,6 +262,37 @@ class RunnersTest(unittest.TestCase):
                                              "elif args[:3] == ['api', '-X', 'DELETE']:\n    sys.exit(1)"))
         out = self.cli('down', '--repo', 'acme/shop', '--wait', '0', code=1)
         self.assertIn('GitHub refused removal', out)
+
+    def test_a_deploy_pool_has_its_own_label_runners_and_no_shared_cache(self):
+        self.write_config(count=2)
+        cfg = json.loads(self.config.read_text())
+        self.config.write_text(json.dumps({**cfg, 'cache_dir': str(self.state / 'cache')}))
+        (self.state / 'runner-state' / 'acme__shop--deploy.json').write_text(json.dumps(
+            {'count': 1, 'labels': ['jfactory-deploy'], 'pool': 'deploy', 'prefix': 'jfactory-deploy-shop-box',
+             'cpus': None, 'memory': '4g', 'shm_size': '2g', 'cache_dir': None}))
+        self.cli('serve', '--repo', 'acme/shop', '--once')
+        self.cli('serve', '--repo', 'acme/shop', '--pool', 'deploy', '--once')
+        boxes = self.containers()
+        deploy = [n for n, b in boxes.items() if b['pool'] == 'deploy']
+        self.assertEqual(len(deploy), 1)
+        self.assertEqual(len(boxes), 3)
+        # Each pool counts only its own runners: another pass starts nothing new.
+        self.cli('serve', '--repo', 'acme/shop', '--pool', 'deploy', '--once')
+        self.cli('serve', '--repo', 'acme/shop', '--once')
+        self.assertEqual(len(self.containers()), 3)
+        create = next(a for a in self.log('docker.log') if a[0] == 'create' and deploy[0] in a)
+        self.assertNotIn('-v', create, 'a deploy runner must not mount the shared cache')
+        self.assertIn('jfactory.pool=deploy', create)
+        jit = [a for a in self.log('gh.log') if 'generate-jitconfig' in ' '.join(a) and f'name={deploy[0]}' in a]
+        self.assertEqual([x for x in jit[0] if x.startswith('labels[]=')], ['labels[]=self-hosted', 'labels[]=jfactory-deploy'])
+        # The shared pool still mounts its cache.
+        shared = next(a for a in self.log('docker.log') if a[0] == 'create' and deploy[0] not in a)
+        self.assertIn('-v', shared)
+
+    def test_a_pool_refuses_a_shared_cache_and_bad_names(self):
+        out = self.cli('up', '--repo', 'acme/shop', '--count', '1', '--pool', 'deploy', '--cache-dir', '/tmp/c', code=1)
+        self.assertIn('no shared cache', out)
+        self.assertIn('--pool must be', self.cli('status', '--repo', 'acme/shop', '--pool', 'Deploy!', code=1))
 
 
 if __name__ == '__main__':

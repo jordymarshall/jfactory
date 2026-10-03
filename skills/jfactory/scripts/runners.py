@@ -32,6 +32,8 @@ IMAGE = 'jfactory-runner:latest'
 LABEL = 'jfactory'
 # The container label that marks containers this script owns, so nothing else is ever touched.
 OWNER_LABEL = 'jfactory.runner'
+# Separate pools on one machine, such as `deploy`: own runner label, settings and containers.
+POOL_LABEL = 'jfactory.pool'
 STATE = Path(os.environ.get('JFACTORY_RUNNER_STATE') or Path.home() / '.cache' / 'jfactory-runners')
 # The Playwright release whose system-library list the image installs; bump it with the projects' Playwright.
 PLAYWRIGHT_DEPS = '1.61.1'
@@ -111,12 +113,18 @@ def repo_slug(value):
     return slug
 
 
-def prefix(repo, host):
-    return 'jfactory-' + re.sub(r'[^a-z0-9-]+', '-', f'{repo.split("/")[1]}-{host}'.lower()).strip('-')
+def prefix(repo, host, pool=''):
+    return 'jfactory-' + re.sub(r'[^a-z0-9-]+', '-', f'{pool + "-" if pool else ""}{repo.split("/")[1]}-{host}'.lower()).strip('-')
 
 
-def files(repo):
-    base = STATE / repo.replace('/', '__')
+def check_pool(pool):
+    if pool and not re.fullmatch(r'[a-z][a-z0-9]{0,19}', pool):
+        raise Refused(f'--pool must be lowercase letters and digits, starting with a letter; got {pool!r}')
+    return pool or ''
+
+
+def files(repo, pool=''):
+    base = STATE / (repo.replace('/', '__') + (f'--{pool}' if pool else ''))
     return base.with_suffix('.pid'), base.with_suffix('.log'), base.with_suffix('.json')
 
 
@@ -133,10 +141,12 @@ def alive(pid_file):
         return None
 
 
-def containers(repo):
-    """This script's containers for the repository: {name: state}."""
-    out = docker('ps', '-a', '--filter', f'label={OWNER_LABEL}={repo}', '--format', '{{.Names}}\t{{.State}}').stdout
-    return dict(line.split('\t', 1) for line in out.splitlines() if '\t' in line)
+def containers(repo, pool=''):
+    """This script's containers for the repository and pool: {name: state}."""
+    out = docker('ps', '-a', '--filter', f'label={OWNER_LABEL}={repo}', '--format',
+                 '{{.Names}}\t{{.State}}\t{{.Label "%s"}}' % POOL_LABEL).stdout
+    rows = [(line.split('\t') + ['', ''])[:3] for line in out.splitlines() if '\t' in line]
+    return {name: state for name, state, owner in rows if owner == pool}
 
 
 def remote_runners(repo, name_prefix):
@@ -146,7 +156,7 @@ def remote_runners(repo, name_prefix):
         return None
     rows = [line.split('\t') for line in out.stdout.splitlines() if line]
     return [{'id': r[0], 'name': r[1], 'status': r[2], 'busy': r[3] == 'true'} for r in rows
-            if r[1].startswith(name_prefix)]
+            if r[1].startswith(name_prefix + '-')]
 
 
 def build(pull=False):
@@ -169,9 +179,11 @@ def cpu_slice(slot, count):
     return f'{first}-{min(first + size, total) - 1}'
 
 
-def free_slot(repo, count):
-    out = docker('ps', '-a', '--filter', f'label={OWNER_LABEL}={repo}', '--format', '{{.Label "jfactory.slot"}}').stdout
-    used = {int(x) for x in out.split() if x.isdigit()}
+def free_slot(repo, count, pool=''):
+    out = docker('ps', '-a', '--filter', f'label={OWNER_LABEL}={repo}', '--format',
+                 '{{.Label "jfactory.slot"}}\t{{.Label "%s"}}' % POOL_LABEL).stdout
+    rows = [(line.split('\t') + [''])[:2] for line in out.splitlines() if line.strip()]
+    used = {int(slot) for slot, owner in rows if slot.isdigit() and owner == pool}
     return next((n for n in range(count) if n not in used), 0)
 
 
@@ -196,9 +208,12 @@ def start_one(repo, config):
     minted = json.loads(gh_api('-X', 'POST', f'repos/{repo}/actions/runners/generate-jitconfig', '-f', f'name={name}',
                                '-F', 'runner_group_id=1', '-f', 'work_folder=_work',
                                *[x for label in labels for x in ('-f', f'labels[]={label}')]).stdout)
-    slot = free_slot(repo, config['count'])
+    pool = config.get('pool', '')
+    slot = free_slot(repo, config['count'], pool)
     cmd = ['create', '--rm', '--name', name, '--label', f'{OWNER_LABEL}={repo}', '--label', f'jfactory.slot={slot}',
            '--shm-size', config['shm_size']]
+    if pool:
+        cmd += ['--label', f'{POOL_LABEL}={pool}']
     if config.get('pin_cpus', True):
         cmd += ['--cpuset-cpus', cpu_slice(slot, config['count'])]
     if config.get('cpus'):
@@ -232,7 +247,7 @@ def start_one(repo, config):
 
 def reconcile(repo, config, log=print):
     """Keep `count` runners waiting for a job; each runner's container deletes itself after its one job."""
-    running = [n for n, state in containers(repo).items() if state in ('running', 'created')]
+    running = [n for n, state in containers(repo, config.get('pool', '')).items() if state in ('running', 'created')]
     started = []
     for _ in range(config['count'] - len(running)):
         started.append(start_one(repo, config))
@@ -245,7 +260,8 @@ def cmd_serve(args):
     need('docker')
     need('gh')
     repo = repo_slug(args.repo)
-    pid_file, _, config_file = files(repo)
+    pool = check_pool(args.pool)
+    pid_file, _, config_file = files(repo, pool)
     config = json.loads(config_file.read_text())
     if not args.once:
         pid_file.write_text(str(os.getpid()))
@@ -271,10 +287,17 @@ def cmd_up(args):
     repo = repo_slug(args.repo)
     if args.count < 1:
         raise Refused('--count must be at least 1')
+    pool = check_pool(args.pool)
+    if pool and args.cache_dir:
+        raise Refused('A pool keeps no shared cache folder: its jobs (deploys, releases) must not run tools other jobs '
+                      'could have written. Drop --cache-dir for --pool.')
     STATE.mkdir(parents=True, exist_ok=True)
-    pid_file, log_file, config_file = files(repo)
-    labels = list(dict.fromkeys([LABEL, *[x.strip() for x in args.labels.split(',') if x.strip()]]))
-    config = {'count': args.count, 'labels': labels, 'prefix': prefix(repo, args.host or os.uname().nodename.split('.')[0]),
+    pid_file, log_file, config_file = files(repo, pool)
+    # A pool's runners carry only their own label, so jobs asking for `jfactory` never land on them.
+    own = f'{LABEL}-{pool}' if pool else LABEL
+    labels = list(dict.fromkeys([own, *[x.strip() for x in args.labels.split(',') if x.strip()]]))
+    config = {'count': args.count, 'labels': labels, 'pool': pool,
+              'prefix': prefix(repo, args.host or os.uname().nodename.split('.')[0], pool),
               'cpus': args.cpus, 'memory': args.memory, 'shm_size': args.shm_size,
               'cache_dir': os.path.abspath(args.cache_dir) if args.cache_dir else None}
     if args.build or docker('image', 'inspect', IMAGE, check=False).returncode:
@@ -288,19 +311,22 @@ def cmd_up(args):
         os.kill(pid, signal.SIGTERM)
         time.sleep(1)
     with open(log_file, 'a') as log:
-        proc = subprocess.Popen([sys.executable, os.path.abspath(__file__), 'serve', '--repo', repo],
+        proc = subprocess.Popen([sys.executable, os.path.abspath(__file__), 'serve', '--repo', repo,
+                                 *(['--pool', pool] if pool else [])],
                                 stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     pid_file.write_text(str(proc.pid))
     print(f'Supervisor {proc.pid} keeps {args.count} single-use runner(s) ready for {repo} with labels '
           f'self-hosted,{",".join(labels)}; log: {log_file}')
-    print(f'Route workflows here with the repository variable JFACTORY_RUNNER={json.dumps(["self-hosted", LABEL])}.')
+    variable = 'JFACTORY_DEPLOY_RUNNER' if pool == 'deploy' else 'JFACTORY_RUNNER'
+    print(f'Route workflows here with the repository variable {variable}={json.dumps(["self-hosted", own])}.')
     return 0
 
 
 def cmd_down(args):
     need('docker')
     repo = repo_slug(args.repo)
-    pid_file, _, config_file = files(repo)
+    pool = check_pool(args.pool)
+    pid_file, _, config_file = files(repo, pool)
     pid = alive(pid_file)
     if pid:
         os.kill(pid, signal.SIGTERM)
@@ -319,7 +345,7 @@ def cmd_down(args):
         print(f'Waiting for {len(busy)} running job(s) to finish: {", ".join(sorted(busy))}', flush=True)
         time.sleep(15)
     removed, failed = 0, []
-    for name in containers(repo):
+    for name in containers(repo, pool):
         if name in busy and not args.force:
             failed.append(f'{name} (still running a job; rerun with --force to stop it)')
             continue
@@ -343,13 +369,14 @@ def cmd_down(args):
 def cmd_status(args):
     need('docker')
     repo = repo_slug(args.repo)
-    pid_file, log_file, config_file = files(repo)
+    pool = check_pool(args.pool)
+    pid_file, log_file, config_file = files(repo, pool)
     pid = alive(pid_file)
     config = json.loads(config_file.read_text()) if config_file.exists() else {}
     print(f'Supervisor: {"running, pid " + str(pid) if pid else "not running"}'
           + (f'; keeps {config["count"]} ready; log {log_file}' if config else ''))
     remote = {r['name']: r for r in remote_runners(repo, config.get('prefix', 'jfactory-')) or []}
-    for name, state in sorted(containers(repo).items()):
+    for name, state in sorted(containers(repo, pool).items()):
         r = remote.get(name)
         print(f'{name}\tcontainer {state}\t' + (f'GitHub {r["status"]}{" busy" if r["busy"] else " idle"}'
                                                   if r else 'GitHub not yet listed'))
@@ -371,6 +398,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     sub = p.add_subparsers(dest='command', required=True)
     up = sub.add_parser('up', help='Build the image if needed and start the supervisor that keeps runners ready')
+    up.add_argument('--pool', default='', help='A separate pool on this machine, such as deploy (label jfactory-<pool>, no shared cache)')
     up.add_argument('--repo', help='owner/name; defaults to the current checkout')
     up.add_argument('--count', type=int, default=default_count(),
                     help='Runners kept ready for jobs at once on this machine (default: half the CPUs, at most one '
@@ -385,13 +413,16 @@ def main(argv=None):
     up.add_argument('--build', action='store_true', help='Rebuild the image even when it exists')
     up.add_argument('--pull', action='store_true', help='Pull the newest base image when building')
     serve = sub.add_parser('serve', help='The supervisor loop that `up` starts in the background')
+    serve.add_argument('--pool', default='', help='A separate pool on this machine, such as deploy (label jfactory-<pool>, no shared cache)')
     serve.add_argument('--repo')
     serve.add_argument('--once', action='store_true', help='Reconcile once and exit')
     down = sub.add_parser('down', help="Stop the supervisor and remove this machine's runners for the repository")
+    down.add_argument('--pool', default='', help='A separate pool on this machine, such as deploy (label jfactory-<pool>, no shared cache)')
     down.add_argument('--repo')
     down.add_argument('--wait', type=float, default=30, help='Minutes to wait for running jobs before giving up')
     down.add_argument('--force', action='store_true', help='Stop runners even in the middle of a job')
     status = sub.add_parser('status', help="Show the supervisor, this machine's runners and their GitHub state")
+    status.add_argument('--pool', default='', help='A separate pool on this machine, such as deploy (label jfactory-<pool>, no shared cache)')
     status.add_argument('--repo')
     args = p.parse_args(argv)
     try:
