@@ -941,6 +941,16 @@ class BaseMergeCarryTest(unittest.TestCase):
         self.assertIsNone(self.carry(**{f'compare/{self.NEW}...{self.V}': {'files': many}}))
         self.assertIsNone(verify_plan.base_merge_source(self.M1, {self.V}, 'main', lambda path: {}[path]))
 
+    def test_a_base_edit_to_a_file_the_pr_renamed_needs_a_new_verdict(self):
+        renamed = [{'filename': 'app/briefs/new.ts', 'previous_filename': 'app/briefs/old.ts', 'status': 'renamed', 'sha': 'r'}]
+        base_edit = [{'filename': 'app/briefs/old.ts', 'status': 'modified', 'sha': 'b'}]
+        self.assertIsNone(self.carry(**{f'compare/{self.NEW}...{self.V}': {'files': renamed},
+                                        f'compare/{self.V}...{self.NEW}': {'files': base_edit},
+                                        f'compare/{self.NEW}...{self.M1}': {'files': renamed}}))
+        # A base-side rename onto a name the PR changed counts too.
+        base_rename = [{'filename': 'lib/x.ts', 'previous_filename': 'app/briefs/save.ts', 'status': 'renamed', 'sha': 'x'}]
+        self.assertIsNone(self.carry(**{f'compare/{self.V}...{self.NEW}': {'files': base_rename}}))
+
     def test_repeated_base_merges_chain_back_to_the_verdict(self):
         m2, newer = '2' * 40, '3' * 40
         pr = [{'filename': 'app/briefs/save.ts', 'status': 'modified', 'sha': 'pr1'}]
