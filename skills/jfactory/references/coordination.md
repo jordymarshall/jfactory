@@ -150,6 +150,21 @@ Every check spends tokens, and a check that finds nothing new moves nothing. The
 
 Resume only when a session, a PR or the owner reports something new.
 
+### The stuck-PR check
+
+Do not depend on a loop inside one agent chat to watch PRs. The chat ends, and the PRs then wait unseen. A scheduled workflow ([template](../templates/jfactory-pr-health.yml)) runs `scripts/pr_health.py` every 30 minutes. It uses no AI model. For each open PR into the default branch, it finds the state and the one next step:
+
+| State | Next step |
+| --- | --- |
+| `conflict` | The author merges the base branch and resolves the conflicts. |
+| `ci-failed` | The author fixes the failing check. An infrastructure failure gets one automatic re-run per head. |
+| `partial` | The latest verdict at the head is `partially-verified`, `blocked` or `failed`. The table quotes the first line of its evidence and names who acts. |
+| `behind` | A verified PR gets the base branch merged in automatically, once per head. The verifier then re-checks only the merge with `--since`. |
+| `needs-verdict` | CI is green for more than 1 hour, and no verdict exists at the head. The verifier posts one. |
+| `gate-failed`, `not-queued`, `no-ci`, `idle` | The table says what is missing. `idle` means no commit, check or comment for more than 6 hours. |
+
+The check keeps one issue labelled `jfactory-pr-health` with the title "Stuck PRs". It edits the issue in place and never comments. It closes the issue when no PR is stuck and reopens it when one is. Read that issue, not a chat, to see what waits on whom. The check never re-runs a test failure, never merges a PR and never changes code. Run it by hand without `--act` to see the table without changing anything.
+
 For detail, read `conductor session message <session> --after <last seen message id>` and the PR. Do not send a message to check progress; a message starts another turn and can redirect the worker. Send one with `conductor message create --session <session>` only to answer a question, deliver a changed dependency or correct scope, and restate the relevant standing orders when you do.
 
 A worker question becomes an open decision at `sync`. Answer it from recorded decisions when possible with `gate resolve` and a message to the worker. Otherwise batch it for the owner.
@@ -163,6 +178,8 @@ Every unit whose PR touches an `independent` (high-risk), unmapped or gate path 
 - run `verify_plan.py smoke` for the target first and report a failed step as `blocked`;
 - check the PR as the [verification contract](verification.md#change-aware-verification-and-the-merge-gate) describes: reuse green CI, drive the changed journeys when users see the change and review screenshots of each changed screen with a vision-capable model (linked with `--screenshots`), walk each changed journey step by step, looking at the screen after every action (linked with `--walkthrough`), check the change against the standards map and the feature's journey (named with `--standards`), score judgment criteria, and review the diff and any mapping change;
 - post the verdict itself with `coord.py verdict`, and follow the PR through CI and review comments.
+
+The verifier produces everything the gate requires for the plan. For changed screens, that is the walkthrough and the reviewed screenshots. An instruction to keep the review cheap limits extra work. It never permits `partially-verified` when the required proof is possible. Use `partially-verified` or `blocked` only when the proof is really blocked, for example by missing access or a missing environment, and name the blocker in the evidence. A brief that says "walkthrough only if cheap" is wrong; write "the proof the gate requires, nothing more".
 
 It does not change product code. Each failed or blocked verdict names its cause, as [the verification contract](verification.md#change-aware-verification-and-the-merge-gate) describes. Defects in the change (`--cause change`) become a fix task for the original worker, and after the fix the same verifier re-checks only the changes with `--since`. A rule the verifier says is wrong (`--cause rules`, or `both`) becomes an owner decision instead: the unit is `blocked` on it, and `launch` and `merge` refuse until the owner answers. Bring it to the owner with the verifier's recommendation. If they approve the change, add a unit for the rule change (its own PR, verified like any other) and re-verify the original PR under the new rule once it merges. If they keep the rule, `gate resolve --decision keep-rule` turns the unit into an ordinary fix task. Either way the next verdict links their answer with `--rule-decision`. Never resolve a rule-change decision from the coordinator's own judgment. The coordinator does not re-inspect a posted verdict; it merges verified units.
 It runs on GPT Sol 6.1 at low effort in fast mode, or Opus 5.5 at low effort when the implementer ran on Codex; see the verify tier in [model selection](models.md). A verifier launched for a PR outside a program uses `launch --role verify --pr <number>`; either way its workspace is archived automatically once it is finished, so nobody archives it by hand.

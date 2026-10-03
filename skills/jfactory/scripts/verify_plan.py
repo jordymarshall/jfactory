@@ -286,7 +286,11 @@ def live_suites(config, suites=None):
 
 
 def has_screens(feature, config):
-    """A feature users see: one with a journey suite against a running app, or marked `"screens": true`."""
+    """A feature users see: one with a journey suite against a running app, or marked `"screens": true`.
+    `"screens": false` means never, even with a journey suite: a release or infrastructure feature whose smoke
+    journey checks the app, not screens of its own. Its suites still run when the plan selects them."""
+    if feature.get('screens') is False:
+        return False
     defs = config.get('suites', {})
     return feature.get('screens') is True or any(defs.get(s, {}).get('target') for s in feature.get('suites', []))
 

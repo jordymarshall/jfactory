@@ -6,7 +6,7 @@ Setup has five steps, and each leaves something `scripts/setup_check.py` can che
 
 1. **Inspect and resume:** install or update the bundle, then read the setup record at `.jfactory/setup.md`.
 2. **Reconcile the foundation:** clean up the docs, put the four entry sections in `AGENTS.md`, record the outcomes, the standards map and a document per job to be done, and interview the owner. The answers go in the record.
-3. **Prepare tools and verification:** set up bootstrap and doctor, the project verifier, `.jfactory/verification.json` through [guided mapping](mapping.md), a start-up receipt for each place the app runs, the change-aware CI job and the `jfactory verified` workflow. Install the [method audit](../templates/jfactory-method-audit.yml) so a weekly run checks the checkers across merged PRs.
+3. **Prepare tools and verification:** set up bootstrap and doctor, the project verifier, `.jfactory/verification.json` through [guided mapping](mapping.md), a start-up receipt for each place the app runs, the change-aware CI job and the `jfactory verified` workflow. Install the [method audit](../templates/jfactory-method-audit.yml) so a weekly run checks the checkers across merged PRs. Install the [stuck-PR check](../templates/jfactory-pr-health.yml) so a run every 30 minutes reports PRs that stopped moving ([coordination](coordination.md#the-stuck-pr-check)); `setup_check.py` warns while no scheduled workflow runs it.
 4. **Establish the loop and delivery:** name the task location, write the next objective, record `merge_deploys` and the release procedure, and set up the GitHub gates.
 5. **Deliver:** run `setup_check.py --remote` and open one adoption PR with the readiness report.
 

@@ -472,6 +472,25 @@ class GateTest(unittest.TestCase):
         self.verdict(head='d' * 40)
         self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
 
+    def test_screens_false_keeps_a_journey_suite_but_needs_no_walkthrough(self):
+        # A release script whose feature runs a smoke journey against the app has no screens of its own.
+        config = {**CONFIG, 'suites': {'browser': {'run': 'true', 'target': 'app'}},
+                  'targets': {'app': {'url': 'http://x', 'ready': 'http://x', 'auth': 'none'}},
+                  'features': {**CONFIG['features'],
+                               'release': {'paths': ['ops/**'], 'suites': ['browser'], 'screens': False}}}
+        result = verify_plan.plan(['ops/release.sh'], config)
+        self.assertEqual(result['screen_features'], [])
+        self.assertEqual(result['suites'], ['browser', 'unit'])
+        self.assertTrue(result['needs_verifier'])
+        self.write(files=['ops/release.sh'], config=config)
+        self.verdict('--features', 'release')
+        self.assertIn('success: Verified', self.run_script('check', '--pr', '5'))
+        # Negative control: without the flag, the same feature is a screen feature and the verdict is refused.
+        config['features']['release'].pop('screens')
+        self.assertEqual(verify_plan.plan(['ops/release.sh'], config)['screen_features'], ['release'])
+        self.write(files=['ops/release.sh'], head='b' * 40, config=config)
+        self.assertIn('touches screens users see', self.verdict('--features', 'release', head='b' * 40, code=2))
+
     def test_verdicts_name_the_standards_and_journeys_they_checked(self):
         standards = ('| Dimension | Source of truth | How changes are checked |\n| --- | --- | --- |\n'
                      '| Brand, voice and copy | `docs/brand.md` | Rubric |\n')
