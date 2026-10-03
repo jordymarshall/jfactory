@@ -11,7 +11,7 @@ Required checks still have to come from GitHub Actions. A ruleset accepts `jfact
 - **A supervisor keeps runners ready.** `scripts/runners.py up` starts it on the host. It keeps `--count` runners waiting: for each, it asks GitHub for a single-use runner configuration and copies it into a new container, never as an argument or environment variable. The admin token stays on the host; a container only ever sees its own single-use configuration.
 - **The image** is GitHub's runner image (Ubuntu) plus `gh`, `python3`, `jq`, `zip`, the system libraries Playwright's Chromium needs, and passwordless sudo for `apt-get` steps. `actions/setup-node`, `actions/setup-python` and `actions/cache` work as on hosted runners.
   - It doesn't have everything hosted runners preinstall: no Docker daemon, so no `services:` or container jobs, no other browsers' libraries, and no language toolchains beyond what setup actions download. A step that assumes one of those needs an install step or an image addition.
-  - Fresh containers start with empty tool caches, so restore dependencies with `actions/cache`.
+  - Fresh containers start with empty tool caches. Restore dependencies with `actions/cache`, or share a cache on the machine ([warm runners](#warm-runners-share-a-cache-on-the-machine)).
 - **Any machine with Docker can run them:** a cloud VM, a workstation or a Mac with Docker Desktop. Runners from several machines share one queue.
   - On Apple Silicon the runners are `arm64`, while GitHub's runners are `x64`, so include `${{ runner.arch }}` in cache keys for anything with native binaries (such as `node_modules`).
 - **Production releases stay on GitHub-hosted runners.** `templates/release-production.yml` doesn't read the variable, so a release never depends on whether one of your machines is up.
@@ -34,6 +34,20 @@ Required checks still have to come from GitHub Actions. A ruleset accepts `jfact
 4. **Prove it** with a PR whose checks run on the runners: the job log's "Set up job" step names the runner. Record the result in the setup record.
 
 Project workflows that aren't jfactory templates (for example the project's own browser suite) can use the same `runs-on` expression, so one switch moves the whole PR gate. Keep deploy and production jobs on hosted runners unless the owner decides otherwise.
+
+## Warm runners: share a cache on the machine
+
+A fresh container downloads everything again: Node, npm packages and browsers. On a busy repository that costs one to two minutes per job. `up --cache-dir PATH` gives the machine's runners one shared cache folder for downloads. The setting is stored in the supervisor's config file (`cache_dir`).
+
+- **What is shared.** Each runner container mounts the folder at `/cache` and gets these variables:
+  - `RUNNER_TOOL_CACHE=/cache/toolcache`: `actions/setup-node` and other setup actions reuse the tools they downloaded.
+  - `npm_config_cache=/cache/npm`: npm reuses downloaded packages.
+  - `PLAYWRIGHT_BROWSERS_PATH=/cache/ms-playwright`: Playwright finds installed browsers.
+  - `JFACTORY_RUNNER_CACHE=/cache`: workflows test this variable to use the cache for more, for example a saved `node_modules` per lockfile or a build cache. Keep the hosted steps for runs where the variable is empty.
+- **The supervisor prepares the folder.** It creates the subfolders and gives them to the image's `runner` user. It uses a short container for this, so it needs no root on the host.
+- **Workspaces stay fresh.** Only `/cache` is shared. Each job still gets a new container with its own checkout, home folder and processes. The container is deleted after its one job.
+- **Risk: a shared, writable cache.** Any job on the machine can write to it. A bad branch could leave a changed package or browser that a later job uses. This is acceptable only because these runners take trusted branches from the same repository. Fork PRs always run on GitHub's runners. Don't share a cache between repositories with different trust.
+- **Clear it** when you suspect a bad entry or the disk fills: `sudo rm -rf PATH`. The files belong to the container's `runner` user, so this needs root. The supervisor makes the folder again before it starts the next runner, and jobs download again. Do it when no job is running, or a running job may fail.
 
 ## Keep it healthy
 

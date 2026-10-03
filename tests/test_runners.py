@@ -118,9 +118,9 @@ class RunnersTest(unittest.TestCase):
         path = self.state / 'containers.json'
         return json.loads(path.read_text()) if path.exists() else {}
 
-    def write_config(self, count=2):
+    def write_config(self, count=2, **extra):
         self.config.write_text(json.dumps({'count': count, 'labels': ['jfactory', 'gpu'], 'prefix': 'jfactory-shop-box',
-                                           'cpus': None, 'memory': '6g', 'shm_size': '2g'}))
+                                           'cpus': None, 'memory': '6g', 'shm_size': '2g', **extra}))
 
     def test_serve_keeps_count_single_use_runners_ready_with_configs_copied_in_not_passed(self):
         self.write_config(count=2)
@@ -148,6 +148,44 @@ class RunnersTest(unittest.TestCase):
         self.cli('serve', '--repo', 'acme/shop', '--once')
         self.assertEqual(len(self.containers()), 2)
         self.assertEqual(sum(a[0] == 'create' for a in self.log('docker.log')), 3)
+
+    def test_cache_dir_is_mounted_with_tool_variables_and_prepared_once_for_the_runner_user(self):
+        cache = self.state / 'runner-cache'
+        self.write_config(count=2, cache_dir=str(cache))
+        self.cli('serve', '--repo', 'acme/shop', '--once')
+        creates = [a for a in self.log('docker.log') if a[0] == 'create']
+        self.assertEqual(len(creates), 2)
+        for create in creates:
+            self.assertIn('--rm', create)
+            self.assertEqual(create[create.index('-v') + 1], f'{cache}:/cache')
+            env = {create[i + 1] for i, a in enumerate(create) if a == '-e'}
+            self.assertEqual(env, {'RUNNER_TOOL_CACHE=/cache/toolcache', 'npm_config_cache=/cache/npm',
+                                   'PLAYWRIGHT_BROWSERS_PATH=/cache/ms-playwright', 'JFACTORY_RUNNER_CACHE=/cache'})
+        # Missing folders are made inside the image, as root, and handed to its runner user.
+        prep = [a for a in self.log('docker.log') if a[0] == 'run']
+        self.assertTrue(prep)
+        self.assertIn(f'{cache}:/cache', prep[0])
+        self.assertIn('chown runner:runner /cache', prep[0][-1])
+        self.assertIn('/cache/ms-playwright', prep[0][-1])
+        # Once the folders exist, no more preparing.
+        for sub in ('toolcache', 'npm', 'ms-playwright'):
+            (cache / sub).mkdir(parents=True, exist_ok=True)
+        (self.state / 'containers.json').write_text('{}')
+        before = len(prep)
+        self.cli('serve', '--repo', 'acme/shop', '--once')
+        self.assertEqual(len([a for a in self.log('docker.log') if a[0] == 'run']), before)
+
+    def test_without_cache_dir_runners_share_nothing(self):
+        self.write_config(count=1)
+        self.cli('serve', '--repo', 'acme/shop', '--once')
+        create = next(a for a in self.log('docker.log') if a[0] == 'create')
+        self.assertNotIn('-v', create)
+        self.assertNotIn('-e', create)
+        self.assertFalse(any(a[0] == 'run' for a in self.log('docker.log')))
+
+    def test_up_stores_the_cache_dir_in_the_config(self):
+        self.cli('up', '--repo', 'acme/shop', '--count', '1', '--cache-dir', str(self.state / 'c'))
+        self.assertEqual(json.loads(self.config.read_text())['cache_dir'], str(self.state / 'c'))
 
     def test_serve_reports_docker_and_github_failures_and_keeps_going(self):
         self.write_config(count=1)

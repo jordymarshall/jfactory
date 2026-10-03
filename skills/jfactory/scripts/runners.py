@@ -66,6 +66,12 @@ exec ./run.sh --jitconfig "$jit"
 '''
 
 
+# Folders inside the shared cache, and the variables that point each tool at its folder.
+CACHE_ENV = {'RUNNER_TOOL_CACHE': '/cache/toolcache', 'npm_config_cache': '/cache/npm',
+             'PLAYWRIGHT_BROWSERS_PATH': '/cache/ms-playwright', 'JFACTORY_RUNNER_CACHE': '/cache'}
+CACHE_DIRS = ('toolcache', 'npm', 'ms-playwright')
+
+
 class Refused(Exception):
     pass
 
@@ -169,8 +175,22 @@ def free_slot(repo, count):
     return next((n for n in range(count) if n not in used), 0)
 
 
+def prepare_cache(cache_dir):
+    """Create the shared cache folders, owned by the image's `runner` user, unless they already exist. Docker would
+    create a missing mount folder as root, which jobs can't write to; a container running as root inside the image
+    sets the owner, so the supervisor needs no root on the host."""
+    root = Path(cache_dir)
+    if root.is_dir() and all((root / d).is_dir() for d in CACHE_DIRS):
+        return
+    script = f'mkdir -p {" ".join("/cache/" + d for d in CACHE_DIRS)} && chown runner:runner /cache ' + \
+        ' '.join('/cache/' + d for d in CACHE_DIRS)
+    docker('run', '--rm', '--user', 'root', '--entrypoint', 'sh', '-v', f'{root}:/cache', IMAGE, '-c', script)
+
+
 def start_one(repo, config):
     """Mint a single-use runner configuration and start one fresh container with it."""
+    if config.get('cache_dir'):
+        prepare_cache(config['cache_dir'])  # before minting, so a failure leaves no registration behind
     name = f'{config["prefix"]}-{secrets.token_hex(3)}'
     labels = ['self-hosted', *config['labels']]
     minted = json.loads(gh_api('-X', 'POST', f'repos/{repo}/actions/runners/generate-jitconfig', '-f', f'name={name}',
@@ -185,6 +205,12 @@ def start_one(repo, config):
         cmd += ['--cpus', str(config['cpus'])]
     if config.get('memory'):
         cmd += ['--memory', config['memory']]
+    if config.get('cache_dir'):
+        # Shared between jobs on this machine: downloads only (Node, npm packages, browsers, build caches). Each job's
+        # workspace is still the fresh container's own, so no job sees another's checkout or files.
+        cmd += ['-v', f'{config["cache_dir"]}:/cache']
+        for key, value in CACHE_ENV.items():
+            cmd += ['-e', f'{key}={value}']
     try:
         docker(*cmd, IMAGE)
         # Copied in, never passed as an argument or variable, so `docker inspect` and the process list don't show it.
@@ -249,7 +275,8 @@ def cmd_up(args):
     pid_file, log_file, config_file = files(repo)
     labels = list(dict.fromkeys([LABEL, *[x.strip() for x in args.labels.split(',') if x.strip()]]))
     config = {'count': args.count, 'labels': labels, 'prefix': prefix(repo, args.host or os.uname().nodename.split('.')[0]),
-              'cpus': args.cpus, 'memory': args.memory, 'shm_size': args.shm_size}
+              'cpus': args.cpus, 'memory': args.memory, 'shm_size': args.shm_size,
+              'cache_dir': os.path.abspath(args.cache_dir) if args.cache_dir else None}
     if args.build or docker('image', 'inspect', IMAGE, check=False).returncode:
         build(args.pull)
     # Prove the token works before leaving a supervisor running in the background.
@@ -353,6 +380,8 @@ def main(argv=None):
     up.add_argument('--cpus', type=float, help='CPU limit per runner')
     up.add_argument('--memory', help='Memory limit per runner, for example 6g; needs Docker with the cgroup memory controller')
     up.add_argument('--shm-size', default='2g', help='Shared memory per runner; browsers need more than the default')
+    up.add_argument('--cache-dir', help='Host folder shared by this machine\'s runners as /cache, so jobs reuse Node, npm '
+                                        'packages and browsers instead of downloading them (references/ci-runners.md)')
     up.add_argument('--build', action='store_true', help='Rebuild the image even when it exists')
     up.add_argument('--pull', action='store_true', help='Pull the newest base image when building')
     serve = sub.add_parser('serve', help='The supervisor loop that `up` starts in the background')
