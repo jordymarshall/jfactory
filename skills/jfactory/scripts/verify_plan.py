@@ -1136,11 +1136,18 @@ def base_merge_source(head, verified, base, api, depth=5):
     merge result is exactly the base side plus the PR's own file versions (same blobs). Anything else,
     such as a conflict resolution or an edit inside the merge, needs a new verdict.
     `api(path)` returns parsed JSON for `repos/<repo>/<path>`."""
-    def files(path):
-        listed = api(path).get('files') or []
-        if len(listed) >= COMPARE_FILE_LIMIT:
+    def listed(path):
+        found = api(path).get('files') or []
+        if len(found) >= COMPARE_FILE_LIMIT:
             raise Refused('too many files to compare')
-        return {f['filename']: (f.get('status'), f.get('sha')) for f in listed}
+        return found
+
+    def files(path):
+        return {f['filename']: (f.get('status'), f.get('sha')) for f in listed(path)}
+
+    def touched(path):
+        # A rename touches its old name too: a base-side edit to the old file must not be dropped silently.
+        return {name for f in listed(path) for name in (f['filename'], f.get('previous_filename')) if name}
 
     try:
         for _ in range(depth):
@@ -1151,8 +1158,8 @@ def base_merge_source(head, verified, base, api, depth=5):
             if api(f'compare/{base_side}...{base}').get('status') not in ('identical', 'ahead'):
                 return None
             pr_files = files(f'compare/{base_side}...{pr_side}')
-            base_files = files(f'compare/{pr_side}...{base_side}')
-            if set(pr_files) & set(base_files) or files(f'compare/{base_side}...{head}') != pr_files:
+            overlap = touched(f'compare/{base_side}...{pr_side}') & touched(f'compare/{pr_side}...{base_side}')
+            if overlap or files(f'compare/{base_side}...{head}') != pr_files:
                 return None
             if pr_side in verified:
                 return pr_side
