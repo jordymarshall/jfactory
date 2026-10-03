@@ -49,7 +49,7 @@ Every suite a feature names is defined under `suites` with its command, its meas
 "browser-briefs": {"run": "npx playwright test e2e/briefs.spec.ts", "minutes": 4, "target": "local"}
 ```
 
-Give each feature its own journey suite: one spec file, a tag (`--grep @briefs`) or a Playwright project. Small suites let coverage select precisely and parallel jobs balance evenly. Add a `smoke` suite of one or two minutes that loads the app and signs in. Keep `always_suites` and `full_suites` to fast whole-repository checks such as lint, types and unit tests. Time each suite with `$VP ci --suites <name>` and record the minutes it reports.
+Give each feature its own journey suite: one spec file, a tag (`--grep @briefs`) or a Playwright project. A PR runs a feature's journey suite only when it changes a file users can see; a change only to `backend_paths` (server logic, data, APIs) runs it after merge instead ([scope](verification.md#change-aware-verification-and-the-merge-gate)). Small suites let coverage select precisely and parallel jobs balance evenly. Add a `smoke` suite of one or two minutes that loads the app and signs in. Keep `always_suites` and `full_suites` to fast whole-repository checks such as lint, types and unit tests. Time each suite with `$VP ci --suites <name>` and record the minutes it reports.
 
 For recorded coverage, each suite writes a coverage report into `$JFACTORY_COVERAGE_DIR` while it runs. `ci` reads Istanbul `coverage-final.json`, V8 coverage, coverage.py `coverage json` output or a plain list of paths:
 

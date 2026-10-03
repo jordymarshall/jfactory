@@ -171,11 +171,12 @@ class PlanTest(unittest.TestCase):
     def test_owner_chooses_when_the_whole_suite_runs(self):
         mode = verify_plan.full_suite_mode
         # Unset keeps the earlier behaviour: nightly, plus the label and manual runs.
+        # The push after a merge runs the planned suites: it runs the journeys PRs leave out for unseen changes.
         self.assertEqual([mode({}, e) for e in ('pull_request', 'schedule', 'push', 'workflow_dispatch')],
-                         ['planned', 'full', 'skip', 'full'])
+                         ['planned', 'full', 'planned', 'full'])
         request = {'full_suite': 'on-request'}
         self.assertEqual([mode(request, e) for e in ('pull_request', 'schedule', 'push', 'workflow_dispatch')],
-                         ['planned', 'skip', 'skip', 'full'])
+                         ['planned', 'skip', 'planned', 'full'])
         self.assertEqual(mode(request, 'pull_request', ['bug', 'full-suite']), 'full')
         self.assertEqual(mode({**request, 'full_suite_label': 'release'}, 'pull_request', ['full-suite']), 'planned')
         self.assertEqual(mode({'full_suite': 'merge'}, 'push'), 'full')
@@ -225,6 +226,42 @@ class PlanTest(unittest.TestCase):
         self.assertEqual((result['minutes'], result['untimed_suites'], result['budget_minutes']), (2, ['cli'], 10))
         self.assertEqual(verify_plan.plan(['app/briefs/save.ts'], timed)['minutes'], 42)
         self.assertIn('Estimated CI time: 2 min plus untimed cli (per-PR budget 10 min)', verify_plan.render_plan(result))
+
+    def test_prs_run_journeys_only_for_changes_users_can_see(self):
+        config = {**CONFIG, 'always_suites': ['unit'],
+                  'suites': {'briefs-journey': {'target': 'app'}, 'briefs-api': {}, 'unit': {}},
+                  'features': {'briefs': {'paths': ['app/briefs/**'], 'suites': ['briefs-journey', 'briefs-api']}}}
+        pr = lambda files, **kw: verify_plan.plan(files, config, screens_only=True, **kw)
+        push = lambda files, **kw: verify_plan.plan(files, config, **kw)
+        # Behind-the-scenes code: no journey on the PR, the push after merge runs it. The verdict is unchanged.
+        backend = ['app/briefs/api/save.ts']
+        self.assertEqual((pr(backend)['suites'], pr(backend)['after_merge']), (['briefs-api', 'unit'], ['briefs-journey']))
+        self.assertEqual((push(backend)['suites'], push(backend)['after_merge']),
+                         (['briefs-api', 'briefs-journey', 'unit'], []))
+        self.assertEqual((pr(backend)['level'], pr(backend)['screen_features']), (push(backend)['level'], ['briefs']))
+        self.assertIn('Journeys run after merge', verify_plan.render_plan(pr(backend)))
+        # Coverage adds no journey for an unseen change on the PR, but does after merge.
+        impact = {'briefs-journey': {'app/briefs/api/save.ts'}}
+        cover = {**config, 'features': {'briefs': {'paths': ['app/briefs/**'], 'suites': ['briefs-api']}}}
+        self.assertEqual(verify_plan.plan(backend, cover, impact, screens_only=True)['suites'], ['briefs-api', 'unit'])
+        self.assertEqual(verify_plan.plan(backend, cover, impact)['suites'], ['briefs-api', 'briefs-journey', 'unit'])
+        # A file that can change a screen runs the journey on the PR.
+        self.assertIn('briefs-journey', pr(['app/briefs/page.tsx', 'app/briefs/api/save.ts'])['suites'])
+        self.assertIn('briefs-journey', verify_plan.plan(['app/briefs/page.tsx'], cover, {'briefs-journey': {'app/briefs/page.tsx'}},
+                                                      screens_only=True)
+                      ['suites'])
+        # A changed test keeps its journeys, as before.
+        self.assertEqual(pr(['app/briefs/save.test.ts'])['suites'], push(['app/briefs/save.test.ts'])['suites'])
+        self.assertIn('briefs-journey', pr(['app/briefs/save.test.ts'])['suites'])
+        # Gate and unmapped changes are unchanged.
+        for files in (['.jfactory/verification.json'], ['lib/new.ts'], ['lib/api/new.ts']):
+            self.assertEqual(pr(files)['suites'], push(files)['suites'])
+        self.assertIn('briefs-journey', pr(['lib/api/new.ts'])['suites'])
+        # The mapping can name its own behind-the-scenes code; [] counts every code file as a screen.
+        self.assertIn('briefs-journey', verify_plan.plan(backend, {**config, 'backend_paths': []}, screens_only=True)
+                      ['suites'])
+        self.assertEqual(verify_plan.plan(['app/briefs/model.ts'], {**config, 'backend_paths': ['app/briefs/model.ts']},
+                                          screens_only=True)['suites'], ['briefs-api', 'unit'])
 
     def test_gate_change_needs_a_full_verdict_but_not_every_journey(self):
         gate = verify_plan.plan(['.jfactory/setup.md'], CONFIG)
@@ -970,9 +1007,12 @@ class RunTest(unittest.TestCase):
     def write_config(self, **changes):
         (self.root / '.jfactory' / 'verification.json').write_text(json.dumps({**self.config, **changes}))
 
-    def run_script(self, *args, code=0):
+    def run_script(self, *args, code=0, event=None):
+        env = {k: v for k, v in os.environ.items() if k != 'GITHUB_EVENT_NAME'}
+        if event:
+            env['GITHUB_EVENT_NAME'] = event
         proc = subprocess.run([sys.executable, str(SCRIPT), *args], cwd=self.root, capture_output=True, text=True,
-                              timeout=120)
+                              timeout=120, env=env)
         if code is not None:
             self.assertEqual(proc.returncode, code, proc.stdout + proc.stderr)
         return proc.stdout + proc.stderr
@@ -999,7 +1039,7 @@ class RunTest(unittest.TestCase):
         self.write_config(full_suite='on-request', full_suite_label='release,full')
         self.assertEqual(self.run_script('full-suite', '--event', 'pull_request',
                                          '--labels-json', '["release,full"]').strip(), 'mode=full')
-        self.assertEqual(self.run_script('full-suite', '--event', 'push', '--labels-json', 'null').strip(), 'mode=skip')
+        self.assertEqual(self.run_script('full-suite', '--event', 'push', '--labels-json', 'null').strip(), 'mode=planned')
         self.assertIn('JSON array', self.run_script('full-suite', '--event', 'pull_request', '--labels-json', '{"a": 1}',
                                                     code=2))
 
@@ -1012,6 +1052,19 @@ class RunTest(unittest.TestCase):
     def test_ci_starts_the_target_for_a_journey_suite(self):
         self.change('app/briefs/a.py')
         self.run_script('ci', '--base', 'main')
+        self.assertEqual(self.ran(), ['ran-browser', 'ran-unit'])
+
+    def test_ci_on_a_pr_runs_journeys_only_for_changes_users_can_see(self):
+        self.change('app/briefs/api/save.py')
+        # The GitHub event decides when no flag is given; an explicit flag wins.
+        self.run_script('ci', '--base', 'main', event='pull_request')
+        self.assertEqual(self.ran(), ['ran-unit'])
+        self.run_script('ci', '--base', 'main', '--push', event='pull_request')
+        self.assertEqual(self.ran(), ['ran-browser', 'ran-unit'])
+        for p in self.root.glob('ran-*'):
+            p.unlink()
+        self.assertIn('Journeys run after merge', self.run_script('plan', '--base', 'main', '--pr'))
+        self.run_script('ci', '--base', 'main', event='push')
         self.assertEqual(self.ran(), ['ran-browser', 'ran-unit'])
 
     def test_ci_refuses_unmapped_files_before_running_anything(self):

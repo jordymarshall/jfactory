@@ -4,7 +4,9 @@
 #
 # On a PR it fails when a tracked file is unmapped, then runs only the suites the change needs: the map's, plus
 # every suite whose recorded coverage executed a changed file. The suites are split across parallel jobs by their
-# recorded minutes. The whole suite runs when the owner's "full_suite" choice in the mapping says so (on request,
+# recorded minutes. A PR runs journey (browser) suites only for changes users can see (`ci --pr`). The push after
+# merge runs the journeys of every feature whose code changed (`ci --push`), so behind-the-scenes changes are
+# still checked once before a release. The whole suite runs when the owner's "full_suite" choice in the mapping says so (on request,
 # nightly, on every merge or on every PR); each such run also records the coverage later PRs use.
 name: jfactory checks
 on:
@@ -75,7 +77,8 @@ jobs:
       - name: Run this job's share of the suites the change needs
         if: needs.mode.outputs.mode == 'planned'
         run: >-
-          python3 "$JFACTORY_DIR/scripts/verify_plan.py" ci --base "origin/${{ github.base_ref }}"
+          python3 "$JFACTORY_DIR/scripts/verify_plan.py" ci
+          ${{ github.event_name == 'push' && format('--push --base {0}', github.event.before) || format('--pr --base origin/{0}', github.base_ref) }}
           --impact .jfactory-impact --shard "${{ matrix.shard }}/${{ strategy.job-total }}"
       - name: Run this job's share of every suite and record coverage
         if: needs.mode.outputs.mode == 'full'
@@ -100,6 +103,6 @@ jobs:
           SUITES_RESULT: ${{ needs.suites.result }}
         run: |
           test "$MODE_RESULT" = success
-          # A skipped run (a schedule or merge when the owner chose otherwise) ran nothing and is not a PR gate.
+          # A skipped run (a schedule when the owner chose otherwise) ran nothing and is not a PR gate.
           if [ "$MODE" = skip ]; then exit 0; fi
           test "$SUITES_RESULT" = success
