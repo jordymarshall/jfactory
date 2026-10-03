@@ -48,6 +48,7 @@ def managed_block(skill_path):
             'research approved reference apps when requested or needed for a design decision. '
             'When that work needs login, proactively prepare a supported browser handoff and guide the owner through sign-in. '
             'Required application behavior needs application evidence; component checks alone cannot close it. '
+            'Prove key job goals with goal tests (Playwright specs from job goals), and verifiers add a UX explore of each changed journey. '
             'Verify only what changed: run the suites of features whose code changed, give a document-only edit a review of those documents, '
             'keep full journeys and full verdicts for risky areas, and review the diff and the features it touches, not unrelated areas. '
             f'Write everything people read with the ASD-STE100 writing rules ({skill_path}/references/writing.md): short sentences, one point each, active voice, common words, and technical terms explained. '

@@ -17,7 +17,7 @@ Every row says how it is proven: a test or command that runs in CI, a judgment r
 
 | Goal or acceptance criterion | How it's proven |
 | --- | --- |
-| REPLACE: an observable result, for example "a saved brief survives reload with its exact words" | REPLACE: for example `e2e/brief-editor.spec.ts` "storyboard edits ... survive reload" |
+| REPLACE: an observable result, for example "a saved brief survives reload with its exact words" | REPLACE: for example the goal test `e2e/goals/plan-a-brief.spec.ts` "a saved brief survives reload" ([goal tests](../references/goal-tests.md)), or `e2e/brief-editor.spec.ts` "storyboard edits ... survive reload" |
 | REPLACE: a quality, for example "the empty state explains what to do next" | REPLACE: for example "judgment rubric below, desktop and mobile screenshots" |
 | REPLACE: a measure, for example "first page of briefs renders in under 2s with 1,000 briefs" | REPLACE: for example `e2e/briefs-scale.spec.ts` timing assertion |
 

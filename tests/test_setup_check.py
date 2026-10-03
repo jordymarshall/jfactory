@@ -129,6 +129,29 @@ class SetupCheckTest(unittest.TestCase):
         (self.root / 'outcomes' / 'README.md').unlink()
         self.assertIn('No outcomes/README.md', self.check('--remote', '--repo', 'o/r', code=1))
 
+    def test_job_documents_should_link_a_goal_test(self):
+        self.assertNotIn('goal test', self.check('--remote', '--repo', 'o/r'))
+        job = self.root / 'outcomes' / 'save-items.md'
+        config = json.loads((self.root / '.jfactory' / 'verification.json').read_text())
+        config['features']['app'].update({'screens': True, 'outcome': 'outcomes/save-items.md', 'verify': 'review'})
+        (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(config))
+        table = '# Save items\n\n| Goal or acceptance criterion | How it\'s proven |\n| --- | --- |\n'
+        # A goal test named outside the "How it's proven" column does not count.
+        job.write_text(table + '| A saved item survives reload | `e2e/save.spec.ts` |\n\n'
+                       'Later: `e2e/goals/save-items.spec.ts`.\n')
+        subprocess.run(['git', '-C', str(self.root), 'add', '-A'], check=True)
+        out = self.check('--remote', '--repo', 'o/r')
+        self.assertIn('WARN: None of the 1 job document(s) for features with screens links a goal test', out)
+        job.write_text(table + '| A saved item survives reload | `e2e/goals/save-items.spec.ts` "a saved item survives reload" |\n')
+        out = self.check('--remote', '--repo', 'o/r')
+        self.assertIn('PASS: 1 of 1 job document(s) with screens link a goal test', out)
+        self.assertNotIn('None of the', out)
+        # A product without screens has no goal tests to link.
+        config['features']['app'].pop('screens')
+        (self.root / '.jfactory' / 'verification.json').write_text(json.dumps(config))
+        job.write_text(table + '| A saved item survives reload | `tests/test_save.py` |\n')
+        self.assertNotIn('goal test', self.check('--remote', '--repo', 'o/r'))
+
     def test_verified_delivery_needs_the_method_audit(self):
         self.assertIn('PASS: The method audit checks the checkers', self.check('--remote', '--repo', 'o/r'))
         audit = self.root / '.github' / 'workflows' / 'jfactory-method-audit.yml'
