@@ -199,6 +199,13 @@ def check_verification(root, report, states):
         report.add('FAIL' if states.get('PR delivery') == 'verified' else 'WARN',
                    'No workflow runs `method_audit.py`, so nothing notices when verification stops meeting "done '
                    'means right" across merged PRs; install templates/jfactory-method-audit.yml')
+    # The stuck-PR check watches open PRs on a schedule, so no PR depends on one agent chat to notice it stopped.
+    health = [p for p in workflows.glob('*.y*ml') if runs_pr_health(p.read_text())] if workflows.is_dir() else []
+    if health:
+        report.add('PASS', f'The scheduled stuck-PR check watches open PRs: {health[0].relative_to(root)}')
+    else:
+        report.add('WARN', 'No scheduled workflow runs `pr_health.py --act`, so a PR that stops moving waits until '
+                           'someone notices; install templates/jfactory-pr-health.yml')
 
 
 def check_targets(root, config, report, states):
@@ -472,6 +479,11 @@ def runs_method_audit(text):
     return runs_on_schedule(text, 'method_audit.py')
 
 
+def runs_pr_health(text):
+    """A scheduled workflow with a run step that executes `python3 ... pr_health.py --act`."""
+    return runs_on_schedule(text, 'pr_health.py', '--act')
+
+
 def check_standards(root, report, states):
     """The standards map names each quality dimension's source of truth, and every source it names exists."""
     path = root / verify_plan.STANDARDS
@@ -611,7 +623,7 @@ def check_runners(root, report, states):
     fixed, unguarded = [], []
     for path in sorted(workflows.glob('*.y*ml')):
         text = path.read_text()
-        if 'verify_plan.py' not in text and 'method_audit.py' not in text:
+        if not any(script in text for script in ('verify_plan.py', 'method_audit.py', 'pr_health.py')):
             continue
         for number, line in enumerate(text.splitlines(), 1):
             if not re.match(r'\s*runs-on:', line):
