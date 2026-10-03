@@ -46,8 +46,23 @@ A fresh container downloads everything again: Node, npm packages and browsers. O
   - `JFACTORY_RUNNER_CACHE=/cache`: workflows test this variable to use the cache for more, for example a saved `node_modules` per lockfile or a build cache. Keep the hosted steps for runs where the variable is empty.
 - **The supervisor prepares the folder.** It creates the subfolders and gives them to the image's `runner` user. It uses a short container for this, so it needs no root on the host.
 - **Workspaces stay fresh.** Only `/cache` is shared. Each job still gets a new container with its own checkout, home folder and processes. The container is deleted after its one job.
-- **Risk: a shared, writable cache.** Any job on the machine can write to it. A bad branch could leave a changed package or browser that a later job uses. This is acceptable only because these runners take trusted branches from the same repository. Fork PRs always run on GitHub's runners. Don't share a cache between repositories with different trust.
+- **Risk: a shared, writable cache.** Any job on the machine can write to it. A bad branch, or a compromised npm package in an ordinary PR, could leave a changed tool, package or browser that a later job uses. For PR checks this is acceptable because these runners take trusted branches from the same repository. Fork PRs always run on GitHub's runners. Don't share a cache between repositories with different trust.
+- **Never let deploy jobs use it.** A deploy or release job holds production secrets. If it ran a tool a PR job had changed in the cache, that PR would reach production. Run deploy jobs in a [separate pool](#deploy-jobs-a-separate-pool-without-the-cache).
 - **Clear it** when you suspect a bad entry or the disk fills: `sudo rm -rf PATH`. The files belong to the container's `runner` user, so this needs root. The supervisor makes the folder again before it starts the next runner, and jobs download again. Do it when no job is running, or a running job may fail.
+
+## Deploy jobs: a separate pool without the cache
+
+Deploys, releases and other jobs with production secrets run on their own pool on the same machine:
+
+```bash
+python3 scripts/runners.py up --pool deploy --count 1 --memory 4g     # label jfactory-deploy, no shared cache
+gh variable set JFACTORY_DEPLOY_RUNNER --body '["self-hosted","jfactory-deploy"]'
+```
+
+- **Its own label.** Pool runners carry only `jfactory-<pool>`, so PR jobs asking for `jfactory` never land on them.
+- **No shared cache.** `up` refuses `--cache-dir` with `--pool`. Every deploy job downloads its tools fresh in a new container.
+- **Its own settings.** The pool keeps its own config, log and pid files (`<owner>__<repo>--<pool>.*`) and counts only its own containers. Run it as a second supervisor service, and pass `--pool` to `status` and `down` too.
+- **Route the jobs.** Deploy workflows use `runs-on: ${{ fromJSON(vars.JFACTORY_DEPLOY_RUNNER || '"ubuntu-latest"') }}`, as in the release template. With the variable unset, they stay on GitHub's runners.
 
 ## Keep it healthy
 

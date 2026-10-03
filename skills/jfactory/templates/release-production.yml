@@ -17,7 +17,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   release:
-    runs-on: ubuntu-latest
+    # The deploy pool on machines you own when JFACTORY_DEPLOY_RUNNER is set (references/ci-runners.md), never the
+    # shared-cache pool PR jobs use; otherwise GitHub's runners.
+    runs-on: ${{ fromJSON(vars.JFACTORY_DEPLOY_RUNNER || '"ubuntu-latest"') }}
     environment: production
     steps:
       - uses: actions/checkout@v4
