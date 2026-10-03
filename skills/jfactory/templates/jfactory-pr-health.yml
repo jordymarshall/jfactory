@@ -1,0 +1,41 @@
+# Copy to .github/workflows/jfactory-pr-health.yml during setup and set JFACTORY_DIR to the installed bundle path.
+# Every 30 minutes it finds open PRs that stopped moving and keeps one issue labelled jfactory-pr-health ("Stuck PRs")
+# with the one next step for each. It uses no AI model. It does two safe actions, each once per PR head: it merges
+# the base branch into a verified PR that is behind, and it re-runs CI jobs that failed for infrastructure reasons only.
+# Warning: GitHub starts no workflow for a commit the built-in token makes. Add a JFACTORY_PR_HEALTH_TOKEN secret
+# (a fine-grained token with contents and pull requests write) so CI runs on the merge commit that update-branch makes.
+# Without it, the report names the PR as no-ci after the update.
+name: jfactory PR health
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+# One run at a time, so two runs never act on the same PR or both open an issue.
+concurrency:
+  group: jfactory-pr-health
+  cancel-in-progress: false
+permissions:
+  contents: read
+  # Merges the base branch into a verified PR that is behind (update-branch).
+  pull-requests: write
+  # Opens, edits, closes and reopens the report issue, and creates its label on the first run.
+  issues: write
+  # Re-runs CI jobs that failed for infrastructure reasons only.
+  actions: write
+  checks: read
+env:
+  JFACTORY_DIR: .agents/skills/jfactory
+jobs:
+  health:
+    # Machines you own when the JFACTORY_RUNNER variable says so (references/ci-runners.md), otherwise GitHub's; fork PRs always GitHub's.
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Report and nudge stuck PRs
+        env:
+          GH_TOKEN: ${{ secrets.JFACTORY_PR_HEALTH_TOKEN || github.token }}
+        run: python3 "$JFACTORY_DIR/scripts/pr_health.py" --repo "$GITHUB_REPOSITORY" --act
