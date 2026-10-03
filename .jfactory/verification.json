@@ -41,7 +41,7 @@
     },
     "coordination": {
       "outcome": ["outcomes/merge-verified-changes.md", "outcomes/run-many-agents.md"],
-      "paths": ["skills/jfactory/scripts/coord.py", "skills/jfactory/scripts/verify_plan.py", "skills/jfactory/scripts/method_audit.py", "tests/test_method_audit.py", "skills/jfactory/templates/**", "skills/jfactory/scripts/runners.py", "tests/test_runners.py", "tests/test_coord.py", "tests/test_verify_plan.py", "tests/fakes/**"],
+      "paths": ["skills/jfactory/scripts/coord.py", "skills/jfactory/scripts/verify_plan.py", "skills/jfactory/scripts/method_audit.py", "tests/test_method_audit.py", "skills/jfactory/scripts/pr_health.py", "tests/test_pr_health.py", "skills/jfactory/templates/**", "skills/jfactory/scripts/runners.py", "tests/test_runners.py", "tests/test_coord.py", "tests/test_verify_plan.py", "tests/fakes/**"],
       "recipe": "Run tests/test_coord.py and tests/test_verify_plan.py; exercise changed commands against real GitHub and Conductor with a dry-run program",
       "suites": ["checks"],
       "verify": "independent"

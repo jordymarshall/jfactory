@@ -129,6 +129,19 @@ if tool == 'gh' and args[:2] == ['api', 'graphql']:
 if tool == 'gh' and args[:1] == ['api'] and args[1].endswith('/files'):
     number = args[1].split('/')[-2]
     done('\n'.join(db['prs'][number].get('files', ['src/x.py'])))
+# pr_health.py: an Actions job, a check run's annotations, update-branch and re-runs.
+if tool == 'gh' and args[:1] == ['api'] and '/actions/jobs/' in args[1]:
+    done(db['jobs'][args[1].rsplit('/', 1)[1]])
+if tool == 'gh' and args[:1] == ['api'] and args[1].endswith('/annotations'):
+    done(db.get('annotations', {}).get(args[1].split('/')[-2], []))
+if tool == 'gh' and args[:3] == ['api', '-X', 'PUT']:
+    db.setdefault('updates', []).append([args[3], *[a for a in args[4:] if '=' in a]])
+    done()
+if tool == 'gh' and args[:2] == ['run', 'rerun']:
+    db.setdefault('reruns', []).append(args[2:])
+    done()
+if tool == 'gh' and args[:2] == ['pr', 'list']:
+    done(db.get('pr_list', []))
 if tool == 'gh' and args[:1] == ['api'] and '/check-runs' in args[1]:
     done(db.get('check_runs', {'check_runs': [{'name': 'checks', 'status': 'completed', 'conclusion': 'success'}]}))
 if tool == 'gh' and args[:1] == ['api'] and len(args) == 2:
