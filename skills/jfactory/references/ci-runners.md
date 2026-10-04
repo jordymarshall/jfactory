@@ -88,10 +88,12 @@ The PR rate stays about the same, and the machine is fixed. Queue time falls onl
 5. **Use every CPU.** Each runner gets its own CPU slice. `runners.py` picks the least-used slot among live containers, so two jobs never share a slice while another slice sits idle.
 6. **Fix a red base branch first.** Failing tests wait for their timeouts, often minutes each and on every viewport. On a red base branch every PR pays that cost again.
 7. **Make each job cheaper:** related tests only, one build per run when there are several browser jobs, fewer duplicate viewport runs, and faster test fixtures. Measure before and after.
-8. **Cap the workers, not just the work.** Each program has its own concurrency limit, but all programs share one queue. Set `repo_limit` in `.jfactory/coordination.json` to about the number of main runners; `coord.py launch` refuses beyond it.
-9. **Debounce pushes.** The first job of a PR run waits about a minute on the light pool before any big job starts, so a quick second push cancels the run cheaply.
-10. **Watch the queue.** The stuck-PR check reports the number of waiting runs and the oldest wait, and keeps its issue open while the oldest wait is 30 minutes or more.
-11. **Then add machines.**
+8. **Run a small critical set on every PR.** A PR's browser job runs the specs that guard sign-in, saved work, ownership and permissions, and spending, plus every spec the PR edits. Everything else runs in the scheduled whole-suite run, which is the full proof. Keep the critical list in the project's verifier, and grow it only for areas where a missed failure is costly.
+9. **Check the base branch incrementally.** A push to the base branch plans against the last *finished* base run (passed or failed), not the last green one, and runs related unit tests only. Otherwise a red base branch re-runs the whole suite on every push and blocks the fix PRs. Run the whole suite on a schedule (nightly) as the full proof.
+10. **Cap the workers, not just the work.** Each program has its own concurrency limit, but all programs share one queue. Set `repo_limit` in `.jfactory/coordination.json` to about the number of main runners; `coord.py launch` refuses beyond it.
+11. **Debounce pushes.** The first job of a PR run waits about a minute on the light pool before any big job starts, so a quick second push cancels the run cheaply.
+12. **Watch the queue.** The stuck-PR check reports the number of waiting runs and the oldest wait, and keeps its issue open while the oldest wait is 30 minutes or more.
+13. **Then add machines.**
 
 ## Keep it healthy
 
