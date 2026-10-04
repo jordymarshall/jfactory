@@ -846,6 +846,8 @@ If a report says the program is on hold, stop at a safe boundary, push your work
 
 def cmd_launch(args):
     if args.program is None or args.role or args.pr:
+        if args.resume:
+            raise Refused('--resume applies only to a program unit')
         if args.program is not None or args.unit:
             raise Refused('Use either `launch <issue> <unit>` for a program unit or `launch --role --pr` for a PR')
         if not args.role or not args.pr:
@@ -865,7 +867,16 @@ def cmd_launch(args):
         raise Refused(f'Program is on hold ({HOLD_LABEL} label); remove it before launching')
     if unit['state'] not in ('planned', 'failed', 'blocked'):
         raise Refused(f'{args.unit} is {unit["state"]}; only planned, failed or blocked units can launch')
-    if unit['attempts'] >= MAX_ATTEMPTS:
+    if args.resume:
+        if not args.reason or not (args.branch or unit.get('branch')) or not unit.get('head'):
+            raise Refused('--resume needs --reason and a reported pushed branch and head')
+        if not unit.get('workspace') or not unit.get('session'):
+            raise Refused('--resume needs the previous worker workspace and session')
+        previous_session = run_json('conductor', 'session', 'status', unit['session'])
+        previous_workspace = run_json('conductor', 'workspace', 'get', unit['workspace'])
+        if previous_session.get('status') != 'idle' or previous_workspace.get('state') != 'archived':
+            raise Refused('--resume needs the previous session idle and its workspace archived')
+    if unit['attempts'] >= MAX_ATTEMPTS and not args.resume:
         raise Refused(f'{args.unit} already had {unit["attempts"]} attempts; abandon it and replan')
     running = [u for u, v in state['units'].items() if v['state'] in ACTIVE]
     if len(running) >= state['limit']:
@@ -924,6 +935,10 @@ def cmd_launch(args):
         base = unit_of(state, args.stack_on[0]).get('branch')
         if not base:
             raise Refused(f'{args.stack_on[0]} has no pushed branch to stack on yet')
+    if args.branch:
+        base = args.branch
+    elif args.resume:
+        base = unit['branch']
     if args.dry_run:
         fast = ', fast' if role.get('fast') else ''
         print(f"Would launch {args.unit} on {role['agent']}/{role['model']} ({role.get('effort')}{fast}; {choice}) "
@@ -938,12 +953,14 @@ def cmd_launch(args):
                        '--message-file', body_file(message), '--json')
     workspace = created.get('workspace', created)
     session = created.get('session') or created.get('firstSession') or {}
-    unit.update({'state': 'running', 'attempts': unit['attempts'] + 1, 'updated': now(),
+    attempts = unit['attempts'] + (0 if args.resume else 1)
+    unit.update({'state': 'running', 'attempts': attempts, 'updated': now(),
                  'agent': role['agent'], 'model': role['model'], 'effort': role.get('effort'),
                  'workspace': workspace.get('id') or created.get('workspaceId'),
                  'session': session.get('id') or created.get('sessionId'),
                  'link': session.get('deepLink') or workspace.get('deepLink') or created.get('deepLink'),
-                 'note': f'attempt {unit["attempts"] + 1}; {choice}'})
+                 'note': f'attempt {attempts}; {choice}' +
+                         (f'; resumed checkpoint: {args.reason}' if args.resume else '')})
     if state.get('section') and unit['workspace']:
         try:
             run('conductor', 'workspace', 'move', unit['workspace'], '--section', state['section'])
@@ -1229,7 +1246,9 @@ def main(argv=None):
     p.add_argument('--brief', help='Program unit: the task contract')
     p.add_argument('--role', help='PR workspace: verify, build or fix')
     p.add_argument('--pr', type=int, help='PR workspace: the pull request number')
-    p.add_argument('--branch', help='PR workspace: branch to start from; defaults to the PR head branch')
+    p.add_argument('--branch', help='Branch to start from; PR launches default to their head branch')
+    p.add_argument('--resume', action='store_true',
+                   help='Resume a pushed checkpoint without consuming a failure retry; previous worker must be archived')
     p.add_argument('--message-file', help='PR workspace: the first message')
     p.add_argument('--project-id', help='PR workspace: Conductor project; looked up from the repository when omitted')
     p.add_argument('--name', help='PR workspace: refused unless it is <role>-<repo>-<pr>')
@@ -1238,7 +1257,7 @@ def main(argv=None):
     p.add_argument('--effort')
     p.add_argument('--stack-on', type=listing, default=[], help='Unmerged dependency whose branch to start from')
     p.add_argument('--allow-same-family', action='store_true')
-    p.add_argument('--fallback', action='store_true', help='Use the role fallback because the primary has no usage')
+    p.add_argument('--fallback', action='store_true', help='Use the role fallback at a usage limit or forecast reserve crossing')
     p.add_argument('--reason', help='Usage reading that justifies --fallback')
     p.add_argument('--dry-run', action='store_true')
     p.set_defaults(func=cmd_launch)
