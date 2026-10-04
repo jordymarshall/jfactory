@@ -520,6 +520,12 @@ class GateTest(unittest.TestCase):
         db['prs']['5']['body'] = "## Objective\nSave briefs.\n\n## Why it's right\nIt serves the outcomes.\n"
         self.state.write_text(json.dumps(db))
         self.assertIn('must name the outcomes/<job>.md document(s)', self.run_script('check', '--pr', '5', code=1))
+        # A PR template's hidden list of every job doesn't count; the PR must name its job where people read it.
+        db = json.loads(self.state.read_text())
+        db['prs']['5']['body'] = ("## Objective\nSave briefs.\n\n## Why it's right\n<!-- Name each outcomes/<job>.md: "
+                                  "outcomes/save-a-brief.md -->\n- Serves: `outcomes/<job>.md`\n")
+        self.state.write_text(json.dumps(db))
+        self.assertIn('must name the outcomes/<job>.md document(s)', self.run_script('check', '--pr', '5', code=1))
         db = json.loads(self.state.read_text())
         db['prs']['5']['body'] = "## Objective\nSave briefs.\n\n## Why it's right\nServes `outcomes/save-a-brief.md`.\n"
         self.state.write_text(json.dumps(db))
