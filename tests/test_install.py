@@ -154,6 +154,50 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(dest, self.target / '.claude/skills/jfactory')
         self.assertNotIn('host_pointers', json.loads((dest / '.jfactory-install.json').read_text()))
 
+    def test_global_agent_coordinator_installs_updates_and_never_overwrites_a_hand_edit(self):
+        home = Path(self.tmp.name) / 'home'
+        env = {'CODEX_HOME': str(home / 'codex-home')}
+        lines = []
+        self.assertTrue(installer.install_global_skills(ROOT, home=home, env=env, log=lines.append))
+        claude = home / '.claude/skills/agent-coordinator'
+        codex = home / 'codex-home/skills/agent-coordinator'
+        for copy in (claude, codex):
+            self.assertTrue((copy / 'SKILL.md').is_file())
+            self.assertTrue((copy / 'scripts/hub.py').is_file())
+            self.assertTrue((copy / '.jfactory-global.json').is_file())
+        # Idempotent: a rerun reports current.
+        lines.clear()
+        self.assertTrue(installer.install_global_skills(ROOT, home=home, env=env, log=lines.append))
+        self.assertTrue(all('is current' in line for line in lines), lines)
+        # An older, unedited copy is updated.
+        receipt = json.loads((claude / '.jfactory-global.json').read_text())
+        (claude / 'SKILL.md').write_text('old version\n')
+        receipt['files']['SKILL.md'] = installer.digest(b'old version\n')
+        (claude / '.jfactory-global.json').write_text(json.dumps(receipt))
+        lines.clear()
+        self.assertTrue(installer.install_global_skills(ROOT, home=home, env=env, log=lines.append))
+        self.assertIn('updated', ' '.join(lines))
+        self.assertNotEqual((claude / 'SKILL.md').read_text(), 'old version\n')
+        # A hand edit is never overwritten.
+        (codex / 'SKILL.md').write_text('my notes\n')
+        lines.clear()
+        self.assertFalse(installer.install_global_skills(ROOT, home=home, env=env, log=lines.append))
+        self.assertIn('edited by hand', ' '.join(lines))
+        self.assertEqual((codex / 'SKILL.md').read_text(), 'my notes\n')
+
+    def test_installed_bundle_carries_the_global_installer_and_the_hub(self):
+        dest = installer.install(ROOT, self.target)
+        self.assertTrue((dest / 'scripts/install_global.py').is_file())
+        self.assertTrue((dest / 'skills/agent-coordinator/scripts/hub.py').is_file())
+        home = Path(self.tmp.name) / 'fresh-machine'
+        out = subprocess.run([sys.executable, str(dest / 'scripts/install_global.py'), '--home', str(home)],
+                             capture_output=True, text=True, env={**os.environ, 'CODEX_HOME': str(home / '.codex')})
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertTrue((home / '.claude/skills/agent-coordinator/SKILL.md').is_file())
+        check = subprocess.run([sys.executable, str(dest / 'scripts/install_global.py'), '--home', str(home), '--check'],
+                               capture_output=True, text=True, env={**os.environ, 'CODEX_HOME': str(home / '.codex')})
+        self.assertEqual(check.returncode, 0, check.stdout)
+
     def test_installed_methods_are_reachable_and_pinned_on_every_host(self):
         for host, (directory, filename) in installer.LAYOUTS.items():
             with self.subTest(host=host):

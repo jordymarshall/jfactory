@@ -213,6 +213,28 @@ def cell(text):
     return (text or '').replace('|', '/').replace('\n', ' ')[:120]
 
 
+HUB_LABEL = 'jfactory-hub'
+HUB_RE = re.compile(r'<!-- jfactory-hub\n(.*?)\n-->', re.S)
+
+
+def hub_line(repo):
+    """Where coordinators send owner questions: the agent hub recorded in the pinned 'Agent hub' issue, or ''."""
+    try:
+        found = json.loads(gh(repo, 'issue', 'list', '--label', HUB_LABEL, '--state', 'open', '--limit', '1',
+                              '--json', 'number,url') or '[]')
+        if not found:
+            return ''
+        body = json.loads(gh(repo, 'issue', 'view', str(found[0]['number']), '--json', 'body')).get('body') or ''
+        match = HUB_RE.search(body)
+        session = ((json.loads(match.group(1)) if match else {}).get('hub') or {}).get('session')
+    except (Refused, Missing, ValueError, KeyError):
+        return ''
+    if not session:
+        return ''
+    return (f"Agent hub: {session} ({found[0]['url']}). Coordinators send it QUESTION, BLOCKER, RISK, MILESTONE "
+            'or DIGEST (routine progress at most every 30 minutes); workers never message it.')
+
+
 def save(repo, number, state):
     gh(repo, 'issue', 'edit', str(number), '--body-file', body_file(render(state)))
 
@@ -818,7 +840,8 @@ def cmd_init(args):
         gh(args.repo, 'label', 'create', name, '--color', color, '--description', text, '--force')
     standing = [line.strip() for line in Path(args.standing).read_text().splitlines() if line.strip()] \
         if args.standing else []
-    state = {'version': 1, 'title': args.title, 'outcome': args.outcome or '', 'base': args.base,
+    state = {'version': 1, 'coordinator_session': os.environ.get('CONDUCTOR_SESSION_ID'),
+             'title': args.title, 'outcome': args.outcome or '', 'base': args.base,
              'repo_url': args.repo_url or f'https://github.com/{args.repo}', 'limit': args.limit or pol['limit'],
              'policy': pol['roles'], 'merge_deploys': args.merge_deploys or pol['merge_deploys'],
              'standing': standing, 'units': {}, 'ledger': [], 'gates': [],
@@ -903,6 +926,7 @@ STANDING
 COORDINATION
 You are worker `{uid}` in jfactory program {state['_issue']['url']}. Follow the worker protocol in jfactory's coordination procedure.
 Only this unit is yours. Do not edit the program issue body, launch workspaces or change other units' branches.
+Never message the agent hub or the owner directly about this unit's work; report only to your coordinator with the commands below. The coordinator relays owner questions and answers.
 Report state changes from the repository root; each report is a comment the coordinator reads:
   python3 {script} --repo {repo} report {number} {uid} --state running --note "started"
   python3 {script} --repo {repo} report {number} {uid} --state in-review --pr <number> --head <sha> --note "criteria results and evidence links"
@@ -1109,8 +1133,15 @@ def cmd_sync(args):
     # and moves nothing, so the fifth quiet sync in a row tells the coordinator to stop and report instead.
     if not args.dry_run:
         state['quiet_syncs'] = 0 if changes else state.get('quiet_syncs', 0) + 1
+        # The session that syncs is the program's coordinator; the agent hub finds coordinators by this field.
+        session = os.environ.get('CONDUCTOR_SESSION_ID')
+        if session and state.get('coordinator_session') != session:
+            state['coordinator_session'] = session
         save(args.repo, args.program, state)
     print(summary(state))
+    hub = hub_line(args.repo)
+    if hub:
+        print(hub)
     print('Changed: ' + ('; '.join(changes) if changes else 'nothing'))
     quiet = state.get('quiet_syncs', 0)
     if quiet >= QUIET_LIMIT:

@@ -419,6 +419,8 @@ The tools inside the bundle:
 | `verify_plan.py` | Works out what a PR must verify, posts verdicts and computes the `jfactory verified` status |
 | `claude_subagent_guard.py` | Claude Code hook: lets only read-only subagents run in the agent's own session |
 | `sync_skills.py` | Lists every project skill for both Codex and Claude Code; `--check` fails on drift |
+| `install_global.py` | Copies the agent-coordinator skill into your global Claude Code and Codex skills |
+| `skills/agent-coordinator/scripts/hub.py` | The agent hub: the one agent you talk to, its pinned issue and ledger, routing and handoff |
 | `coord.py` | Runs parallel programs: issue dashboard, launches, reports, verdicts, merges and clean-up |
 | `usage.py` | Reads remaining Claude and Codex usage and picks the model for each tier |
 | `evidence.py` | Optionally records real check runs and rejects failed, stale or wrong-scope evidence |

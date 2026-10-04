@@ -234,14 +234,29 @@ def install(source, target, agent='codex', update=False):
     return dest
 
 
+def install_global_skills(source, home=None, env=None, log=print):
+    """Copy the bundle's user-level skills (agent-coordinator) into the user's global Claude Code and Codex skills."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('jfactory_install_global',
+                                                  source / 'skills/jfactory/scripts/install_global.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.install_global(source / 'skills/jfactory', home=home, env=env, log=log)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('target', type=Path)
     parser.add_argument('--agent', choices=LAYOUTS, default='codex')
     parser.add_argument('--update', action='store_true')
+    parser.add_argument('--no-global', action='store_true',
+                        help='skip the global copy of agent-coordinator (~/.claude/skills, $CODEX_HOME/skills)')
     args = parser.parse_args()
     try:
-        dest = install(Path(__file__).resolve().parents[1], args.target, args.agent, args.update)
+        source = Path(__file__).resolve().parents[1]
+        dest = install(source, args.target, args.agent, args.update)
+        if not args.no_global and not install_global_skills(source):
+            print('The global agent-coordinator copy was not updated everywhere; see the lines above.', file=sys.stderr)
         print(f'Installed {dest}. Repository adoption is still pending. Read {dest / "SKILL.md"} '
               'and follow references/setup.md now, including the owner interview. Finish by running '
               f'python3 {dest / "scripts" / "setup_check.py"} --remote. Reload skill discovery afterward if needed; '

@@ -33,6 +33,17 @@ if tool == 'conductor':
         path.write_text(json.dumps(db))
         sys.stderr.write('conductor: service unavailable')
         sys.exit(1)
+    if args[:1] == ['--help']:
+        done('conductor help\n')
+    if args[:2] == ['message', 'create']:
+        # Messages to sessions, for the agent hub's tests.
+        db.setdefault('messages', []).append({'session': opt('--session'),
+                                              'text': Path(opt('--message-file')).read_text()})
+        done('State       queued\n')
+    if args[:3] == ['--json', 'session', 'create']:
+        n = len(db.setdefault('created_sessions', [])) + 1
+        db['created_sessions'].append({'workspace': opt('--workspace'), 'text': Path(opt('--message-file')).read_text()})
+        done({'id': f'new-hub-{n}'})
     if args[:2] == ['workspace', 'list']:
         # `listed` holds workspaces other than those this fake created; archived ones drop out of the list.
         done({'data': [w for w in db.get('listed', []) if w['id'] not in db.get('archived', [])],
@@ -190,6 +201,9 @@ if tool == 'gh':
     issues = db.setdefault('issues', {})
     if args[:2] == ['label', 'create']:
         db.setdefault('labels', []).append(args[2])
+        done()
+    if args[:2] == ['issue', 'pin']:
+        issues[args[2]]['pinned'] = True
         done()
     if args[:2] == ['issue', 'create']:
         n = str(len(issues) + 1)
