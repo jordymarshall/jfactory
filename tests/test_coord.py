@@ -102,6 +102,7 @@ class CoordTest(unittest.TestCase):
             '<!-- jfactory-program\n' + json.dumps(state) + '\n-->'
         db['archived'] = ['w1']
         db['sessions'] = {'s1': 'idle'}
+        db['strict_conductor_json'] = True
         self.state.write_text(json.dumps(db))
         self.coord('launch', '1', 'a', '--brief', str(self.brief), '--resume', '--fallback',
                    '--reason', 'Claude reserve forecast crosses before next reading')

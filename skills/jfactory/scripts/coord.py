@@ -872,8 +872,8 @@ def cmd_launch(args):
             raise Refused('--resume needs --reason and a reported pushed branch and head')
         if not unit.get('workspace') or not unit.get('session'):
             raise Refused('--resume needs the previous worker workspace and session')
-        previous_session = run_json('conductor', 'session', 'status', unit['session'])
-        previous_workspace = run_json('conductor', 'workspace', 'get', unit['workspace'])
+        previous_session = run_json('conductor', 'session', 'status', unit['session'], '--json')
+        previous_workspace = run_json('conductor', 'workspace', 'get', unit['workspace'], '--json')
         if previous_session.get('status') != 'idle' or previous_workspace.get('state') != 'archived':
             raise Refused('--resume needs the previous session idle and its workspace archived')
     if unit['attempts'] >= MAX_ATTEMPTS and not args.resume:
