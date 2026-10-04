@@ -318,6 +318,22 @@ class RunnersTest(unittest.TestCase):
         self.assertIn('no shared cache', out)
         self.assertIn('--pool must be', self.cli('status', '--repo', 'acme/shop', '--pool', 'Deploy!', code=1))
 
+    def test_a_pull_request_only_pool_may_share_the_cache_but_the_deploy_pool_never_runs_pr_jobs(self):
+        out = self.cli('up', '--repo', 'acme/shop', '--count', '1', '--pool', 'deploy', '--pr-jobs', code=1)
+        self.assertIn('never runs pull-request jobs', out)
+        out = self.cli('up', '--repo', 'acme/shop', '--count', '1', '--pool', 'light', '--cache-dir', '/tmp/c', code=1)
+        self.assertIn('--pr-jobs', out)
+
+    def test_an_unpinned_pool_shares_every_cpu(self):
+        # Small jobs (plan, gates) need no CPU slice of their own; --no-pin stores pin_cpus false.
+        self.write_config(count=2, pin_cpus=False, cpus=1.0)
+        self.cli('serve', '--repo', 'acme/shop', '--once')
+        creates = [a for a in self.log('docker.log') if a[0] == 'create']
+        self.assertEqual(len(creates), 2)
+        for args in creates:
+            self.assertNotIn('--cpuset-cpus', args)
+            self.assertEqual(args[args.index('--cpus') + 1], '1.0')
+
 
 if __name__ == '__main__':
     unittest.main()

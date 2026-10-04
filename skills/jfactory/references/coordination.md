@@ -92,7 +92,7 @@ State, once, before any worker starts:
 - The program objective and a countable done condition, for example "these three outcomes are merged, each verified as right (criteria, job goals, standards and outcomes) with its required application evidence at the merged revision."
 - The units. One unit is one coherent objective delivered as one PR with its own evidence. Name dependencies and each unit's owned paths.
 - Each unit's verification standard: its acceptance criteria and the evidence scopes that define verified (`add --requires`, such as `application,unit`). Application evidence comes from the PR preview or staging. Workers loop until the standard passes; the coordinator merges without asking again once it does.
-- The concurrency limit (default three), the model policy (see [model selection](models.md), including the usage check before each launch batch), wall-clock or spend limits, and what merging deploys (`init --merge-deploys` or `.jfactory/coordination.json`). `merge` refuses unless merges reach staging or nothing; production releases stay a deliberate owner action.
+- The concurrency limit (default three) and the repository-wide limit across all open programs (`repo_limit` in `.jfactory/coordination.json`; `launch` refuses beyond it). Every running worker pushes into one CI queue, so size `repo_limit` to the CI runners, not to the work available ([queue operations](ci-runners.md#queue-operations-fewer-jobs-before-more-machines)), the model policy (see [model selection](models.md), including the usage check before each launch batch), wall-clock or spend limits, and what merging deploys (`init --merge-deploys` or `.jfactory/coordination.json`). `merge` refuses unless merges reach staging or nothing; production releases stay a deliberate owner action.
 
 Run the product interview for each substantial feature before its worker starts, reusing settled answers. A worker cannot interview the owner mid-flight without stalling, so unresolved product choices are settled here or recorded with `gate add`. Reversible preparation can proceed while the owner reviews the framing.
 
@@ -173,7 +173,7 @@ Do not depend on a loop inside one agent chat to watch PRs. The chat ends, and t
 | `conflict` | The author merges the base branch and resolves the conflicts. |
 | `ci-failed` | The author fixes the failing check. An infrastructure failure gets one automatic re-run per head. |
 | `partial` | The latest verdict at the head is `partially-verified`, `blocked` or `failed`. The table quotes the first line of its evidence and names who acts. |
-| `behind` | A verified PR gets the base branch merged in automatically, once per head. The verifier then re-checks only the merge with `--since`. |
+| `behind` | A verified PR gets the base branch merged in automatically, once per head, one PR at a time (oldest first, a merge train: [queue operations](ci-runners.md#queue-operations-fewer-jobs-before-more-machines)). The verifier then re-checks only the merge with `--since`. |
 | `needs-verdict` | CI is green for more than 1 hour, and no verdict exists at the head. The verifier posts one. |
 | `gate-failed`, `not-queued`, `no-ci`, `idle` | The table says what is missing. `idle` means no commit, check or comment for more than 6 hours. |
 

@@ -64,6 +64,35 @@ gh variable set JFACTORY_DEPLOY_RUNNER --body '["self-hosted","jfactory-deploy"]
 - **Its own settings.** The pool keeps its own config, log and pid files (`<owner>__<repo>--<pool>.*`) and counts only its own containers. Run it as a second supervisor service, and pass `--pool` to `status` and `down` too.
 - **Route the jobs.** Deploy workflows use `runs-on: ${{ fromJSON(vars.JFACTORY_DEPLOY_RUNNER || '"ubuntu-latest"') }}`, as in the release template. With the variable unset, they stay on GitHub's runners.
 
+## Small jobs: a light pool
+
+Gates, planners and jobs that only wait for another service (a preview deploy that polls Vercel) take seconds of CPU. On a shared pool they still wait for a free runner, behind suites that run for 20 minutes or more. Give them their own small pool on the same machine:
+
+```bash
+python3 scripts/runners.py up --pool light --pr-jobs --no-pin --cpus 1 --memory 2g --count 3 --cache-dir /home/ci/runner-cache
+gh variable set JFACTORY_LIGHT_RUNNER --body '["self-hosted","jfactory-light"]'
+```
+
+- **Same trust as the main pool.** It runs pull-request jobs only, so it may share the cache folder (`--pr-jobs`). The deploy pool never takes `--pr-jobs`.
+- **No CPU slice.** `--no-pin` with `--cpus 1` lets small jobs use any CPU for a moment instead of taking a slice from the long jobs.
+- **Route only small jobs.** Use `vars.JFACTORY_LIGHT_RUNNER || vars.JFACTORY_RUNNER || '"ubuntu-latest"'` for gates (the required aggregate job), planners, credential probes and deploy polling. Never route tests or builds to it. With the variable unset, the jobs use the main pool.
+
+## Queue operations: fewer jobs before more machines
+
+The PR rate stays about the same, and the machine is fixed. Queue time falls only when jobs fall or each job gets cheaper. Work through these in order, and measure the queue after each (`started_at` minus `created_at` per job):
+
+1. **Do not start runs that will go stale.** With "require branches to be up to date", bring ONE verified PR up to date at a time, oldest first, and only when no other verified PR is still running CI or waiting to merge (a merge train). Updating every behind PR after each merge starts N full runs for one merge slot, and all but one go stale at the next merge. `auto_merge.py` and `pr_health.py` follow this rule.
+2. **Do not restart runs for events that change nothing.** Labels, comments and title edits must not trigger the test workflow. Read labels such as `full-suite` live in the planner, and re-run after adding one.
+3. **Push once per batch.** Each push to a PR cancels its run and joins the back of the queue ([CI confirms](delivery.md#ci-confirms-it-does-not-discover)).
+4. **Keep small jobs off the big runners** (the light pool above).
+5. **Use every CPU.** Each runner gets its own CPU slice. `runners.py` picks the least-used slot among live containers, so two jobs never share a slice while another slice sits idle.
+6. **Fix a red base branch first.** Failing tests wait for their timeouts, often minutes each and on every viewport. On a red base branch every PR pays that cost again.
+7. **Make each job cheaper:** related tests only, one build per run when there are several browser jobs, fewer duplicate viewport runs, and faster test fixtures. Measure before and after.
+8. **Cap the workers, not just the work.** Each program has its own concurrency limit, but all programs share one queue. Set `repo_limit` in `.jfactory/coordination.json` to about the number of main runners; `coord.py launch` refuses beyond it.
+9. **Debounce pushes.** The first job of a PR run waits about a minute on the light pool before any big job starts, so a quick second push cancels the run cheaply.
+10. **Watch the queue.** The stuck-PR check reports the number of waiting runs and the oldest wait, and keeps its issue open while the oldest wait is 30 minutes or more.
+11. **Then add machines.**
+
 ## Keep it healthy
 
 - **One slot per runner, and room for other work.** Each runner gets its own CPUs. A runner that starts while a finished container is still being removed takes the least-used slot, never a busy one (fixed after two runners shared CPUs 0-1 while 6-7 sat idle). When the same machine also runs other work, such as a UX loop or a deploy pool, give each its own CPUs: `up --cpu-range 0-5` keeps the pool on CPUs 0-5, and the other service is pinned to the rest (for systemd, `AllowedCPUs=6-7`). On machines with two threads per core, 2 CPUs is one physical core per job.

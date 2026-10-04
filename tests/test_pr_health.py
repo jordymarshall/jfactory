@@ -123,6 +123,23 @@ class PrHealthTest(unittest.TestCase):
         self.assertIn('update:9:' + 'b' * 40, body)
         self.assertNotIn('update:9:' + HEAD, body)
 
+    def test_merge_train_updates_one_behind_pr_per_check_oldest_first(self):
+        # Updating every behind PR at once starts one CI run each for a single merge slot.
+        self.set(pr_list=[pr(12, comments=[verdict()], merge='BEHIND'), pr(9, comments=[verdict()], merge='BEHIND')])
+        out = self.run_tool('--act')
+        self.assertEqual(self.db()['updates'], [['repos/o/r/pulls/9/update-branch', f'expected_head_sha={HEAD}']])
+        self.assertIn('Waits its turn', self.row(out, 12))
+
+    def test_a_long_ci_queue_is_reported_even_when_no_pr_is_stuck(self):
+        self.set(queued_runs={'queued': [{'databaseId': 1, 'createdAt': '2026-10-03T11:50:00Z'}]})
+        self.assertNotIn('CI queue', self.run_tool())  # 10 minutes is under the 30-minute alert.
+        self.set(queued_runs={'queued': [{'databaseId': 1, 'createdAt': '2026-10-03T10:20:00Z'},
+                                         {'databaseId': 2, 'createdAt': '2026-10-03T11:55:00Z'}],
+                              'waiting': [{'databaseId': 2, 'createdAt': '2026-10-03T11:55:00Z'}]})
+        out = self.run_tool('--act', now='2026-10-03T12:00:00Z')
+        self.assertIn('**CI queue:** 2 workflow runs are waiting; the oldest has waited 100 minutes', out)
+        self.assertIn('Issue: opened', out)
+
     def test_reruns_only_infrastructure_failures_once_per_head(self):
         jobs = {'1': {'steps': [{'name': 'Set up job', 'conclusion': 'success', 'started_at': 'x'},
                                 {'name': 'Run tests', 'conclusion': 'failure', 'started_at': 'x'}]},

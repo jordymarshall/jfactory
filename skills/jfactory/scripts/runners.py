@@ -304,9 +304,12 @@ def cmd_up(args):
     if args.count < 1:
         raise Refused('--count must be at least 1')
     pool = check_pool(args.pool)
-    if pool and args.cache_dir:
+    if pool and args.cache_dir and not args.pr_jobs:
         raise Refused('A pool keeps no shared cache folder: its jobs (deploys, releases) must not run tools other jobs '
-                      'could have written. Drop --cache-dir for --pool.')
+                      'could have written. Drop --cache-dir for --pool, or add --pr-jobs for a pool that only runs '
+                      'pull-request jobs, like the main pool.')
+    if pool == 'deploy' and args.pr_jobs:
+        raise Refused('The deploy pool holds production secrets; it never runs pull-request jobs.')
     STATE.mkdir(parents=True, exist_ok=True)
     pid_file, log_file, config_file = files(repo, pool)
     # A pool's runners carry only their own label, so jobs asking for `jfactory` never land on them.
@@ -316,6 +319,9 @@ def cmd_up(args):
               'prefix': prefix(repo, args.host or os.uname().nodename.split('.')[0], pool),
               'cpus': args.cpus, 'cpu_range': args.cpu_range, 'memory': args.memory, 'shm_size': args.shm_size,
               'cache_dir': os.path.abspath(args.cache_dir) if args.cache_dir else None}
+    if args.no_pin:
+        # Small jobs (planning, gates, polling a deploy) share every CPU under a --cpus limit instead of a slice.
+        config['pin_cpus'] = False
     if args.build or docker('image', 'inspect', IMAGE, check=False).returncode:
         build(args.pull)
     # Prove the token works before leaving a supervisor running in the background.
@@ -333,7 +339,7 @@ def cmd_up(args):
     pid_file.write_text(str(proc.pid))
     print(f'Supervisor {proc.pid} keeps {args.count} single-use runner(s) ready for {repo} with labels '
           f'self-hosted,{",".join(labels)}; log: {log_file}')
-    variable = 'JFACTORY_DEPLOY_RUNNER' if pool == 'deploy' else 'JFACTORY_RUNNER'
+    variable = {'deploy': 'JFACTORY_DEPLOY_RUNNER', 'light': 'JFACTORY_LIGHT_RUNNER'}.get(pool, 'JFACTORY_RUNNER')
     print(f'Route workflows here with the repository variable {variable}={json.dumps(["self-hosted", own])}.')
     return 0
 
@@ -428,6 +434,10 @@ def main(argv=None):
     up.add_argument('--shm-size', default='2g', help='Shared memory per runner; browsers need more than the default')
     up.add_argument('--cache-dir', help='Host folder shared by this machine\'s runners as /cache, so jobs reuse Node, npm '
                                         'packages and browsers instead of downloading them (references/ci-runners.md)')
+    up.add_argument('--pr-jobs', action='store_true', help='This pool runs only pull-request jobs, like the main pool, '
+                                                             'so it may share --cache-dir (the light pool)')
+    up.add_argument('--no-pin', action='store_true', help='Do not pin each runner to its own CPU slice; use with --cpus '
+                                                            'for a pool of small jobs (references/ci-runners.md)')
     up.add_argument('--build', action='store_true', help='Rebuild the image even when it exists')
     up.add_argument('--pull', action='store_true', help='Pull the newest base image when building')
     serve = sub.add_parser('serve', help='The supervisor loop that `up` starts in the background')

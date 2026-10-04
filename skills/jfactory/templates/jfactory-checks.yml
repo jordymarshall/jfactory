@@ -27,7 +27,8 @@ env:
 jobs:
   mode:
     # Machines you own when the JFACTORY_RUNNER variable says so (references/ci-runners.md), otherwise GitHub's; fork PRs always GitHub's.
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}
+    # Small jobs (mode, map, checks) prefer the light pool (JFACTORY_LIGHT_RUNNER), so they never wait behind a long suite.
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_LIGHT_RUNNER || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}
     outputs:
       mode: ${{ steps.mode.outputs.mode }}
     steps:
@@ -42,7 +43,7 @@ jobs:
         run: python3 "$JFACTORY_DIR/scripts/verify_plan.py" full-suite --event "$GITHUB_EVENT_NAME" --labels-json "$LABELS" >> "$GITHUB_OUTPUT"
   map:
     # The map audit runs here once. Every tracked file must match a feature or a static pattern.
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_LIGHT_RUNNER || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -106,7 +107,7 @@ jobs:
   checks:
     needs: [mode, map, suites]
     if: always()
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_LIGHT_RUNNER || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}
     steps:
       - name: Require every parallel job to pass
         env:
