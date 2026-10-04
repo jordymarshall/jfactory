@@ -199,7 +199,8 @@ def why_its_right_problem(body, config):
     files = outcome_files(config)
     if not files:
         return None
-    body = body or ''
+    # Hidden text doesn't count: a PR template lists every job in a comment, and those names must not pass the gate.
+    body = re.sub(r'<!--.*?(-->|$)', '', body or '', flags=re.S)
     if not WHY_SECTION.search(body):
         return 'PR description needs a "Why it\'s right" section (templates/objective.md)'
     if not any(doc in body for doc in files):
