@@ -54,7 +54,7 @@ Tests prove behavior; the project's own documents say what good looks like. Veri
 
 Keep the levels apart. `outcomes/README.md` is why the product exists; it changes by owner decision. The standards map is what good looks like everywhere. A job document holds the standing goals of one thing users do. A work item's objective holds the criteria for one change, and each criterion names the job goal it adds, changes or relies on; when a change adds or alters a standing goal, it updates the job document in the same PR.
 
-`setup_check.py` fails when the map names a source that doesn't exist, and warns about missing dimensions, rows without a proof method and documents outside the map that still claim to be the source of truth. `audit` warns about screen features without an outcome document and goals without a proof. Edits to any of these documents always get the independent verifier.
+`setup_check.py` fails when the map names a source that doesn't exist, and warns about missing dimensions, rows without a proof method and documents outside the map that still claim to be the source of truth. `audit` warns about screen features without an outcome document and goals without a proof. Edits to the standards map always get the independent verifier (it is a gate file). Edits to job documents and other sources get it with fuller per-PR checks; under the default minimum gates only a risky feature's documents get that review, and a `ci` feature's documents follow its level.
 
 Explain the main customer journey and largest gaps in plain language. Then interview the owner. This step is required: code establishes what exists, not what the customer should want, and a brief the agent writes alone is an assumption. Ask each question in the setup record's interview table:
 

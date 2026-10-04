@@ -118,7 +118,7 @@ There is no default time limit. Precision comes from the map plus recorded cover
 
 ### Link each feature to its job to be done
 
-A feature users see names its job document: `"outcome": "outcomes/plan-a-campaign-brief.md"` (see [setup](setup.md#record-the-sources-of-truth-verifiers-check-against) and [the template](../templates/outcome.md); `"journey"` is read too). The document says what the user is trying to do and how each standing goal is proven. The suites here are how most of those proofs run. `audit` warns about a feature with screens and no outcome document, fails on a path that isn't tracked, and warns about goals without a proof. Outcome and standards documents are never `static`: edits to them always get the independent verifier.
+A feature users see names its job document: `"outcome": "outcomes/plan-a-campaign-brief.md"` (see [setup](setup.md#record-the-sources-of-truth-verifiers-check-against) and [the template](../templates/outcome.md); `"journey"` is read too). The document says what the user is trying to do and how each standing goal is proven. The suites here are how most of those proofs run. `audit` warns about a feature with screens and no outcome document, fails on a path that isn't tracked, and warns about goals without a proof. Outcome and standards documents are never `static`: map them to their feature. With fuller per-PR checks, edits to them always get the independent verifier; under the default minimum gates they follow their feature's level, so a risky feature's documents get it and a `ci` feature's do not.
 
 ## 9. Audit until clean and show the owner
 
