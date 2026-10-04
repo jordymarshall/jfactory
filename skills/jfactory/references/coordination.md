@@ -34,7 +34,7 @@ Read the pinned originals this adapts: [orchestrate](../vendor/pstack/skills/pot
 | `list` | Anyone | Lists open program issues, for resuming |
 | `add <issue> <unit> --objective --requires SCOPES [--role] [--effort] [--depends] [--paths]` | Coordinator | Adds a planned unit with the evidence scopes that define verified, its role (`implement`, `fast`, `trivial` or `verify`) and difficulty-based effort |
 | `brief <file>` | Coordinator | Checks a task contract has every required field |
-| `launch <issue> <unit> --brief FILE [--dry-run] [--stack-on UNIT] [--branch BRANCH] [--resume --reason] [--fallback --reason] [--agent/--model/--effort]` | Coordinator | Creates the unit's Conductor workspace with the policy's agent and model, moves it into the program's sidebar section, after checking hold, concurrency limit, dependencies, open decisions, brief completeness, attempt limit, model availability and reviewer model family |
+| `launch <issue> <unit> --brief FILE [--dry-run] [--stack-on UNIT] [--branch BRANCH] [--allow-overlap] [--resume --reason] [--fallback --reason] [--agent/--model/--effort]` | Coordinator | Creates the unit's Conductor workspace with the policy's agent and model, moves it into the program's sidebar section, after checking hold, concurrency limit, the repository limit across programs (`repo_limit`), path overlap with running units, that `--branch` exists, dependencies, open decisions, brief completeness, attempt limit, model availability and reviewer model family |
 | `launch --role verify\|build\|fix --pr N --message-file FILE [--branch] [--project-id] [--agent/--model/--effort] [--dry-run]` | Anyone launching an agent for one PR | Creates a workspace named `<role>-<repo name>-<PR number>`, such as `verify-loopcraft-102`, from the PR's head branch unless `--branch` says otherwise, and prints its id. It uses the repository's Conductor project when one matches, otherwise the repository URL. `verify` defaults to the verify tier (GPT Sol 6.1 at low effort, pinned), `build` and `fix` to the frontier tier. It refuses any other role, and a `--name` that breaks the convention. See [finished workspaces archive themselves](#finished-workspaces-archive-themselves) |
 | `report <issue> <unit> --state ...` | Worker | Posts a structured comment with its state, PR, head SHA, note or question |
 | `sync <issue> [--dry-run]` | Coordinator | Folds worker reports, PR state and session status into the issue, voids verdicts on new heads, turns a failed or blocked verdict at a unit's head into its next step (a fix task when the cause is the change, an owner decision the unit waits on when the cause includes the rules) and lists units ready to launch, including verifiers whose target has a PR (with the `--stack-on` to use) |
@@ -135,6 +135,15 @@ Before the first launch, confirm the base branch contains the jfactory adoption 
 Pilot one unit from contract to verified PR before launching the rest when the unit shape is new. Correct the contract and verification recipe from what the pilot reveals. For near-identical cheap units, the first unit is the pilot.
 
 Before each launch batch, run the usage reader under [model selection](models.md) and pass `--fallback --reason` with its reading when it chooses a fallback. Use `launch --dry-run` to review the exact message, then `launch`. It records the workspace link and session on the unit and posts a launch comment. Use `conductor session create` only for an agent that should share an existing workspace, such as a same-checkout reviewer; two writers in one checkout are not isolated. Refill free slots as units finish instead of waiting for a whole batch.
+
+### Separate workspaces, separate files
+
+Every worker gets its own Conductor workspace: its own machine, checkout and branch, so no two workers share a working copy. Merge conflicts come from two workers editing the same files. Prevent them when you plan, not when you merge:
+
+- **Give every unit `--paths`** (`add --paths 'app/library/**,app/lib/library/**'`): the files it may change. Split units by file ownership, not only by feature.
+- **`launch` refuses a unit whose paths overlap a running unit's**, in this program or any other open one. Sequence it (`--depends`), stack it on the other unit's branch (`--stack-on`), or pass `--allow-overlap` and name in both briefs which files each worker owns.
+- **Put shared files in one unit.** Shared primitives, tokens, schema and config belong to one foundation unit that merges first; page units depend on it.
+- **Workers stay mergeable.** The launch message tells each worker to merge the base into its branch before every push and whenever told the base moved (no rebase, no force-push), resolve conflicts itself and rerun the affected checks. After each merge, `sync` names the running units whose paths the merge touched; message those workers to update.
 
 ## 5. Worker protocol
 

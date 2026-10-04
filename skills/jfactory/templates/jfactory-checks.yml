@@ -5,15 +5,16 @@
 # The map job fails once when a tracked file is unmapped; the suite jobs still run (with --no-audit), so one stray file
 # fails one job, not every shard. A PR runs only the suites the change needs: the map's, plus
 # every suite whose recorded coverage executed a changed file. The suites are split across parallel jobs by their
-# recorded minutes. A PR runs journey (browser) suites only for changes users can see (`ci --pr`). The push after
-# merge runs the journeys of every feature whose code changed (`ci --push`), so behind-the-scenes changes are
-# still checked once before a release. The whole suite runs when the owner's "full_suite" choice in the mapping says so (on request,
+# recorded minutes. Under the default minimum gates (`"pr_journeys": false`) no PR or merge runs a journey; the
+# whole-suite run does. With `"pr_journeys": true` (owner opt-in), a PR runs journey suites only for changes users can
+# see (`ci --pr`), and the push after merge runs the journeys of every feature whose code changed (`ci --push`). The whole suite runs when the owner's "full_suite" choice in the mapping says so (on request,
 # nightly, on every merge or on every PR); each such run also records the coverage later PRs use.
 name: jfactory checks
 on:
   pull_request:
-    # `labeled` lets adding the full-suite label start the whole suite on an open PR.
-    types: [opened, synchronize, reopened, labeled]
+    # No `labeled`: every label change (a hold, a status label) would cancel and restart the run. The mode job reads
+    # the full-suite label live, so add the label, then re-run the run's jobs (references/ci-runners.md).
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
   schedule:
@@ -22,8 +23,17 @@ on:
 permissions:
   contents: read
   actions: read
+  # The mode job reads the PR's labels live.
+  issues: read
+  pull-requests: read
 env:
   JFACTORY_DIR: .agents/skills/jfactory
+# A newer push to a PR cancels that PR's older run, so the one-minute debounce in `mode` lets a quick second push
+# replace the first before any big job starts. Base-branch, schedule and manual runs never cancel each other.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('jfactory-checks-pr-{0}', github.event.pull_request.number) || format('jfactory-checks-{0}-{1}', github.event_name, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   mode:
     # Machines you own when the JFACTORY_RUNNER variable says so (references/ci-runners.md), otherwise GitHub's; fork PRs always GitHub's.
@@ -36,11 +46,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      # Debounce: every big job needs this one, so a push that lands within this minute cancels the run here, on the
+      # light pool, before any suite starts (references/ci-runners.md, queue operations).
+      - name: Wait one minute for a newer push
+        if: github.event_name == 'pull_request'
+        run: sleep 60
       - id: mode
         env:
-          # JSON keeps each label name exact, commas included.
-          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
-        run: python3 "$JFACTORY_DIR/scripts/verify_plan.py" full-suite --event "$GITHUB_EVENT_NAME" --labels-json "$LABELS" >> "$GITHUB_OUTPUT"
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Labels are read live, not from the event, so a re-run after adding the full-suite label sees it.
+          LABELS='[]'
+          if [ -n "$PR_NUMBER" ]; then LABELS=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels" -q '[.[].name]'); fi
+          python3 "$JFACTORY_DIR/scripts/verify_plan.py" full-suite --event "$GITHUB_EVENT_NAME" --labels-json "$LABELS" >> "$GITHUB_OUTPUT"
   map:
     # The map audit runs here once. Every tracked file must match a feature or a static pattern.
     runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_LIGHT_RUNNER || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}

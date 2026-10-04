@@ -59,7 +59,8 @@ def role_from_tier(tier):
     return role
 
 
-DEFAULT_POLICY = {'limit': 3, 'roles': {name: role_from_tier(tier) for name, tier in ROLE_TIERS.items()}}
+# repo_limit: running workers across ALL open programs; they share one CI queue (references/ci-runners.md).
+DEFAULT_POLICY = {'limit': 3, 'repo_limit': 6, 'roles': {name: role_from_tier(tier) for name, tier in ROLE_TIERS.items()}}
 POLICY_FILE = Path('.jfactory/coordination.json')
 
 
@@ -113,6 +114,44 @@ def load(repo, number):
     state = json.loads(match.group(1))
     state['_issue'] = issue
     return state
+
+
+def path_prefix(pattern):
+    """The fixed folder part of a glob: everything before the first wildcard."""
+    head = re.split(r'[*?\[]', pattern, maxsplit=1)[0]
+    return head
+
+
+def paths_overlap(mine, theirs):
+    """True when two units' path globs can name the same file: one fixed prefix contains the other."""
+    for a in mine:
+        for b in theirs:
+            pa, pb = path_prefix(a), path_prefix(b)
+            if pa.startswith(pb) or pb.startswith(pa):
+                return True
+    return False
+
+
+def overlapping_units(repo, program, uid, paths):
+    """Running units in any open, not-held program whose paths overlap `paths` (each program's own units too)."""
+    if not paths:
+        return []
+    issues = json.loads(gh(repo, 'issue', 'list', '--label', PROGRAM_LABEL, '--state', 'open', '--limit', '50',
+                           '--json', 'number'))
+    found = []
+    for issue in issues:
+        try:
+            other = load(repo, issue['number'])
+        except Refused:
+            continue
+        if held(other):
+            continue
+        for name, unit in other['units'].items():
+            if (issue['number'], name) == (int(program), uid) or unit['state'] not in ACTIVE:
+                continue
+            if paths_overlap(paths, unit.get('paths') or []):
+                found.append(f"#{issue['number']}/{name}")
+    return found
 
 
 def running_across_programs(repo):
@@ -189,7 +228,7 @@ def policy(root):
     if path.is_file():
         override = json.loads(path.read_text())
         merged['limit'] = override.get('limit', merged['limit'])
-        merged['repo_limit'] = override.get('repo_limit')
+        merged['repo_limit'] = override.get('repo_limit', merged['repo_limit'])
         merged['merge_deploys'] = override.get('merge_deploys')
         # A role override changes only the fields it names; the rest, such as the fallback, stay.
         for name, fields in override.get('roles', {}).items():
@@ -645,6 +684,15 @@ def conductor_project(repo):
     return matches[0] if len(matches) == 1 else None
 
 
+def require_branch(repo, branch, advice):
+    """Refuse before creating anything when `branch` is not on GitHub. Conductor deletes a workspace created from a
+    missing branch, and the launch still looked successful (2026-10-04)."""
+    try:
+        run('gh', 'api', f'repos/{repo}/branches/{branch}', '--silent')
+    except Refused:
+        raise Refused(f'--branch {branch} does not exist on GitHub; it names the branch to start from. {advice}')
+
+
 def cmd_launch_pr(args):
     """Launch a reviewer, builder or fixer for one PR in a workspace named by the convention."""
     if args.role not in PR_ROLES:
@@ -670,6 +718,8 @@ def cmd_launch_pr(args):
     branch = args.branch
     if not branch:
         branch = json.loads(gh(args.repo, 'pr', 'view', str(args.pr), '--json', 'headRefName'))['headRefName']
+    # The PR's own head branch can be gone too, for example deleted after a merge.
+    require_branch(args.repo, branch, f'Pass --branch with an existing branch, or check that PR #{args.pr} is still open')
     project = args.project_id or conductor_project(args.repo)
     where = ['--project-id', project] if project else ['--repo-url', f'https://{gh_host()}/{args.repo}']
     command = ['workspace', 'create', *where, '--branch', branch, '--name', name, '--session-name', name,
@@ -859,6 +909,7 @@ Report state changes from the repository root; each report is a comment the coor
   python3 {script} --repo {repo} report {number} {uid} --state blocked --question "decision you need"
 The owner may message you directly. Follow their feedback within this unit, and include it as an owner decision in the next report's --note so the coordinator can record it and relay it to other units. If it changes this unit's scope or affects other units, report --state blocked with a --question instead of expanding scope yourself.
 If a report says the program is on hold, stop at a safe boundary, push your work and report.
+Stay mergeable: your workspace is your own checkout and branch. Before every push, and whenever the coordinator says the base moved, merge origin/{state.get('base', 'main')} into your branch (no rebase, no force-push), resolve any conflicts yourself, rerun the checks the merge touches, then push once.
 """
 
 
@@ -906,6 +957,16 @@ def cmd_launch(args):
             raise Refused(f'Repository limit {repo_limit} reached across programs ({", ".join(busy)} running). '
                           'Every running worker pushes into one CI queue (references/ci-runners.md, queue '
                           'operations); wait for a unit to finish')
+    # Two workers editing the same files make merge conflicts and rework (2026-10-04: 5 conflicts across 9 PRs).
+    # Overlapping units wait (--depends) or stack on each other (--stack-on); --allow-overlap is a deliberate choice.
+    # Stacking exempts only this program's named unit, never a same-named unit of another program.
+    stacked = {f'#{int(args.program)}/{name}' for name in args.stack_on}
+    clash = [u for u in overlapping_units(args.repo, args.program, args.unit, unit.get('paths') or [])
+             if u not in stacked]
+    if clash and not args.allow_overlap:
+        raise Refused(f'{args.unit} edits the same paths as running unit(s) {", ".join(clash)}. Wait for them, '
+                      'make it depend on them (--depends), stack it (--stack-on), or pass --allow-overlap and tell '
+                      'both workers which files each owns')
     waiting = [d for d in unit['depends'] if state['units'][d]['state'] != 'merged' and d not in args.stack_on]
     if waiting:
         raise Refused(f'Dependencies not merged: {", ".join(waiting)}; wait or pass --stack-on to stack deliberately')
@@ -962,6 +1023,9 @@ def cmd_launch(args):
             raise Refused(f'{args.stack_on[0]} has no pushed branch to stack on yet')
     if args.branch:
         base = args.branch
+        # `--branch` names the branch to start FROM. Conductor deletes a workspace created from a branch that does
+        # not exist, and the launch still looked successful (2026-10-04); the worker creates its own branch.
+        require_branch(args.repo, base, 'Omit it and name the new branch in the brief instead')
     elif args.resume:
         base = unit['branch']
     if args.dry_run:
@@ -978,6 +1042,8 @@ def cmd_launch(args):
                        '--message-file', body_file(message), '--json')
     workspace = created.get('workspace', created)
     session = created.get('session') or created.get('firstSession') or {}
+    if (workspace.get('state') or '').lower() == 'deleted':
+        raise Refused(f'Conductor deleted the new workspace for {args.unit} at creation; check the base branch {base}')
     attempts = unit['attempts'] + (0 if args.resume else 1)
     unit.update({'state': 'running', 'attempts': attempts, 'updated': now(),
                  'agent': role['agent'], 'model': role['model'], 'effort': role.get('effort'),
@@ -1019,6 +1085,7 @@ QUIET_LIMIT = 5
 
 def cmd_sync(args):
     state = load(args.repo, args.program)
+    before = {name: unit['state'] for name, unit in state['units'].items()}
     changes = fold_reports(state) + refresh_prs(state, args.repo)
     changes += route_verdicts(state, args.repo, args.program, announce=not args.dry_run)
     notes = session_states(state)
@@ -1052,6 +1119,15 @@ def cmd_sync(args):
               'a session, PR or the owner reports something new.')
     for note in notes:
         print('Check: ' + note)
+    # A merge moves the base under every running unit that edits the same files: tell those workers to update now,
+    # while the conflict is small (references/coordination.md, separate workspaces, separate files).
+    for name, unit in state['units'].items():
+        if unit['state'] == 'merged' and before.get(name) != 'merged':
+            touched = [n for n, other in state['units'].items() if other['state'] in ACTIVE and
+                       paths_overlap(unit.get('paths') or [], other.get('paths') or [])]
+            if touched:
+                print(f"Update from base: {name} merged and edits the same paths as {', '.join(touched)}; "
+                      'message those workers to merge the base into their branch now')
     running = sum(v['state'] in ACTIVE for v in state['units'].values())
     slots = max(state['limit'] - running, 0)
     if ready and not held(state):
@@ -1272,6 +1348,8 @@ def main(argv=None):
     p.add_argument('--role', help='PR workspace: verify, build or fix')
     p.add_argument('--pr', type=int, help='PR workspace: the pull request number')
     p.add_argument('--branch', help='Branch to start from; PR launches default to their head branch')
+    p.add_argument('--allow-overlap', action='store_true',
+                   help='Launch even though a running unit edits the same paths; name each file owner in both briefs')
     p.add_argument('--resume', action='store_true',
                    help='Resume a pushed checkpoint without consuming a failure retry; previous worker must be archived')
     p.add_argument('--message-file', help='PR workspace: the first message')

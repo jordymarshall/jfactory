@@ -106,6 +106,32 @@ class PlanTest(unittest.TestCase):
             result = verify_plan.plan(order, config)
             self.assertEqual((result['level'], result['suites']), ('independent', ['brand-journey', 'unit']), order)
 
+    def test_pr_journeys_false_drops_journeys_from_every_planned_change(self):
+        config = {**CONFIG, 'suites': {'browser': {'target': 'app', 'run': 'x'}, 'unit': {'run': 'y'}, 'cli': {'run': 'z'}}}
+        # Negative control: by default a screen change runs its journey.
+        self.assertIn('browser', verify_plan.plan(['app/briefs/save.ts'], config)['suites'])
+        minimal = {**config, 'pr_journeys': False}
+        for files in (['app/briefs/save.ts'], ['app/auth.ts'], ['unknown/file.ts']):
+            self.assertNotIn('browser', verify_plan.plan(files, minimal)['suites'], files)
+        self.assertIn('unit', verify_plan.plan(['app/briefs/save.ts'], minimal)['suites'])
+        # The audit refuses minimum gates without a scheduled whole suite.
+        text = ' '.join(t for _, t in verify_plan.audit([], {**minimal, 'full_suite': 'on-request'}))
+        self.assertIn('"pr_journeys" is false', text)
+
+    def test_force_independent_false_lets_test_edits_follow_their_feature_but_never_instructions(self):
+        # Minimum gates (owner option): a `ci` feature's test edits stay CI-only.
+        minimal = {**CONFIG, 'force_independent': False}
+        for path in ('tools/x.test.ts', 'tools/e2e/flow.ts'):
+            result = verify_plan.plan([path], minimal)
+            self.assertEqual((result['level'], result['independent_features']), ('ci', []), path)
+        # An agent instruction is gate material at any depth: it keeps its verdict even with the option off.
+        for path in ('tools/AGENTS.md', 'tools/skill/SKILL.md'):
+            self.assertEqual(verify_plan.plan([path], minimal)['level'], 'independent', path)
+        # Negative controls: the default still forces a verdict, and an `independent` feature keeps its own.
+        self.assertEqual(verify_plan.plan(['tools/x.test.ts'], CONFIG)['level'], 'independent')
+        self.assertEqual(verify_plan.plan(['app/auth.test.ts'], {**minimal, 'features': {
+            **CONFIG['features'], 'auth': {'paths': ['app/auth*'], 'suites': ['browser']}}})['level'], 'independent')
+
     def test_tests_instructions_and_screens_always_need_the_verifier(self):
         # A `ci` feature stays CI-only for its ordinary code: the negative control.
         self.assertEqual(verify_plan.plan(['tools/x.py'], CONFIG)['level'], 'ci')
@@ -569,6 +595,22 @@ class GateTest(unittest.TestCase):
         self.assertEqual((journey['level'], journey['overridden'], journey['needs_verifier']),
                          ('review', {'docs': 'standards'}, True))
         self.assertTrue(verify_plan.plan(['docs/guide.md'], config)['static_only'])
+
+    def test_force_independent_false_lets_standards_documents_follow_their_feature(self):
+        # Minimum gates: a job document of a `ci` feature follows its level; a risky feature's still gets a verdict.
+        config = {**CONFIG, 'force_independent': False, '_standards': ['docs/journeys/briefs.md', 'docs/auth.md'],
+                  'features': {**CONFIG['features'],
+                               'docs': {'paths': ['docs/journeys/**'], 'verify': 'ci'},
+                               'auth-docs': {'paths': ['docs/auth.md'], 'verify': 'independent'}}}
+        journey = verify_plan.plan(['docs/journeys/briefs.md'], config)
+        self.assertEqual((journey['level'], journey['needs_verifier']), ('ci', False))
+        risky = verify_plan.plan(['docs/auth.md'], config)  # a document-only edit gets a document review
+        self.assertEqual((risky['level'], risky['needs_verifier']), ('review', True))
+        # A standards document that is also an agent instruction keeps its verdict.
+        config['_standards'].append('docs/journeys/AGENTS.md')
+        self.assertTrue(verify_plan.plan(['docs/journeys/AGENTS.md'], config)['needs_verifier'])
+        # Gate files never relax.
+        self.assertTrue(verify_plan.plan(['.jfactory/standards.md'], config)['needs_verifier'])
 
     def test_proof_headers_must_precede_a_table_separator(self):
         methods = ('| Method | How it applies |\n| --- | --- |\n'

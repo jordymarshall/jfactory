@@ -84,6 +84,70 @@ class CoordTest(unittest.TestCase):
         self.coord('launch', '1', 'a', '--brief', str(self.brief), '--branch', 'feat/checkpoint')
         self.assertEqual(self.db()['workspaces'][-1]['branch'], 'feat/checkpoint')
 
+    def test_launch_refuses_units_that_edit_the_same_paths(self):
+        self.start(['a', '--objective', 'Library list', '--paths', 'app/library/**'],
+                   ['b', '--objective', 'Library detail', '--paths', 'app/library/detail/**'],
+                   ['c', '--objective', 'Briefs', '--paths', 'app/briefs/**'], limit=3)
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        # Negative control: a unit in other files launches alongside.
+        self.coord('launch', '1', 'c', '--brief', str(self.brief))
+        out = self.coord('launch', '1', 'b', '--brief', str(self.brief), ok=False)
+        self.assertIn('edits the same paths as running unit(s) #1/a', out)
+        self.assertEqual(len(self.db()['workspaces']), 2)
+        self.coord('launch', '1', 'b', '--brief', str(self.brief), '--allow-overlap')
+        self.assertEqual(len(self.db()['workspaces']), 3)
+        self.assertIn('merge origin/main into your branch', self.db()['workspaces'][-1]['message'])
+
+    def test_stacking_exempts_only_this_programs_unit_not_a_same_named_one_elsewhere(self):
+        # #1/a is an unrelated foundation unit; #2/a runs on the library paths #1/b wants.
+        self.start(['a', '--objective', 'Foundation', '--paths', 'app/foundation/**'],
+                   ['b', '--objective', 'Library detail', '--paths', 'app/library/detail/**'], limit=3)
+        self.coord('init', '--title', 'Other program', '--limit', '3', '--merge-deploys', 'staging')
+        self.coord('add', '2', 'a', '--objective', 'Library list', '--paths', 'app/library/**', '--requires', 'unit')
+        self.coord('launch', '2', 'a', '--brief', str(self.brief))
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'abc1234', 'headRefName': 'feat/foundation'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'abc1234')
+        self.coord('sync', '1')
+        out = self.coord('launch', '1', 'b', '--brief', str(self.brief), '--stack-on', 'a', ok=False)
+        self.assertIn('edits the same paths as running unit(s) #2/a', out)
+        self.assertEqual(len(self.db()['workspaces']), 2)
+
+    def test_sync_names_running_units_a_merge_touched(self):
+        self.start(['a', '--objective', 'Library list', '--paths', 'app/library/**'],
+                   ['b', '--objective', 'Library detail', '--paths', 'app/library/detail/**'],
+                   ['c', '--objective', 'Briefs', '--paths', 'app/briefs/**'], limit=3)
+        for unit in ('a', 'c'):
+            self.coord('launch', '1', unit, '--brief', str(self.brief))
+        self.coord('launch', '1', 'b', '--brief', str(self.brief), '--allow-overlap')
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'abc1234', 'headRefName': 'feat/a'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'abc1234')
+        self.coord('sync', '1')
+        self.set_db(prs={'7': {'state': 'MERGED', 'headRefOid': 'abc1234', 'headRefName': 'feat/a'}})
+        out = self.coord('sync', '1')
+        self.assertIn('Update from base: a merged and edits the same paths as b', out)
+        self.assertNotIn(' c;', out)
+
+    def test_program_launch_refuses_a_branch_that_does_not_exist(self):
+        # Conductor deletes a workspace made from a missing branch; launch must refuse instead of looking successful.
+        self.start(['a', '--objective', 'Save items'])
+        self.set_db(missing_branches=['feat/new'])
+        out = self.coord('launch', '1', 'a', '--brief', str(self.brief), '--branch', 'feat/new', ok=False)
+        self.assertIn('does not exist on GitHub', out)
+        self.assertEqual(self.db().get('workspaces', []), [])
+
+    def test_pr_launch_refuses_a_missing_branch_before_creating_a_workspace(self):
+        message = self.tmp / 'verify.md'
+        message.write_text('Verify PR 7 at its head.')
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/gone'}},
+                    missing_branches=['feat/gone', 'feat/missing'])
+        out = self.coord('launch', '--role', 'verify', '--pr', '7', '--message-file', str(message), ok=False)
+        self.assertIn('--branch feat/gone does not exist on GitHub', out)
+        out = self.coord('launch', '--role', 'verify', '--pr', '7', '--message-file', str(message),
+                         '--branch', 'feat/missing', ok=False)
+        self.assertIn('--branch feat/missing does not exist on GitHub', out)
+        self.assertEqual(self.db().get('workspaces', []), [])
+
     def checkpoint(self):
         self.start(['a', '--objective', 'Save items'])
         self.coord('launch', '1', 'a', '--brief', str(self.brief))
