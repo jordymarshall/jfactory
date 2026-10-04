@@ -131,6 +131,23 @@ class InstallTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'another jfactory installation'):
             installer.install(ROOT, self.target)
 
+    def test_claude_code_entry_never_writes_through_a_symlink(self):
+        (self.target / 'CLAUDE.md').write_text('')
+        installer.install(ROOT, self.target)
+        outside = Path(self.tmp.name) / 'outside.txt'
+        outside.write_text('DO NOT CHANGE\n')
+        folder = self.target / '.claude/skills/jfactory'
+        for name in ('.SKILL.md.jfactory-tmp', 'SKILL.md'):
+            with self.subTest(name=name):
+                planted = folder / name
+                if planted.exists():
+                    planted.unlink()
+                planted.symlink_to(outside)
+                with self.assertRaisesRegex(ValueError, 'symlink'):
+                    installer.install(ROOT, self.target, update=True)
+                self.assertEqual(outside.read_text(), 'DO NOT CHANGE\n')
+                planted.unlink()
+
     def test_claude_host_install_needs_no_entry(self):
         (self.target / 'CLAUDE.md').write_text('')
         dest = installer.install(ROOT, self.target, 'claude')

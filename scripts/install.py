@@ -105,8 +105,10 @@ def install(source, target, agent='codex', update=False):
         for path in [pointer, *(p for p in pointer.parents if p.is_relative_to(target) and p != target)]:
             if path.is_symlink():
                 raise ValueError(f'Refusing symlink target: {path}')
-        ours = ('SKILL.md', '.SKILL.md.jfactory-tmp')
-        if pointer.parent.is_dir() and any(p.name not in ours for p in pointer.parent.iterdir()):
+        entries = list(pointer.parent.iterdir()) if pointer.parent.is_dir() else []
+        if any(p.is_symlink() for p in entries):
+            raise ValueError(f'Refusing symlink in {pointer.parent.relative_to(target)}')
+        if any(p.name != 'SKILL.md' for p in entries):
             raise ValueError(f'{pointer.parent.relative_to(target)} holds another jfactory installation; '
                              'reconcile before installing for a second host')
     if legacy.exists() and dest.exists():
@@ -220,9 +222,15 @@ def install(source, target, agent='codex', update=False):
     if pointer:
         # After the bundle is in place, so the entry never points at a missing installation.
         pointer.parent.mkdir(parents=True, exist_ok=True)
-        staged = pointer.with_name('.SKILL.md.jfactory-tmp')
-        staged.write_text(pointer_text)
-        os.replace(staged, pointer)
+        # A new, exclusively created file in the checked folder, never a fixed name that could be a planted symlink.
+        handle, staged = tempfile.mkstemp(prefix='.SKILL.md.', dir=pointer.parent)
+        try:
+            with os.fdopen(handle, 'w') as out:
+                out.write(pointer_text)
+            os.replace(staged, pointer)
+        except BaseException:
+            Path(staged).unlink(missing_ok=True)
+            raise
     return dest
 
 

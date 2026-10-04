@@ -14,7 +14,7 @@
   "features": {
     "agent-instructions": {
       "outcome": ["outcomes/set-up-a-repository.md", "outcomes/deliver-an-objective.md", "outcomes/merge-verified-changes.md", "outcomes/run-many-agents.md", "outcomes/research-an-experience.md"],
-      "paths": ["AGENTS.md", "CLAUDE.md", "README.md", "outcomes/**", "skills/jfactory/SKILL.md", "skills/jfactory/references/**", "skills/jfactory/skills/*/SKILL.md", "skills/jfactory/skills/*/references/**"],
+      "paths": ["AGENTS.md", "CLAUDE.md", ".claude/**", "README.md", "outcomes/**", "skills/jfactory/SKILL.md", "skills/jfactory/references/**", "skills/jfactory/skills/*/SKILL.md", "skills/jfactory/skills/*/references/**"],
       "recipe": "Read the changed instructions against the affected job goals and the shared goals in outcomes/README.md; check contradictions and owner decisions; run tests/test_links.py; behavior changes need a scenario from evals/scenarios.md, with model-trial limits stated separately from unit results",
       "suites": ["checks"],
       "verify": "independent"
