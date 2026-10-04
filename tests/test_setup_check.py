@@ -87,6 +87,20 @@ class SetupCheckTest(unittest.TestCase):
         self.assertEqual(proc.returncode, code, proc.stdout + proc.stderr)
         return proc.stdout
 
+    def test_claude_code_needs_the_skill_entry_and_the_subagent_hook(self):
+        self.assertNotIn('Claude Code', self.check('--remote', '--repo', 'o/r'))
+        (self.root / 'CLAUDE.md').write_text('@AGENTS.md\n')
+        out = self.check('--remote', '--repo', 'o/r', code=1)
+        self.assertIn('.claude/skills/jfactory/SKILL.md is missing', out)
+        self.assertIn('WARN: Claude Code subagents can change files here', out)
+        skill = self.root / '.claude' / 'skills' / 'jfactory' / 'SKILL.md'
+        skill.parent.mkdir(parents=True)
+        skill.write_text('---\nname: jfactory\n---\n')
+        shutil.copy(ROOT / 'skills' / 'jfactory' / 'templates' / 'claude-settings.json',
+                    self.root / '.claude' / 'settings.json')
+        self.assertIn('PASS: Claude Code loads jfactory, and its hook keeps in-session subagents read-only',
+                      self.check('--remote', '--repo', 'o/r'))
+
     def test_standards_map_names_real_sources_and_how_to_prove_them(self):
         self.assertIn('PASS: Standards map covers 9 dimensions', self.check('--remote', '--repo', 'o/r'))
         write = lambda **rows: (self.root / '.jfactory' / 'standards.md').write_text(standards(**rows))

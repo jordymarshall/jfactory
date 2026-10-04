@@ -43,6 +43,8 @@ class InstallTests(unittest.TestCase):
         self.assertIn('at most 5 checks per wait', block)
         self.assertIn('ASD-STE100 writing rules (.agents/skills/jfactory/references/writing.md)', block)
         self.assertIn('the same failure twice means stop and report', block)
+        self.assertIn('In-session subagents only do read-only research', block)
+        self.assertIn('CI confirms what you already checked', block)
 
     def test_installs_without_git_and_records_unknown_revision(self):
         real = installer.subprocess.check_output
@@ -100,6 +102,40 @@ class InstallTests(unittest.TestCase):
                 installer.install(ROOT, target, host)
                 self.assertTrue((target / directory / 'SKILL.md').is_file())
                 self.assertIn(directory, (target / filename).read_text())
+
+    def test_claude_code_gets_a_skill_entry_when_the_repository_uses_it(self):
+        # Claude Code discovers skills only under .claude/skills; a Codex-layout install alone loads nothing there.
+        pointer = self.target / '.claude/skills/jfactory/SKILL.md'
+        installer.install(ROOT, self.target)
+        self.assertFalse(pointer.exists())
+        (self.target / 'CLAUDE.md').write_text('@AGENTS.md\n')
+        dest = installer.install(ROOT, self.target, update=True)
+        text = pointer.read_text()
+        self.assertTrue(text.startswith('---\nname: jfactory\ndescription: Run connected'))
+        self.assertIn('Read `.agents/skills/jfactory/SKILL.md` now', text)
+        receipt = json.loads((dest / '.jfactory-install.json').read_text())
+        self.assertEqual(receipt['host_pointers'], {'.claude/skills/jfactory/SKILL.md': installer.digest(text.encode())})
+        installer.install(ROOT, self.target)  # Idempotent.
+        self.assertEqual(text, pointer.read_text())
+        self.assertEqual((self.target / 'CLAUDE.md').read_text(), '@AGENTS.md\n')
+
+    def test_claude_code_entry_refuses_files_it_did_not_write(self):
+        pointer = self.target / '.claude/skills/jfactory/SKILL.md'
+        pointer.parent.mkdir(parents=True)
+        pointer.write_text('my own skill\n')
+        with self.assertRaisesRegex(ValueError, 'not written by this installer'):
+            installer.install(ROOT, self.target)
+        self.assertFalse((self.target / '.agents/skills/jfactory').exists())
+        self.assertEqual(pointer.read_text(), 'my own skill\n')
+        (pointer.parent / 'extra.md').write_text('x')
+        with self.assertRaisesRegex(ValueError, 'another jfactory installation'):
+            installer.install(ROOT, self.target)
+
+    def test_claude_host_install_needs_no_entry(self):
+        (self.target / 'CLAUDE.md').write_text('')
+        dest = installer.install(ROOT, self.target, 'claude')
+        self.assertEqual(dest, self.target / '.claude/skills/jfactory')
+        self.assertNotIn('host_pointers', json.loads((dest / '.jfactory-install.json').read_text()))
 
     def test_installed_methods_are_reachable_and_pinned_on_every_host(self):
         for host, (directory, filename) in installer.LAYOUTS.items():

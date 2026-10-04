@@ -66,6 +66,8 @@ gh variable set JFACTORY_DEPLOY_RUNNER --body '["self-hosted","jfactory-deploy"]
 
 ## Keep it healthy
 
+- **Match jobs to runners.** Queue time grows when the jobs waiting exceed the runners. Count jobs per PR times the PRs that push at the same time. If that is many times the runner count, jobs wait longer than they run. Before you add machines: run small changes' static checks (types, lint, related unit tests) in one job, keep the program's concurrency limit, and have agents check before they push ([CI confirms](delivery.md#ci-confirms-it-does-not-discover)). Compare each job's `started_at` with its `created_at` to measure the wait.
+
 - **No runner online means jobs wait** up to 24 hours, then fail. If the machines go away, delete the variable (`gh variable delete JFACTORY_RUNNER`) and jobs return to GitHub's runners. Report runner capacity as a delivery blocker; never bypass the gate instead.
 - **Stop with `runners.py down`.** It stops the supervisor, waits up to `--wait` minutes (default 30) for running jobs to finish, then removes the containers and their GitHub registrations. `--force` stops jobs midway. It exits non-zero and names anything it couldn't remove.
 - **Public repositories:** the expression already keeps fork PRs on GitHub's runners. Public repositories get hosted minutes free, so leave them there unless there's a reason not to.

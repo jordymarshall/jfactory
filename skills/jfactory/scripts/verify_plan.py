@@ -1323,7 +1323,8 @@ def cmd_inventory(args):
 def cmd_ci(args):
     """Run the suites a change needs (or every suite with --all), after checking the map is complete."""
     config = load_config(root='.')
-    problems = [text for level, text in audit(tracked_files(), config) if level == 'FAIL']
+    # CI audits the map once in its own job (`audit`), so one unmapped file fails one job, not every shard.
+    problems = [] if args.no_audit else [text for level, text in audit(tracked_files(), config) if level == 'FAIL']
     for text in problems:
         print(f'FAIL: {text}')
     if problems:
@@ -1701,6 +1702,8 @@ def main(argv=None):
     p.add_argument('--shard', type=shard_arg, help='Run group I of N (I/N), balanced by recorded minutes')
     p.add_argument('--impact', help='Recorded coverage (file or directory) that adds suites executing changed files')
     p.add_argument('--impact-out', help='Record which tracked files each suite executed, for later --impact')
+    p.add_argument('--no-audit', action='store_true',
+                   help='Skip the map check, when a separate CI job runs `audit` once for the whole run')
     add_event_flags(p)
     p.set_defaults(func=cmd_ci)
     p = sub.add_parser('smoke', help='Prove a target starts and answers where verification runs')

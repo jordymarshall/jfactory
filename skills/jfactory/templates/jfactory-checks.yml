@@ -2,7 +2,8 @@
 # SHARDS to the mapping's "shards". Add the project's runtime steps where marked (for example actions/setup-node
 # and npm ci), then make the "checks" job a required check.
 #
-# On a PR it fails when a tracked file is unmapped, then runs only the suites the change needs: the map's, plus
+# The map job fails once when a tracked file is unmapped; the suite jobs still run (with --no-audit), so one stray file
+# fails one job, not every shard. A PR runs only the suites the change needs: the map's, plus
 # every suite whose recorded coverage executed a changed file. The suites are split across parallel jobs by their
 # recorded minutes. A PR runs journey (browser) suites only for changes users can see (`ci --pr`). The push after
 # merge runs the journeys of every feature whose code changed (`ci --push`), so behind-the-scenes changes are
@@ -39,6 +40,15 @@ jobs:
           # JSON keeps each label name exact, commas included.
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: python3 "$JFACTORY_DIR/scripts/verify_plan.py" full-suite --event "$GITHUB_EVENT_NAME" --labels-json "$LABELS" >> "$GITHUB_OUTPUT"
+  map:
+    # The map check runs here once. Every tracked file must match a feature or a static pattern.
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python3 "$JFACTORY_DIR/scripts/verify_plan.py" audit
   suites:
     needs: mode
     if: needs.mode.outputs.mode != 'skip'
@@ -79,11 +89,11 @@ jobs:
         run: >-
           python3 "$JFACTORY_DIR/scripts/verify_plan.py" ci
           ${{ github.event_name == 'push' && format('--push --base {0}', github.event.before) || format('--pr --base origin/{0}', github.base_ref) }}
-          --impact .jfactory-impact --shard "${{ matrix.shard }}/${{ strategy.job-total }}"
+          --impact .jfactory-impact --no-audit --shard "${{ matrix.shard }}/${{ strategy.job-total }}"
       - name: Run this job's share of every suite and record coverage
         if: needs.mode.outputs.mode == 'full'
         run: >-
-          python3 "$JFACTORY_DIR/scripts/verify_plan.py" ci --all
+          python3 "$JFACTORY_DIR/scripts/verify_plan.py" ci --all --no-audit
           --shard "${{ matrix.shard }}/${{ strategy.job-total }}" --impact-out "impact/${{ matrix.shard }}.json"
       - uses: actions/upload-artifact@v4
         if: needs.mode.outputs.mode == 'full' && always()
@@ -92,17 +102,19 @@ jobs:
           path: impact/
           if-no-files-found: ignore
   checks:
-    needs: [mode, suites]
+    needs: [mode, map, suites]
     if: always()
     runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}
     steps:
       - name: Require every parallel job to pass
         env:
           MODE_RESULT: ${{ needs.mode.result }}
+          MAP_RESULT: ${{ needs.map.result }}
           MODE: ${{ needs.mode.outputs.mode }}
           SUITES_RESULT: ${{ needs.suites.result }}
         run: |
           test "$MODE_RESULT" = success
+          test "$MAP_RESULT" = success
           # A skipped run (a schedule when the owner chose otherwise) ran nothing and is not a PR gate.
           if [ "$MODE" = skip ]; then exit 0; fi
           test "$SUITES_RESULT" = success

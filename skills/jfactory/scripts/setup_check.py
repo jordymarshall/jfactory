@@ -721,6 +721,28 @@ def check_remote(repo, branch, report, states):
     return True
 
 
+def check_claude_host(root, report):
+    """Claude Code loads jfactory as a skill, and its subagents only read (references/compatibility.md)."""
+    if not ((root / 'CLAUDE.md').exists() or (root / '.claude').is_dir()):
+        return
+    if not (root / '.claude' / 'skills' / 'jfactory' / 'SKILL.md').is_file():
+        report.add('FAIL', 'This repository uses Claude Code, but .claude/skills/jfactory/SKILL.md is missing, so '
+                           '"use jfactory" loads nothing there. Rerun scripts/install.py with --update, which writes it')
+    try:
+        settings = json.loads((root / '.claude' / 'settings.json').read_text())
+    except (OSError, ValueError):
+        settings = {}
+    hooks = settings.get('hooks', {}).get('PreToolUse', []) if isinstance(settings.get('hooks'), dict) else []
+    guarded = any(isinstance(entry, dict) and re.search(r'\bAgent\b', str(entry.get('matcher', '')))
+                  and 'claude_subagent_guard.py' in json.dumps(entry.get('hooks', [])) for entry in hooks)
+    if guarded:
+        report.add('PASS', 'Claude Code loads jfactory, and its hook keeps in-session subagents read-only')
+    else:
+        report.add('WARN', 'Claude Code subagents can change files here: add the PreToolUse hook from '
+                           'templates/claude-settings.json to .claude/settings.json, so parallel writing work goes to '
+                           'Conductor workspaces (references/coordination.md)')
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--root', default='.', help='repository root (default: current directory)')
@@ -741,6 +763,7 @@ def main(argv=None):
     check_goal_tests(root, report)
     check_delivery(root, report, states)
     check_runners(root, report, states)
+    check_claude_host(root, report)
     remote_ok = False
     if args.remote:
         repo = args.repo
