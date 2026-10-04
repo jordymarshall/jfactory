@@ -14,7 +14,9 @@ permissions:
   checks: read
 concurrency:
   group: jfactory-verified-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: true
+  # Queue, never cancel: a cancelled run stays on the PR as a red X even after a later run passes.
+  cancel-in-progress: false
+  queue: max
 env:
   JFACTORY_DIR: skills/jfactory
 jobs:
