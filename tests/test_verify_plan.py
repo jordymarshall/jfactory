@@ -106,6 +106,17 @@ class PlanTest(unittest.TestCase):
             result = verify_plan.plan(order, config)
             self.assertEqual((result['level'], result['suites']), ('independent', ['brand-journey', 'unit']), order)
 
+    def test_force_independent_false_lets_test_and_instruction_edits_follow_their_feature(self):
+        # Minimum gates (owner option): a `ci` feature's tests and instructions stay CI-only.
+        minimal = {**CONFIG, 'force_independent': False}
+        for path in ('tools/x.test.ts', 'tools/e2e/flow.ts', 'tools/AGENTS.md'):
+            result = verify_plan.plan([path], minimal)
+            self.assertEqual((result['level'], result['independent_features']), ('ci', []), path)
+        # Negative controls: the default still forces a verdict, and an `independent` feature keeps its own.
+        self.assertEqual(verify_plan.plan(['tools/x.test.ts'], CONFIG)['level'], 'independent')
+        self.assertEqual(verify_plan.plan(['app/auth.test.ts'], {**minimal, 'features': {
+            **CONFIG['features'], 'auth': {'paths': ['app/auth*'], 'suites': ['browser']}}})['level'], 'independent')
+
     def test_tests_instructions_and_screens_always_need_the_verifier(self):
         # A `ci` feature stays CI-only for its ordinary code: the negative control.
         self.assertEqual(verify_plan.plan(['tools/x.py'], CONFIG)['level'], 'ci')
