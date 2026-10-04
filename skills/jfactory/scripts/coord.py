@@ -115,6 +115,23 @@ def load(repo, number):
     return state
 
 
+def running_across_programs(repo):
+    """Running units in every open, not-held program. Each program's own limit does not bound the total, and
+    the total is what fills the shared CI queue (2026-10-04: three programs ran ten workers on four runners)."""
+    issues = json.loads(gh(repo, 'issue', 'list', '--label', PROGRAM_LABEL, '--state', 'open', '--limit', '50',
+                           '--json', 'number'))
+    busy = []
+    for issue in issues:
+        try:
+            other = load(repo, issue['number'])
+        except Refused:
+            continue
+        if held(other):
+            continue
+        busy += [f"#{issue['number']}/{u}" for u, v in other['units'].items() if v['state'] in ACTIVE]
+    return busy
+
+
 def held(state):
     return any(label['name'] == HOLD_LABEL for label in state['_issue'].get('labels', []))
 
@@ -172,6 +189,7 @@ def policy(root):
     if path.is_file():
         override = json.loads(path.read_text())
         merged['limit'] = override.get('limit', merged['limit'])
+        merged['repo_limit'] = override.get('repo_limit')
         merged['merge_deploys'] = override.get('merge_deploys')
         # A role override changes only the fields it names; the rest, such as the fallback, stay.
         for name, fields in override.get('roles', {}).items():
@@ -881,6 +899,13 @@ def cmd_launch(args):
     running = [u for u, v in state['units'].items() if v['state'] in ACTIVE]
     if len(running) >= state['limit']:
         raise Refused(f'Concurrency limit {state["limit"]} reached: {", ".join(running)} running')
+    repo_limit = policy(repo_root()).get('repo_limit')
+    if repo_limit:
+        busy = running_across_programs(args.repo)
+        if len(busy) >= repo_limit:
+            raise Refused(f'Repository limit {repo_limit} reached across programs ({", ".join(busy)} running). '
+                          'Every running worker pushes into one CI queue (references/ci-runners.md, queue '
+                          'operations); wait for a unit to finish')
     waiting = [d for d in unit['depends'] if state['units'][d]['state'] != 'merged' and d not in args.stack_on]
     if waiting:
         raise Refused(f'Dependencies not merged: {", ".join(waiting)}; wait or pass --stack-on to stack deliberately')

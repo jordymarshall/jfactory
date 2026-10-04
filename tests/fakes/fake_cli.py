@@ -140,6 +140,9 @@ if tool == 'gh' and args[:1] == ['api'] and args[1].endswith('/annotations'):
 if tool == 'gh' and args[:3] == ['api', '-X', 'PUT']:
     db.setdefault('updates', []).append([args[3], *[a for a in args[4:] if '=' in a]])
     done()
+if tool == 'gh' and args[:2] == ['run', 'list'] and '--status' in args:
+    # Workflow runs waiting for a runner, by status: {"queued_runs": {"queued": [{"databaseId", "createdAt"}]}}.
+    done(db.get('queued_runs', {}).get(args[args.index('--status') + 1], []))
 if tool == 'gh' and args[:2] == ['run', 'rerun']:
     db.setdefault('reruns', []).append(args[2:])
     done()

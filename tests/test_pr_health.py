@@ -98,7 +98,8 @@ class PrHealthTest(unittest.TestCase):
         self.assertNotIn('more', self.row(out, 4))
         self.assertIn('Author: fix what the verifier found', self.row(out, 13))
         self.assertIn('Author: merge the base branch', self.row(out, 10))
-        self.assertIn('would merge the base branch into the PR (dry run)', out)
+        # #5 is queued to merge, so it holds the merge slot and verified, behind #9 waits its turn.
+        self.assertIn('#5 holds the merge slot', self.row(out, 9))
         # A dry run changes nothing.
         db = self.db()
         self.assertFalse(db.get('updates') or db.get('reruns') or db.get('issues'))
@@ -122,6 +123,46 @@ class PrHealthTest(unittest.TestCase):
         body = self.db()['issues']['1']['body']
         self.assertIn('update:9:' + 'b' * 40, body)
         self.assertNotIn('update:9:' + HEAD, body)
+
+    def test_merge_train_updates_one_behind_pr_per_check_oldest_first(self):
+        # Updating every behind PR at once starts one CI run each for a single merge slot.
+        self.set(pr_list=[pr(12, comments=[verdict()], merge='BEHIND'), pr(9, comments=[verdict()], merge='BEHIND')])
+        self.assertIn('#9: would merge the base branch into the PR (dry run)', self.run_tool())
+        out = self.run_tool('--act')
+        self.assertEqual(self.db()['updates'], [['repos/o/r/pulls/9/update-branch', f'expected_head_sha={HEAD}']])
+        self.assertIn('#9 holds the merge slot', self.row(out, 12))
+
+    def test_merge_train_waits_while_a_queued_pr_holds_the_slot_across_checks(self):
+        running = [check('checks', status='IN_PROGRESS', conclusion=None), gate('PENDING')]
+        # #9 is queued to merge and its CI is still running: #12 waits, even on a fresh check.
+        self.set(pr_list=[pr(9, rollup=running, merge='BLOCKED', auto={'mergeMethod': 'SQUASH'}),
+                          pr(12, comments=[verdict()], merge='BEHIND')])
+        out = self.run_tool('--act')
+        self.assertFalse(self.db().get('updates'))
+        self.assertIn('#9 holds the merge slot', self.row(out, 12))
+        # Successive checks: the first updates #9; GitHub gives it a new head whose CI runs; the next check waits.
+        self.set(pr_list=[pr(9, comments=[verdict()], merge='BEHIND', auto={'mergeMethod': 'SQUASH'}),
+                          pr(12, comments=[verdict()], merge='BEHIND')])
+        self.run_tool('--act')
+        self.assertEqual([u[0] for u in self.db()['updates']], ['repos/o/r/pulls/9/update-branch'])
+        self.set(pr_list=[pr(9, rollup=running, merge='BLOCKED', auto={'mergeMethod': 'SQUASH'}, head='b' * 40),
+                          pr(12, comments=[verdict()], merge='BEHIND')])
+        self.run_tool('--act')
+        self.assertEqual(len(self.db()['updates']), 1)
+        # Once #9 merged and left the list, #12 gets its turn.
+        self.set(pr_list=[pr(12, comments=[verdict()], merge='BEHIND')])
+        self.run_tool('--act')
+        self.assertEqual(self.db()['updates'][-1][0], 'repos/o/r/pulls/12/update-branch')
+
+    def test_a_long_ci_queue_is_reported_even_when_no_pr_is_stuck(self):
+        self.set(queued_runs={'queued': [{'databaseId': 1, 'createdAt': '2026-10-03T11:50:00Z'}]})
+        self.assertNotIn('CI queue', self.run_tool())  # 10 minutes is under the 30-minute alert.
+        self.set(queued_runs={'queued': [{'databaseId': 1, 'createdAt': '2026-10-03T10:20:00Z'},
+                                         {'databaseId': 2, 'createdAt': '2026-10-03T11:55:00Z'}],
+                              'waiting': [{'databaseId': 2, 'createdAt': '2026-10-03T11:55:00Z'}]})
+        out = self.run_tool('--act', now='2026-10-03T12:00:00Z')
+        self.assertIn('**CI queue:** 2 workflow runs are waiting; the oldest has waited 100 minutes', out)
+        self.assertIn('Issue: opened', out)
 
     def test_reruns_only_infrastructure_failures_once_per_head(self):
         jobs = {'1': {'steps': [{'name': 'Set up job', 'conclusion': 'success', 'started_at': 'x'},

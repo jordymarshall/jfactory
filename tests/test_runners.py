@@ -318,6 +318,33 @@ class RunnersTest(unittest.TestCase):
         self.assertIn('no shared cache', out)
         self.assertIn('--pool must be', self.cli('status', '--repo', 'acme/shop', '--pool', 'Deploy!', code=1))
 
+    def test_a_pull_request_only_pool_may_share_the_cache_but_the_deploy_pool_never_runs_pr_jobs(self):
+        out = self.cli('up', '--repo', 'acme/shop', '--count', '1', '--pool', 'deploy', '--pr-jobs', code=1)
+        self.assertIn('never runs pull-request jobs', out)
+        out = self.cli('up', '--repo', 'acme/shop', '--count', '1', '--pool', 'light', '--cache-dir', '/tmp/c', code=1)
+        self.assertIn('--pr-jobs', out)
+
+    def test_up_light_pool_shares_the_cache_runs_unpinned_and_keeps_its_own_label(self):
+        # Small PR jobs (plan, gates) on their own pool: shared cache allowed with --pr-jobs, no CPU slice.
+        cache = self.state / 'cache'
+        out = self.cli('up', '--repo', 'acme/shop', '--count', '2', '--pool', 'light', '--pr-jobs', '--no-pin',
+                       '--cpus', '1', '--cache-dir', str(cache), '--host', 'Box')
+        self.assertIn('JFACTORY_LIGHT_RUNNER=["self-hosted", "jfactory-light"]', out)
+        config = json.loads((self.state / 'runner-state' / 'acme__shop--light.json').read_text())
+        self.assertEqual((config['pin_cpus'], config['cpus'], config['cache_dir'], config['labels']),
+                         (False, 1.0, str(cache), ['jfactory-light']))
+        for _ in range(50):
+            if len(self.containers()) == 2:
+                break
+            time.sleep(0.1)
+        creates = [a for a in self.log('docker.log') if a[0] == 'create']
+        self.assertEqual(len(creates), 2)
+        for args in creates:
+            self.assertNotIn('--cpuset-cpus', args)
+            self.assertEqual(args[args.index('--cpus') + 1], '1.0')
+            self.assertIn(f'{cache}:/cache', args)
+            self.assertIn('jfactory.pool=light', args)
+        self.cli('down', '--repo', 'acme/shop', '--pool', 'light', '--wait', '0')
 
 if __name__ == '__main__':
     unittest.main()

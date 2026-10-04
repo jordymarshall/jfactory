@@ -21,6 +21,7 @@ workflow (templates/jfactory-pr-health.yml). For each open, non-draft PR into th
 With --act it does two safe things, each at most once per PR head, and it keeps the report issue:
 
   - A `behind` PR with a verified verdict at its head: ask GitHub to merge the base branch into it (update-branch).
+    One PR per check, oldest first (a merge train).
   - A CI failure that is only infrastructure (cancelled, startup failure, the runner was lost, or the job never ran
     a step): re-run the failed jobs. It never re-runs a test failure.
 
@@ -146,7 +147,8 @@ def classify(repo, pr, now, verdict_hours=1, idle_hours=6):
     allows ('update' or 'rerun', with the run ids), or none."""
     head = pr['headRefOid']
     idle = now - last_activity(pr)
-    out = {'number': pr['number'], 'title': pr.get('title', ''), 'head': head, 'idle': idle, 'action': None}
+    out = {'number': pr['number'], 'title': pr.get('title', ''), 'head': head, 'idle': idle, 'action': None,
+           'queued': bool(pr.get('autoMergeRequest'))}
     checks = latest_checks(pr)
     failed = [c for c in checks if (c.get('status') or '').upper() == 'COMPLETED'
               and (c.get('conclusion') or '').upper() not in PASSING]
@@ -252,11 +254,32 @@ def table(results):
     return '\n'.join(lines), stuck
 
 
-def report(results, actions, now, state):
+QUEUE_ALERT_MINUTES = 30
+
+
+def queue_health(repo, now):
+    """The CI queue: workflow runs waiting for a runner and the oldest wait in minutes. A long queue means the jobs
+    started per hour exceed the runners (references/ci-runners.md, queue operations); it is reported, not fixed here."""
+    runs = []
+    for status in ('queued', 'waiting', 'pending'):
+        runs += json.loads(vp.run('gh', 'run', 'list', '--repo', repo, '--status', status, '--limit', '100',
+                                  '--json', 'databaseId,createdAt'))
+    if not runs:
+        return {'runs': 0, 'oldest_minutes': 0}
+    oldest = min(when(r['createdAt']) for r in runs)
+    return {'runs': len({r['databaseId'] for r in runs}), 'oldest_minutes': int((now - oldest).total_seconds() // 60)}
+
+
+def report(results, actions, now, state, queue=None):
     text, stuck = table(results)
     lines = [f'# {TITLE}', '',
              f'The scheduled stuck-PR check (`pr_health.py`, no AI model) wrote this at {now:%Y-%m-%d %H:%M} UTC. '
              'It runs every 30 minutes, edits this issue in place and closes it when no PR is stuck.', '', text]
+    if queue and queue['oldest_minutes'] >= QUEUE_ALERT_MINUTES:
+        stuck = True
+        lines += ['', f"**CI queue:** {queue['runs']} workflow runs are waiting; the oldest has waited "
+                      f"{queue['oldest_minutes']} minutes. Cut jobs before adding machines: see "
+                      '`references/ci-runners.md#queue-operations-fewer-jobs-before-more-machines`.']
     if actions:
         lines += ['', 'Actions this run:'] + [f'- {a}' for a in actions]
     lines += ['', f'<!-- jfactory-pr-health-state {json.dumps(state, sort_keys=True)} -->']
@@ -334,11 +357,25 @@ def main(argv=None):
         heads = {f"{r['number']}:{r['head']}" for r in results}
         done = {k: v for k, v in state.get('done', {}).items() if k.split(':', 1)[1] in heads}
         actions = []
-        for result in results:
+        # Merge train: one PR holds the merge slot at a time, across checks. A PR is in the slot while auto-merge is
+        # queued and it is not behind, conflicted or failing, which includes a PR this check updated earlier whose
+        # new CI is still running. Only when the slot is free does the oldest verified behind PR get the base branch.
+        # Updating every behind PR at once starts N CI runs for one merge slot.
+        in_slot = next((r for r in sorted(results, key=lambda r: r['number']) if r.get('queued')
+                        and r.get('state') not in ('behind', 'conflict', 'ci-failed', 'partial')), None)
+        updating = in_slot is not None
+        for result in sorted(results, key=lambda r: r['number']):
+            if (result.get('action') or (None,))[0] == 'update':
+                if updating:
+                    holder = in_slot or updating_now
+                    result['step'] = (f"Waits its turn: #{holder['number']} holds the merge slot; one PR catches up "
+                                      'with the base branch at a time.')
+                    continue
+                updating, updating_now = True, result
             line = act(args.repo, result, done, now, dry=not args.act)
             if line:
                 actions.append(line)
-        body, stuck = report(results, actions, now, {'done': done})
+        body, stuck = report(results, actions, now, {'done': done}, queue_health(args.repo, now))
         print(body.split('\n<!-- jfactory-pr-health-state')[0])
         if args.act:
             print('Issue: ' + publish(args.repo, issue, body, stuck))

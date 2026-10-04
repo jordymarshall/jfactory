@@ -259,6 +259,23 @@ class CoordTest(unittest.TestCase):
         self.assertIn('PROGRAM ON HOLD', self.coord('report', '1', 'a', '--state', 'running'))
         self.assertEqual(len(self.db()['workspaces']), 1)
 
+    def test_repo_limit_counts_running_workers_across_every_open_program(self):
+        # Each program's own limit does not bound the total, and every worker pushes into one CI queue.
+        (self.tmp / '.jfactory').mkdir(exist_ok=True)
+        (self.tmp / '.jfactory' / 'coordination.json').write_text(json.dumps({'repo_limit': 2}))
+        self.start(['a', '--objective', 'x'], ['b', '--objective', 'y'], limit=3)
+        self.coord('init', '--title', 'Other program', '--limit', '3', '--merge-deploys', 'staging')
+        self.coord('add', '2', 'c', '--objective', 'z', '--requires', 'unit')
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.coord('launch', '2', 'c', '--brief', str(self.brief))
+        out = self.coord('launch', '1', 'b', '--brief', str(self.brief), ok=False)
+        self.assertIn('Repository limit 2 reached across programs (#1/a, #2/c running)', out)
+        # A held program's workers do not count.
+        db = self.db()
+        db['issues']['2']['labels'].append({'name': 'jfactory-hold'})
+        self.state.write_text(json.dumps(db))
+        self.coord('launch', '1', 'b', '--brief', str(self.brief))
+
     def test_worker_report_sync_verdict_and_merge_gate_on_current_head(self):
         self.start(['a', '--objective', 'x', '--requires', 'application'])
         self.coord('launch', '1', 'a', '--brief', str(self.brief))
