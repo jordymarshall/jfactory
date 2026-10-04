@@ -153,6 +153,31 @@ class HubTest(unittest.TestCase):
         # A handoff carries both.
         self.assertIn('Open items carried over: H1, H2', self.hub('handoff', '--to', 'hub-b'))
 
+    def test_a_conductor_timeout_falls_back_to_a_comment_and_keeps_the_answer(self):
+        # Verifier finding on 414879c: a timed-out Conductor message escaped the fallback and the save.
+        self.program()
+        self.hub('claim', session='hub-a')
+        self.hub('ledger', 'add', '--kind', 'question', '--text', 'Wait or ship?', '--from', 'coord-1', '--owner', 'coord-1')
+        db = self.db()
+        db['conductor_sleep'] = 2
+        self.state.write_text(json.dumps(db))
+        self.env['JFACTORY_HUB_TIMEOUT'] = '0.5'
+        out = self.hub('ledger', 'resolve', 'H1', '--answer', 'Wait for the release', '--relay')
+        self.assertIn('Relayed to coord-1 (issue #1 comment)', out)
+        self.assertIn('resolved', self.hub('ledger', 'list', '--all'))
+        # And when the comment fails too, the answer is saved as undelivered.
+        self.hub('ledger', 'add', '--kind', 'question', '--text', 'Second?', '--from', 'coord-1', '--owner', 'coord-1')
+        db = self.db()
+        db['comment_fail'] = True
+        self.state.write_text(json.dumps(db))
+        self.hub('ledger', 'resolve', 'H2', '--answer', 'Later', '--relay', code=2)
+        db = self.db()
+        db['comment_fail'] = False
+        db['conductor_sleep'] = 0
+        self.state.write_text(json.dumps(db))
+        self.assertIn('H2 answer-undelivered', self.hub('ledger', 'list'))
+        self.assertIn('-> Later', self.hub('ledger', 'list'))
+
     def test_a_hold_is_sent_to_the_agent_that_owns_the_action(self):
         self.program()
         self.hub('claim', session='hub-a')
