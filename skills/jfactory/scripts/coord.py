@@ -959,8 +959,10 @@ def cmd_launch(args):
                           'operations); wait for a unit to finish')
     # Two workers editing the same files make merge conflicts and rework (2026-10-04: 5 conflicts across 9 PRs).
     # Overlapping units wait (--depends) or stack on each other (--stack-on); --allow-overlap is a deliberate choice.
+    # Stacking exempts only this program's named unit, never a same-named unit of another program.
+    stacked = {f'#{int(args.program)}/{name}' for name in args.stack_on}
     clash = [u for u in overlapping_units(args.repo, args.program, args.unit, unit.get('paths') or [])
-             if u.split('/', 1)[1] not in args.stack_on]
+             if u not in stacked]
     if clash and not args.allow_overlap:
         raise Refused(f'{args.unit} edits the same paths as running unit(s) {", ".join(clash)}. Wait for them, '
                       'make it depend on them (--depends), stack it (--stack-on), or pass --allow-overlap and tell '

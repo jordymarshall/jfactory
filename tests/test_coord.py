@@ -98,6 +98,21 @@ class CoordTest(unittest.TestCase):
         self.assertEqual(len(self.db()['workspaces']), 3)
         self.assertIn('merge origin/main into your branch', self.db()['workspaces'][-1]['message'])
 
+    def test_stacking_exempts_only_this_programs_unit_not_a_same_named_one_elsewhere(self):
+        # #1/a is an unrelated foundation unit; #2/a runs on the library paths #1/b wants.
+        self.start(['a', '--objective', 'Foundation', '--paths', 'app/foundation/**'],
+                   ['b', '--objective', 'Library detail', '--paths', 'app/library/detail/**'], limit=3)
+        self.coord('init', '--title', 'Other program', '--limit', '3', '--merge-deploys', 'staging')
+        self.coord('add', '2', 'a', '--objective', 'Library list', '--paths', 'app/library/**', '--requires', 'unit')
+        self.coord('launch', '2', 'a', '--brief', str(self.brief))
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'abc1234', 'headRefName': 'feat/foundation'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'abc1234')
+        self.coord('sync', '1')
+        out = self.coord('launch', '1', 'b', '--brief', str(self.brief), '--stack-on', 'a', ok=False)
+        self.assertIn('edits the same paths as running unit(s) #2/a', out)
+        self.assertEqual(len(self.db()['workspaces']), 2)
+
     def test_sync_names_running_units_a_merge_touched(self):
         self.start(['a', '--objective', 'Library list', '--paths', 'app/library/**'],
                    ['b', '--objective', 'Library detail', '--paths', 'app/library/detail/**'],

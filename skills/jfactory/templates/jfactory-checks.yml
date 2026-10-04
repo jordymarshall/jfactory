@@ -5,9 +5,9 @@
 # The map job fails once when a tracked file is unmapped; the suite jobs still run (with --no-audit), so one stray file
 # fails one job, not every shard. A PR runs only the suites the change needs: the map's, plus
 # every suite whose recorded coverage executed a changed file. The suites are split across parallel jobs by their
-# recorded minutes. A PR runs journey (browser) suites only for changes users can see (`ci --pr`). The push after
-# merge runs the journeys of every feature whose code changed (`ci --push`), so behind-the-scenes changes are
-# still checked once before a release. The whole suite runs when the owner's "full_suite" choice in the mapping says so (on request,
+# recorded minutes. Under the default minimum gates (`"pr_journeys": false`) no PR or merge runs a journey; the
+# whole-suite run does. With `"pr_journeys": true` (owner opt-in), a PR runs journey suites only for changes users can
+# see (`ci --pr`), and the push after merge runs the journeys of every feature whose code changed (`ci --push`). The whole suite runs when the owner's "full_suite" choice in the mapping says so (on request,
 # nightly, on every merge or on every PR); each such run also records the coverage later PRs use.
 name: jfactory checks
 on:
@@ -28,6 +28,12 @@ permissions:
   pull-requests: read
 env:
   JFACTORY_DIR: .agents/skills/jfactory
+# A newer push to a PR cancels that PR's older run, so the one-minute debounce in `mode` lets a quick second push
+# replace the first before any big job starts. Base-branch, schedule and manual runs never cancel each other.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('jfactory-checks-pr-{0}', github.event.pull_request.number) || format('jfactory-checks-{0}-{1}', github.event_name, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   mode:
     # Machines you own when the JFACTORY_RUNNER variable says so (references/ci-runners.md), otherwise GitHub's; fork PRs always GitHub's.

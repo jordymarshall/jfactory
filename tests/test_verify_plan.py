@@ -118,12 +118,15 @@ class PlanTest(unittest.TestCase):
         text = ' '.join(t for _, t in verify_plan.audit([], {**minimal, 'full_suite': 'on-request'}))
         self.assertIn('"pr_journeys" is false', text)
 
-    def test_force_independent_false_lets_test_and_instruction_edits_follow_their_feature(self):
-        # Minimum gates (owner option): a `ci` feature's tests and instructions stay CI-only.
+    def test_force_independent_false_lets_test_edits_follow_their_feature_but_never_instructions(self):
+        # Minimum gates (owner option): a `ci` feature's test edits stay CI-only.
         minimal = {**CONFIG, 'force_independent': False}
-        for path in ('tools/x.test.ts', 'tools/e2e/flow.ts', 'tools/AGENTS.md'):
+        for path in ('tools/x.test.ts', 'tools/e2e/flow.ts'):
             result = verify_plan.plan([path], minimal)
             self.assertEqual((result['level'], result['independent_features']), ('ci', []), path)
+        # An agent instruction is gate material at any depth: it keeps its verdict even with the option off.
+        for path in ('tools/AGENTS.md', 'tools/skill/SKILL.md'):
+            self.assertEqual(verify_plan.plan([path], minimal)['level'], 'independent', path)
         # Negative controls: the default still forces a verdict, and an `independent` feature keeps its own.
         self.assertEqual(verify_plan.plan(['tools/x.test.ts'], CONFIG)['level'], 'independent')
         self.assertEqual(verify_plan.plan(['app/auth.test.ts'], {**minimal, 'features': {

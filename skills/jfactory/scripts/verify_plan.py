@@ -379,8 +379,10 @@ def plan(files, config, impact=None, screens_only=False):
         reasons = review_reasons(path, config.get('_standards', ()))
         if hit:
             features |= hit
-            # `force_independent: false` (owner choice) lets a test or instruction edit follow its feature's level.
-            if reasons & FORCE_INDEPENDENT and config.get('force_independent', True):
+            # `force_independent: false` (owner choice) lets a test edit follow its feature's level. An agent
+            # instruction always forces a verdict, wherever it lives: instructions are gate material.
+            relaxed = set() if config.get('force_independent', True) else {'tests'}
+            if reasons & (FORCE_INDEPENDENT - relaxed):
                 forced |= hit
                 shown.add(path)
             if not path.lower().endswith(TEXT_PROSE) and not reasons & {'standards', 'agent instructions'}:
@@ -392,8 +394,8 @@ def plan(files, config, impact=None, screens_only=False):
                 if not matches(path, backend):
                     seen |= hit
                     shown.add(path)
-            # With `force_independent: false`, a test or instruction edit no longer forces a review of a `ci` feature.
-            if reason and (config.get('force_independent', True) or not reasons & FORCE_INDEPENDENT):
+            # With `force_independent: false`, a test edit no longer forces a review of a `ci` feature.
+            if reason and not (reasons & relaxed and not reasons & (FORCE_INDEPENDENT - relaxed)):
                 for fid in hit:
                     reviewed.setdefault(fid, reason)
         elif matches(path, config.get('static', [])) and static_allowed(path, reason):
