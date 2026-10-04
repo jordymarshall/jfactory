@@ -17,13 +17,13 @@ Report the PR URL, remote head SHA and actual merge state: open with auto-merge 
 Owner rule, 2026-10-04, for every repository jfactory sets up: every agent runs the reviewer's checklist on its own change before it pushes for CI and before it asks for a verdict. The checklist is what the independent verifier checks, so most failed verdicts and red gates come from skipping it.
 
 1. Each acceptance criterion has evidence at the head you push.
-2. The PR description starts with `## Objective` and has a `## Why it's right` section naming `outcomes/README.md`, the affected `outcomes/<job>.md` documents and the `.jfactory/standards.md` rows it meets.
+2. The PR description starts with `## Objective` and has a `## Why it's right` section with three bullets: the outcomes it serves (`outcomes/README.md`), the affected `outcomes/<job>.md` documents, and the `.jfactory/standards.md` rows it meets.
 3. `verify_plan.py audit` passes, so every new file is mapped.
-4. Changed screens have screenshots at the desktop and phone sizes the project uses.
+4. Changed screens have screenshots at the desktop and phone sizes the project uses (`screenshot_viewports` in the map; default 1440 and 390), named or captioned with the width.
 5. The planned local checks pass.
 6. You reviewed the diff as an adversarial verifier would: against the job document, the standards and the feature's risks.
 
-`verify_plan.py prereview` checks items 2 to 5 and prints 1 and 6. Use `--for verdict` before asking for a verdict: it also requires the head pushed and the PR open. Fix what it finds, then push once.
+`verify_plan.py prereview` checks items 2 to 5 and prints 1 and 6. Use `--for verdict` before asking for a verdict: it also requires the head pushed, the tree clean and the PR open at that head. `--skip-suites` only lists the suites; it never reports a pass. Fix what it finds, then push once.
 
 ## CI confirms; it does not discover
 

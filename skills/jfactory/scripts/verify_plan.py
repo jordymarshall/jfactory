@@ -1529,7 +1529,19 @@ MANUAL_REVIEW = (
     'Self-review the diff as an adversarial verifier would: against the job document, the standards map and the '
     "feature's risks (saved data, access, spending, motion and reduced motion, accessibility, test locators).",
 )
-IMAGE_RE = re.compile(r'!\[|\.(png|jpe?g|webp|gif)\b', re.I)
+IMAGE_REF_RE = re.compile(r'!\[([^\]]*)\]\(([^)\s]+)[^)]*\)|(\S+\.(?:png|jpe?g|webp|gif))\b', re.I)
+
+
+def image_refs(body):
+    """Every screenshot reference in a description: markdown images (alt text and target) and bare image links."""
+    body = re.sub(r'<!--.*?(-->|$)', '', body or '', flags=re.S)
+    return [' '.join(part for part in match.groups() if part) for match in IMAGE_REF_RE.finditer(body)]
+
+
+def why_section(body):
+    body = re.sub(r'<!--.*?(-->|$)', '', body or '', flags=re.S)
+    match = re.search(r"^#+\s*Why it.s right.*?$(.*?)(?=^#+\s|\Z)", body, re.S | re.M | re.I)
+    return match.group(1) if match else ''
 
 
 def cmd_prereview(args):
@@ -1544,26 +1556,37 @@ def cmd_prereview(args):
 
     audit_fails = [text for level, text in audit(tracked_files(), config) if level == 'FAIL']
     check(not audit_fails, 'Map audit passes: every tracked file is mapped', 'Map audit: ' + '; '.join(audit_fails))
-    body = Path(args.body_file).read_text() if args.body_file else None
-    if body is None:
-        try:
-            body = json.loads(run('gh', 'pr', 'view', '--json', 'body')).get('body')
-        except Refused:
-            body = None
+    # The PR itself is always read from GitHub; --body-file replaces only its description text.
+    try:
+        pr = json.loads(run('gh', 'pr', 'view', '--json', 'state,headRefOid,body'))
+    except (Refused, ValueError):
+        pr = None
+    body = Path(args.body_file).read_text() if args.body_file else (pr or {}).get('body')
     if result['level'] == 'static':
         notes.append('Static-only change: no PR description sections required')
     elif body is None:
         check(args.mode == 'push', 'No PR yet: open it from the PR template; rerun prereview before the verdict',
-              'No PR description found: open the PR (or pass --body-file) before asking for a verdict')
+              'No PR description found: open the PR before asking for a verdict')
     else:
         check(states_objective(body), 'PR description starts with its objective',
               'PR description must start with "## Objective" and the objective')
         why = why_its_right_problem(body, config)
         check(not why, "PR description has 'Why it's right' naming its outcomes/<job>.md documents", why)
+        section = why_section(body)
+        wanted = [doc for doc in ('outcomes/README.md', '.jfactory/standards.md') if Path(doc).is_file()]
+        missing = [doc for doc in wanted if doc not in section]
+        check(not missing, "'Why it's right' also names " + (', '.join(wanted) or 'nothing else required'),
+              "'Why it's right' must name " + ', '.join(missing) + ' (the outcomes it serves and the standards rows it meets)')
         if result['screen_features']:
-            check(bool(IMAGE_RE.search(body or '')), 'Screenshots are linked for the changed screens',
-                  'Changed screens (' + ', '.join(result['screen_features']) + ') need screenshots linked in the PR '
-                  '(desktop and phone sizes, such as 1440 and 390x667)')
+            refs = image_refs(body)
+            viewports = [str(v) for v in config.get('screenshot_viewports', ['1440', '390'])]
+            lacking = [v for v in viewports if not any(v in ref for ref in refs)]
+            needed = len(result['screen_features']) * len(viewports)
+            check(not lacking and len(refs) >= needed,
+                  f'Screenshots linked for the changed screens at {", ".join(viewports)} ({len(refs)} images)',
+                  'Changed screens (' + ', '.join(result['screen_features']) + f') need screenshots at each viewport '
+                  f'({", ".join(viewports)}; name each image or its alt text with the width): ' +
+                  (f'missing {", ".join(lacking)}' if lacking else f'{len(refs)} of at least {needed} images'))
     dirty = run('git', 'status', '--porcelain').strip()
     upstream = subprocess.run(['git', 'rev-parse', '@{u}'], capture_output=True, text=True).stdout.strip()
     head = run('git', 'rev-parse', 'HEAD').strip()
@@ -1571,12 +1594,18 @@ def cmd_prereview(args):
     if args.mode == 'verdict':
         check(pushed, f'Head {head[:7]} is pushed and the tree is clean',
               'Push first: the verdict is for the pushed head, with a clean working tree')
+        check(bool(pr) and pr.get('state') == 'OPEN' and pr.get('headRefOid') == head,
+              f'The PR is open at head {head[:7]}',
+              'The verdict needs an open PR whose head is this commit' +
+              (f" (PR is {pr.get('state')} at {str(pr.get('headRefOid'))[:7]})" if pr else ' (no PR found)'))
     elif not pushed:
         notes.append('Not pushed yet: push once after this passes')
     defs = config.get('suites', {})
     local = [s for s in result['suites'] if not defs.get(s, {}).get('target') and s not in live_suites(config)]
-    if args.skip_suites:
-        notes.append('Planned local suites, not run (--skip-suites): ' + (', '.join(local) or 'none'))
+    if args.skip_suites and local:
+        # A list-only run never certifies the local checks: a verdict request needs them run.
+        (failed if args.mode == 'verdict' else notes).append(
+            'Planned local suites, not run (--skip-suites): ' + ', '.join(local))
     for suite in local:
         command = defs.get(suite, {}).get('run')
         if placeholder(command):
@@ -1598,6 +1627,10 @@ def cmd_prereview(args):
     if failed:
         print(f'\nPrereview found {len(failed)} problem(s). Fix them, rerun prereview, then push once.')
         return 1
+    if args.skip_suites and local:
+        print('\nPrereview incomplete: the planned local suites were listed, not run. Run it without --skip-suites '
+              'before you push.')
+        return 3
     print('\nPrereview passed. Do the manual items, then push once.' if args.mode == 'push'
           else '\nPrereview passed for the verdict request.')
     return 0
