@@ -54,13 +54,18 @@ def now():
 def run(tool, *args, check=True):
     exe = os.environ.get(f'JFACTORY_{tool.upper()}', tool)
     try:
-        proc = subprocess.run([exe, *args], capture_output=True, text=True, timeout=60)
+        proc = subprocess.run([exe, *args], capture_output=True, text=True,
+                              timeout=float(os.environ.get('JFACTORY_HUB_TIMEOUT', '60')))
     except FileNotFoundError:
         if check:
             raise Refused(f'{tool} is not installed or not on PATH')
         return None
     except subprocess.TimeoutExpired:
-        raise Refused(f'{tool} {" ".join(args[:3])} timed out')
+        # check=False means "try it": a timeout is a failed attempt, so the caller can fall back (a timed-out
+        # Conductor message once skipped the comment fallback and lost an owner answer).
+        if check:
+            raise Refused(f'{tool} {" ".join(args[:3])} timed out')
+        return None
     if proc.returncode:
         if check:
             raise Refused(f'{tool} {" ".join(args[:3])} failed: {proc.stderr.strip() or proc.stdout.strip()}')
@@ -277,8 +282,11 @@ PENDING = ('open', 'answer-undelivered', 'hold-undelivered')
 def deliver(repo, session, text, state):
     """Send `text` to an agent: Conductor first, else a comment on its program issue, else on the hub issue.
     Returns where it went, or None when every route failed (the caller keeps the item pending)."""
-    if message(session, text):
-        return f'session {session}'
+    try:
+        if message(session, text):
+            return f'session {session}'
+    except Refused:
+        pass  # Conductor failed in an unexpected way: fall back to a comment
     _, program = route(repo, session, state) if session else ('unknown', None)
     target = program['number'] if program else state.get('_number')
     if not target:
