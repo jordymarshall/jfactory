@@ -215,6 +215,10 @@ if tool == 'gh':
     if args[:2] == ['issue', 'edit']:
         issues[args[2]]['body'] = Path(opt('--body-file')).read_text()
         done()
+    if args[:2] == ['issue', 'comment'] and db.get('comment_fail'):
+        path.write_text(json.dumps(db))
+        sys.stderr.write('gh: comment refused')
+        sys.exit(1)
     if args[:2] == ['issue', 'comment']:
         issue = issues[args[2]]
         issue['comments'].append({'body': Path(opt('--body-file')).read_text(),

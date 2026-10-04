@@ -124,7 +124,7 @@ def load(repo):
 
 def render(state):
     hub = state.get('hub') or {}
-    open_items = [item for item in state['ledger'] if item['status'] == 'open']
+    open_items = [item for item in state['ledger'] if item['status'] in PENDING]
     lines = [f'# {HUB_TITLE}', '',
              'The agent the owner talks to. jfactory\'s `agent-coordinator` skill keeps this issue; do not edit it '
              'by hand.', '',
@@ -134,8 +134,9 @@ def render(state):
              '<text>, options, your default"`. Without Conductor, comment on this issue.', '',
              f'## Open items ({len(open_items)})', '']
     if open_items:
-        lines += ['| ID | Kind | From | Owner of the action | Item | ETA |', '| --- | --- | --- | --- | --- | --- |']
-        lines += [f"| {i['id']} | {i['kind']} | {i.get('from') or ''} | {i.get('owner') or ''} | "
+        lines += ['| ID | Kind | Status | From | Owner of the action | Item | ETA |',
+                  '| --- | --- | --- | --- | --- | --- | --- |']
+        lines += [f"| {i['id']} | {i['kind']} | {i['status']} | {i.get('from') or ''} | {i.get('owner') or ''} | "
                   f"{i['text'].replace('|', '/')} | {i.get('eta') or ''} |" for i in open_items]
     else:
         lines.append('None.')
@@ -270,10 +271,30 @@ def cmd_route(args):
         print(kind)
 
 
+PENDING = ('open', 'answer-undelivered', 'hold-undelivered')
+
+
+def deliver(repo, session, text, state):
+    """Send `text` to an agent: Conductor first, else a comment on its program issue, else on the hub issue.
+    Returns where it went, or None when every route failed (the caller keeps the item pending)."""
+    if message(session, text):
+        return f'session {session}'
+    _, program = route(repo, session, state) if session else ('unknown', None)
+    target = program['number'] if program else state.get('_number')
+    if not target:
+        return None
+    try:
+        gh(repo, 'issue', 'comment', str(target), '--body-file',
+           text_file(f"@agent `{session or 'unknown'}`: {text}"))
+    except Refused:
+        return None
+    return f'issue #{target} comment'
+
+
 def cmd_ledger(args):
     number, state = load(args.repo)
     if args.action == 'list':
-        items = state['ledger'] if args.all else [i for i in state['ledger'] if i['status'] == 'open']
+        items = state['ledger'] if args.all else [i for i in state['ledger'] if i['status'] in PENDING]
         for i in items:
             print(f"{i['id']} {i['status']} {i['kind']} from={i.get('from') or '-'} owner={i.get('owner') or '-'}: "
                   f"{i['text']}" + (f" -> {i['answer']}" if i.get('answer') else ''))
@@ -287,28 +308,42 @@ def cmd_ledger(args):
                 'owner': args.owner, 'eta': args.eta, 'status': 'open', 'opened': now()}
         state['next_id'] += 1
         state['ledger'].append(item)
+        if args.kind == 'hold':
+            # A hold the hub promises the owner must reach the agent that owns the action (2026-10-04: a PR merged
+            # while the hub said it was held). An undelivered hold stays visible and the command fails.
+            via = deliver(args.repo, args.owner, f"HOLD from the agent hub ({item['id']}): {args.text}. Do not "
+                                                 'proceed until the hub lifts it.', state)
+            item['delivered'] = via
+            if not via:
+                item['status'] = 'hold-undelivered'
         save(args.repo, number, state)
         print(item['id'])
         if args.kind == 'hold':
-            # A hold the hub promises the owner must reach the agent that owns the action (2026-10-04: a PR merged
-            # while the hub said it was held).
-            if not message(args.owner, f"HOLD from the agent hub ({item['id']}): {args.text}. Do not proceed until "
-                                       'the hub lifts it.'):
-                print(f'Could not message {args.owner}; tell it yourself before promising the hold.')
-            else:
-                print(f'Hold sent to {args.owner}')
+            if not item['delivered']:
+                raise Refused(f"The hold did not reach {args.owner} (no Conductor message, no issue comment). Do not "
+                              'promise it to the owner; it stays in the ledger as hold-undelivered')
+            print(f"Hold sent to {args.owner} ({item['delivered']})")
     else:  # resolve
         item = next((i for i in state['ledger'] if i['id'] == args.id), None)
         if not item:
             raise Refused(f'No ledger item {args.id}')
-        item.update(status='resolved', answer=args.answer, resolved=now())
-        save(args.repo, number, state)
+        item.update(answer=args.answer, answered=now())
         target = item.get('owner') or item.get('from')
         if args.relay:
-            sent = message(target, f"ANSWER {item['id']} from the agent hub: {args.answer} (your {item['kind']}: "
-                                   f"{item['text']})")
-            print(f"Relayed to {target}" if sent else f'Could not message {target}; relay it yourself')
-        print(f"{item['id']} resolved")
+            via = deliver(args.repo, target, f"ANSWER {item['id']} from the agent hub: {args.answer} (your "
+                                             f"{item['kind']}: {item['text']})", state)
+            item['delivered'] = via
+            # Resolved only once delivered; otherwise it stays pending, and survives a handoff, until relayed.
+            item['status'] = 'resolved' if via else 'answer-undelivered'
+        else:
+            item['status'] = 'resolved'
+        if item['status'] == 'resolved':
+            item['resolved'] = now()
+        save(args.repo, number, state)
+        if item['status'] != 'resolved':
+            raise Refused(f"The answer to {item['id']} did not reach {target}; it stays pending as answer-undelivered. "
+                          'Relay it another way, then run resolve again')
+        print((f"Relayed to {target} ({item['delivered']})\n" if args.relay else '') + f"{item['id']} resolved")
 
 
 def cmd_status(args):
@@ -325,7 +360,7 @@ def cmd_status(args):
             else 'blocked' if counts.get('blocked') else 'active'
         rows.append(f"| #{p['number']} {p['title']} | {status} | {summary}{'; open PRs ' + ' '.join(prs) if prs else ''}"
                     f" | {p['state'].get('eta') or ''} |")
-    open_items = [i for i in state['ledger'] if i['status'] == 'open']
+    open_items = [i for i in state['ledger'] if i['status'] in PENDING]
     print('\n'.join(rows))
     print(f'\nOpen items: {len(open_items)}')
     for i in open_items:
@@ -355,7 +390,7 @@ def cmd_handoff(args):
     if old:
         state['history'].append({'session': old, 'until': state['hub']['since'], 'reason': args.reason or 'handoff'})
     save(args.repo, number, state)
-    open_items = [i['id'] for i in state['ledger'] if i['status'] == 'open']
+    open_items = [i['id'] for i in state['ledger'] if i['status'] in PENDING]
     if not args.create:
         message(target, f"You are now the agent hub for {args.repo} ({state['_url']}). Run the agent-coordinator "
                         f"skill, read the ledger with hub.py show, and continue. Open items: {', '.join(open_items) or 'none'}.")

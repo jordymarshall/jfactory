@@ -113,11 +113,45 @@ class HubTest(unittest.TestCase):
         item = self.hub('ledger', 'add', '--kind', 'question', '--text', 'Merge #12 now or after the release?',
                         '--from', 'coord-1', '--owner', 'coord-1').strip()
         self.assertEqual(item, 'H1')
-        self.assertIn('| H1 | question | coord-1 |', self.hub_issue()['body'])
-        self.assertIn('Relayed to coord-1', self.hub('ledger', 'resolve', 'H1', '--answer', 'After the release', '--relay'))
+        self.assertIn('| H1 | question | open | coord-1 |', self.hub_issue()['body'])
+        self.assertIn('Relayed to coord-1 (session coord-1)', self.hub('ledger', 'resolve', 'H1', '--answer', 'After the release', '--relay'))
         self.assertTrue(any('ANSWER H1' in m and 'After the release' in m for m in self.messages('coord-1')))
         self.assertNotIn('Merge #12', self.hub('ledger', 'list'))
         self.assertIn('resolved', self.hub('ledger', 'list', '--all'))
+
+    def test_without_conductor_answers_and_holds_go_to_the_program_issue(self):
+        # Verifier finding on ef390cb: with no Conductor the answer was marked resolved and sent nowhere.
+        self.program()
+        self.hub('claim', session='hub-a')
+        self.hub('ledger', 'add', '--kind', 'question', '--text', 'Wait or ship?', '--from', 'coord-1', '--owner', 'coord-1')
+        self.env['JFACTORY_CONDUCTOR'] = str(self.tmp / 'missing-conductor')
+        out = self.hub('ledger', 'resolve', 'H1', '--answer', 'Wait for the release', '--relay')
+        self.assertIn('Relayed to coord-1 (issue #1 comment)', out)
+        comments = [c['body'] for c in self.db()['issues']['1']['comments']]
+        self.assertTrue(any('ANSWER H1' in c and 'Wait for the release' in c for c in comments), comments)
+        self.assertIn('Hold sent to coord-1 (issue #1 comment)',
+                      self.hub('ledger', 'add', '--kind', 'hold', '--text', 'Do not merge #9', '--owner', 'coord-1'))
+
+    def test_an_answer_or_hold_that_reaches_nobody_stays_pending_and_fails(self):
+        self.program()
+        self.hub('claim', session='hub-a')
+        self.hub('ledger', 'add', '--kind', 'question', '--text', 'Wait or ship?', '--from', 'coord-1', '--owner', 'coord-1')
+        self.env['JFACTORY_CONDUCTOR'] = str(self.tmp / 'missing-conductor')
+        db = self.db()
+        db['comment_fail'] = True
+        self.state.write_text(json.dumps(db))
+        out = self.hub('ledger', 'resolve', 'H1', '--answer', 'Wait', '--relay', code=2)
+        self.assertIn('stays pending as answer-undelivered', out)
+        out = self.hub('ledger', 'add', '--kind', 'hold', '--text', 'Do not merge #9', '--owner', 'coord-1', code=2)
+        self.assertIn('Do not promise it to the owner', out)
+        db = self.db()
+        db['comment_fail'] = False
+        self.state.write_text(json.dumps(db))
+        listed = self.hub('ledger', 'list')
+        self.assertIn('H1 answer-undelivered', listed)
+        self.assertIn('H2 hold-undelivered', listed)
+        # A handoff carries both.
+        self.assertIn('Open items carried over: H1, H2', self.hub('handoff', '--to', 'hub-b'))
 
     def test_a_hold_is_sent_to_the_agent_that_owns_the_action(self):
         self.program()
