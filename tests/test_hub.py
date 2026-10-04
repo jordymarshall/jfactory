@@ -198,6 +198,18 @@ class HubTest(unittest.TestCase):
         self.program(coordinator='coord-1')
         launch = next(w for w in self.db()['workspaces'] if w['name'].endswith('grid') or 'grid' in w['message'])
         self.assertIn('Never message the agent hub', launch['message'])
+        self.assertIn("run the reviewer's checklist on your own change", launch['message'])
+        self.assertIn('verify_plan.py prereview', launch['message'])
+        # PR agents get the checklist and the routing rule appended to whatever their launcher wrote.
+        db = self.db()
+        db['prs'] = {'9': {'state': 'OPEN', 'headRefOid': 'abc', 'headRefName': 'feat/x'}}
+        self.state.write_text(json.dumps(db))
+        (self.tmp / 'verify.md').write_text('Verify PR 9.')
+        self.coord('launch', '--role', 'verify', '--pr', '9', '--message-file', str(self.tmp / 'verify.md'))
+        verifier = self.db()['workspaces'][-1]['message']
+        self.assertTrue(verifier.startswith('Verify PR 9.'))
+        self.assertIn('prereview --for verdict', verifier)
+        self.assertIn('never to the agent hub', verifier)
         self.hub('claim', session='hub-a')
         out = self.coord('sync', '1', session='coord-2')
         self.assertIn('Agent hub: hub-a', out)

@@ -1084,6 +1084,41 @@ class RunTest(unittest.TestCase):
     def ran(self):
         return sorted(p.name for p in self.root.glob('ran-*'))
 
+    def body(self, text):
+        path = self.root.parent / f'{self.root.name}-body.md'
+        path.write_text(text)
+        return str(path)
+
+    def test_prereview_runs_the_reviewers_checklist_before_a_push(self):
+        # Owner, 2026-10-04: agents always run the review checklist before CI.
+        self.change('cli/run.py')
+        good = self.body('## Objective\nRun the CLI faster for every user.\n')
+        out = self.run_script('prereview', '--base', 'main', '--body-file', good)
+        self.assertIn('PASS: Map audit passes', out)
+        self.assertIn('PASS: PR description starts with its objective', out)
+        self.assertIn('PASS: cli passed', out)
+        self.assertEqual(self.ran(), ['ran-cli', 'ran-unit'])
+        self.assertIn('NOTE: Not pushed yet', out)
+        self.assertIn('Self-review the diff as an adversarial verifier would', out)
+        # A missing objective and an unmapped file each fail it.
+        out = self.run_script('prereview', '--base', 'main', '--body-file', self.body('Some notes\n'),
+                              '--skip-suites', code=1)
+        self.assertIn('FAIL: PR description must start with "## Objective"', out)
+        self.change('lib/new.py')
+        self.assertIn('FAIL: Map audit', self.run_script('prereview', '--base', 'main', '--body-file', good,
+                                                        '--skip-suites', code=1))
+
+    def test_prereview_wants_screenshots_for_changed_screens_and_a_pushed_head_for_a_verdict(self):
+        self.change('app/briefs/a.py')
+        plain = self.body('## Objective\nSave briefs for every user.\n')
+        out = self.run_script('prereview', '--base', 'main', '--body-file', plain, '--skip-suites', code=1)
+        self.assertIn('FAIL: Changed screens (briefs) need screenshots', out)
+        shots = self.body('## Objective\nSave briefs for every user.\n\n![desktop](evidence/briefs-1440.png)\n')
+        self.run_script('prereview', '--base', 'main', '--body-file', shots, '--skip-suites')
+        out = self.run_script('prereview', '--base', 'main', '--body-file', shots, '--skip-suites', '--for', 'verdict',
+                              code=1)
+        self.assertIn('FAIL: Push first', out)
+
     def test_full_suite_command_reads_the_owners_choice(self):
         self.assertEqual(self.run_script('full-suite', '--event', 'schedule').strip(), 'mode=full')
         self.write_config(full_suite='on-request')
