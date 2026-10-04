@@ -684,6 +684,15 @@ def conductor_project(repo):
     return matches[0] if len(matches) == 1 else None
 
 
+def require_branch(repo, branch, advice):
+    """Refuse before creating anything when `branch` is not on GitHub. Conductor deletes a workspace created from a
+    missing branch, and the launch still looked successful (2026-10-04)."""
+    try:
+        run('gh', 'api', f'repos/{repo}/branches/{branch}', '--silent')
+    except Refused:
+        raise Refused(f'--branch {branch} does not exist on GitHub; it names the branch to start from. {advice}')
+
+
 def cmd_launch_pr(args):
     """Launch a reviewer, builder or fixer for one PR in a workspace named by the convention."""
     if args.role not in PR_ROLES:
@@ -709,6 +718,8 @@ def cmd_launch_pr(args):
     branch = args.branch
     if not branch:
         branch = json.loads(gh(args.repo, 'pr', 'view', str(args.pr), '--json', 'headRefName'))['headRefName']
+    # The PR's own head branch can be gone too, for example deleted after a merge.
+    require_branch(args.repo, branch, f'Pass --branch with an existing branch, or check that PR #{args.pr} is still open')
     project = args.project_id or conductor_project(args.repo)
     where = ['--project-id', project] if project else ['--repo-url', f'https://{gh_host()}/{args.repo}']
     command = ['workspace', 'create', *where, '--branch', branch, '--name', name, '--session-name', name,
@@ -1012,11 +1023,7 @@ def cmd_launch(args):
         base = args.branch
         # `--branch` names the branch to start FROM. Conductor deletes a workspace created from a branch that does
         # not exist, and the launch still looked successful (2026-10-04); the worker creates its own branch.
-        try:
-            run('gh', 'api', f'repos/{args.repo}/branches/{base}', '--silent')
-        except Refused:
-            raise Refused(f'--branch {base} does not exist on GitHub; it names the branch to start from. Omit it '
-                          'and name the new branch in the brief instead')
+        require_branch(args.repo, base, 'Omit it and name the new branch in the brief instead')
     elif args.resume:
         base = unit['branch']
     if args.dry_run:

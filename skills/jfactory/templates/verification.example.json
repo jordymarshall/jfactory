@@ -73,7 +73,6 @@
       "paths": [
         "outcomes/save-a-brief.md",
         "app/src/app/briefs/**",
-        "app/src/lib/briefs/**",
         "app/e2e/briefs.spec.ts"
       ],
       "outcome": "outcomes/save-a-brief.md",
@@ -84,6 +83,18 @@
       ],
       "verify": "ci",
       "screens": false
+    },
+    "brief-storage": {
+      "paths": [
+        "app/src/lib/briefs/**"
+      ],
+      "outcome": "outcomes/save-a-brief.md",
+      "recipe": ".agents/skills/verify-app/features/save-brief.md",
+      "suites": [
+        "unit",
+        "browser-briefs"
+      ],
+      "verify": "independent"
     },
     "sign-in": {
       "paths": [

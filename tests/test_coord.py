@@ -121,6 +121,18 @@ class CoordTest(unittest.TestCase):
         self.assertIn('does not exist on GitHub', out)
         self.assertEqual(self.db().get('workspaces', []), [])
 
+    def test_pr_launch_refuses_a_missing_branch_before_creating_a_workspace(self):
+        message = self.tmp / 'verify.md'
+        message.write_text('Verify PR 7 at its head.')
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/gone'}},
+                    missing_branches=['feat/gone', 'feat/missing'])
+        out = self.coord('launch', '--role', 'verify', '--pr', '7', '--message-file', str(message), ok=False)
+        self.assertIn('--branch feat/gone does not exist on GitHub', out)
+        out = self.coord('launch', '--role', 'verify', '--pr', '7', '--message-file', str(message),
+                         '--branch', 'feat/missing', ok=False)
+        self.assertIn('--branch feat/missing does not exist on GitHub', out)
+        self.assertEqual(self.db().get('workspaces', []), [])
+
     def checkpoint(self):
         self.start(['a', '--objective', 'Save items'])
         self.coord('launch', '1', 'a', '--brief', str(self.brief))
