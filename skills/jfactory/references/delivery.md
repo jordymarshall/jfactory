@@ -12,6 +12,18 @@ Before preparing the change explanation or responding to review feedback, read t
 
 Report the PR URL, remote head SHA and actual merge state: open with auto-merge disabled, queued for auto-merge, or merged with its merge SHA. If no remote, credentials, or PR capability exists, preserve the local commit/patch and state that PR delivery is blocked. Never fabricate a URL or treat an installed skill as proof release gates are configured. A ready PR means ready for human review, not customer acceptance; protected auto-merge may merge it before the owner reads the handoff.
 
+## CI confirms; it does not discover
+
+An agent that pushes to find out what fails makes CI its test runner. Every push then waits in the runner queue, and a failure costs a full CI round. Check first, and use CI to confirm.
+
+1. **Check before each push.** `verify_plan.py plan --base origin/<base>` lists the suites the change needs. Run them in your workspace (`verify_plan.py ci --base origin/<base> --pr` runs exactly the set a PR runs). Push only after they pass, or name the suite you could not run and why.
+2. **Push once per batch.** Collect every known fix, then push once. Each push cancels the PR's unfinished run and starts the queue again.
+3. **Classify a failure before you act** (from Lauren Tan's babysit playbook):
+   - **In code the change touches:** fix it, run the failing suite in your workspace, then push.
+   - **In code the change does not touch:** the base is broken or your branch is behind. Check the base branch's latest completed run (`gh run list --branch <base> --limit 5`). If your branch is behind, merge the base. If the base is red, do not patch around it in your change. Report it, and fix the base in its own change first when that is in your scope.
+   - **Infrastructure** (a refused or lost runner, a network error before tests start): one fresh run (`gh run rerun <id> --failed`), never more. An identical second failure means it was never a flake.
+4. **Keep the base branch green.** When the base branch's latest completed run fails, a fix to the base comes before new work is pushed onto it. A repository that pushes straight to the base branch must let each base-branch run finish: use a concurrency group without `cancel-in-progress` on push, so the newest waiting run replaces older waiting ones and one run always completes. A backstop run that a newer push always cancels proves nothing.
+
 ## Evidence in the completion message
 
 The user may only see the final message. Make it self-contained and concise, linking to details rather than hiding verification in earlier updates. Include:

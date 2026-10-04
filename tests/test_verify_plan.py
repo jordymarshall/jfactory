@@ -1083,6 +1083,11 @@ class RunTest(unittest.TestCase):
         self.assertIn('lib/new.py', out)
         self.assertEqual(self.ran(), [])
 
+    def test_ci_no_audit_runs_the_suites_when_a_separate_job_checks_the_map(self):
+        self.change('lib/new.py')
+        self.run_script('ci', '--base', 'main', '--no-audit')
+        self.assertIn('ran-unit', self.ran())  # The unmapped file still runs suites; only `audit` fails on it.
+
     def test_ci_fails_when_a_suite_fails_or_the_target_never_starts(self):
         self.write_config(suites={**self.config['suites'], 'cli': {'run': 'exit 3', 'minutes': 1}})
         self.change('cli/run.py')

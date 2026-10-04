@@ -58,9 +58,35 @@ def managed_block(skill_path):
             'Report the objective, decisions/assumptions, implemented behavior, actual verification evidence and gaps, and PR link in the completion message. '
             'Check the installed version and overlapping PRs when working across worktrees. '
             'Review status does not establish verification or merge readiness. After verification, enable protected auto-merge under the repository\'s standing authorization; follow jfactory\'s auto-merge procedure. '
+            'In-session subagents only do read-only research; work that splits into independent units or is too big for one session goes to separate Conductor workspaces launched with coord.py. '
+            'CI confirms what you already checked: run the planned checks before each push, classify a CI failure before re-running it (infrastructure gets one re-run), and fix a red base branch first. '
             'Keep auto-merge off when required proof, permissions or enforced checks are missing. Never bypass checks or push the base branch directly. Respect the repository\'s release policy. '
             'Preserve this repository’s product decisions and applicable instructions.\n\n'
             f'{END}')
+
+
+CLAUDE_POINTER = '.claude/skills/jfactory/SKILL.md'
+
+
+def claude_pointer(skill_path, skill_text):
+    """A Claude Code skill entry for a bundle installed under another host's layout.
+
+    Claude Code discovers skills only under .claude/skills. Without this entry, "use jfactory" loads nothing there
+    and the agent falls back to its own habits, such as in-session subagents for parallel work.
+    """
+    description = ''
+    if skill_text.startswith('---'):
+        for line in skill_text.split('---', 2)[1].splitlines():
+            if line.startswith('description:'):
+                description = line[len('description:'):].strip()
+    return (f'---\nname: jfactory\ndescription: {description}\n---\n\n'
+            f'# jfactory\n\nThis is the Claude Code entry for jfactory. The bundle is installed at `{skill_path}/`, '
+            f'where it is shared with other agent hosts. Read `{skill_path}/SKILL.md` now and follow it. Its links are '
+            'relative to that folder.\n\nThis file is written by the jfactory installer; do not edit it.\n')
+
+
+def uses_claude(target):
+    return (target / 'CLAUDE.md').exists() or (target / '.claude').is_dir()
 
 
 def install(source, target, agent='codex', update=False):
@@ -74,6 +100,17 @@ def install(source, target, agent='codex', update=False):
     for path in [entry, dest, legacy, *(p for p in dest.parents if p.is_relative_to(target))]:
         if path.is_symlink():
             raise ValueError(f'Refusing symlink target: {path}')
+    pointer = target / CLAUDE_POINTER if agent != 'claude' and uses_claude(target) else None
+    if pointer:
+        for path in [pointer, *(p for p in pointer.parents if p.is_relative_to(target) and p != target)]:
+            if path.is_symlink():
+                raise ValueError(f'Refusing symlink target: {path}')
+        entries = list(pointer.parent.iterdir()) if pointer.parent.is_dir() else []
+        if any(p.is_symlink() for p in entries):
+            raise ValueError(f'Refusing symlink in {pointer.parent.relative_to(target)}')
+        if any(p.name != 'SKILL.md' for p in entries):
+            raise ValueError(f'{pointer.parent.relative_to(target)} holds another jfactory installation; '
+                             'reconcile before installing for a second host')
     if legacy.exists() and dest.exists():
         raise ValueError('Both jstack and jfactory exist; reconcile before updating')
     migrating = legacy.exists()
@@ -106,6 +143,12 @@ def install(source, target, agent='codex', update=False):
     if (other_start in original or other_end in original
             or original.count(start) != original.count(end) or original.count(start) > 1):
         raise ValueError('Malformed, mixed or duplicate instruction blocks; reconcile manually')
+    pointer_text = claude_pointer(relative, files['SKILL.md'].decode()) if pointer else None
+    if pointer and pointer.exists():
+        current = pointer.read_bytes()
+        recorded = (old or {}).get('host_pointers', {}).get(CLAUDE_POINTER)
+        if current != pointer_text.encode() and digest(current) != recorded:
+            raise ValueError(f'{CLAUDE_POINTER} exists and was not written by this installer; reconcile manually')
     block = managed_block(relative)
     if start in original:
         a, b = original.index(start), original.index(end) + len(end)
@@ -129,7 +172,8 @@ def install(source, target, agent='codex', update=False):
         source_dirty = None
     receipt = {'schema': 1, 'repository': 'https://github.com/jordymarshall/jfactory',
         'source_commit': revision, 'source_dirty': source_dirty, 'agent': agent,
-        'files': hashes, 'instruction_block': block}
+        'files': hashes, 'instruction_block': block,
+        **({'host_pointers': {CLAUDE_POINTER: digest(pointer_text.encode())}} if pointer else {})}
     dest.parent.mkdir(parents=True, exist_ok=True)
     # Stage the complete payload so file/directory layout changes cannot strand
     # a half-updated installation. Keep the old tree until both replacements succeed.
@@ -174,6 +218,18 @@ def install(source, target, agent='codex', update=False):
                     os.replace(restored, entry)
                 elif entry.exists():
                     entry.unlink()
+            raise
+    if pointer:
+        # After the bundle is in place, so the entry never points at a missing installation.
+        pointer.parent.mkdir(parents=True, exist_ok=True)
+        # A new, exclusively created file in the checked folder, never a fixed name that could be a planted symlink.
+        handle, staged = tempfile.mkstemp(prefix='.SKILL.md.', dir=pointer.parent)
+        try:
+            with os.fdopen(handle, 'w') as out:
+                out.write(pointer_text)
+            os.replace(staged, pointer)
+        except BaseException:
+            Path(staged).unlink(missing_ok=True)
             raise
     return dest
 

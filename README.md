@@ -333,6 +333,8 @@ In [Conductor](https://www.conductor.build), ask one agent to coordinate:
 
 > Use jfactory to deliver [feature A], [feature B] and [feature C] in parallel. Clarify each outcome and its acceptance criteria with me first, then run at most three workspaces at a time.
 
+"Use jfactory" on one unit of work stays in one session. On work that splits into independent units, or is too big for one session, it means workspaces. Subagents inside the agent's own chat only do read-only research; on Claude Code a hook enforces this.
+
 ### Who does what
 
 | Role | Who | Does | Never does |
@@ -400,6 +402,8 @@ A verifier always comes from a different family than the implementer, so Codex-w
 | --- | --- |
 | `.agents/skills/jfactory/` (or `.claude/…`, `.cursor/…`) | The installed bundle: instructions, procedures, tools and the pinned pstack skills. Don't edit it; the installer refuses to update over local edits. |
 | Managed block in `AGENTS.md` or `CLAUDE.md` | A short pointer telling the agent to use jfactory. Your surrounding text is preserved. |
+| `.claude/skills/jfactory/SKILL.md` | Written when the project also uses Claude Code but the bundle sits in another host's folder. Claude Code finds skills only there, so without it "use jfactory" loads nothing. |
+| `.claude/settings.json` hook | Setup adds `claude_subagent_guard.py` as a hook, so Claude Code's in-session subagents can only read. Writing work that splits goes to Conductor workspaces. |
 | `.jfactory/setup.md` | The setup record: readiness per area, owner interview answers, open decisions and the task location. |
 | `.jfactory/verification.json` | The verification map: paths to features, recipes and CI suites. |
 | `.jfactory/coordination.json` | What merging deploys (`staging`, `none` or `production`), the release procedure and any model-policy overrides. |
@@ -413,6 +417,7 @@ The tools inside the bundle:
 | --- | --- |
 | `setup_check.py` | Checks that setup's records exist and agree with the evidence (map, standards, outcomes, gates, receipts); `--remote` also checks the GitHub gates. Whether the outcomes, job goals and standards are right is for the owner and verifiers to judge |
 | `verify_plan.py` | Works out what a PR must verify, posts verdicts and computes the `jfactory verified` status |
+| `claude_subagent_guard.py` | Claude Code hook: lets only read-only subagents run in the agent's own session |
 | `coord.py` | Runs parallel programs: issue dashboard, launches, reports, verdicts, merges and clean-up |
 | `usage.py` | Reads remaining Claude and Codex usage and picks the model for each tier |
 | `evidence.py` | Optionally records real check runs and rejects failed, stale or wrong-scope evidence |
