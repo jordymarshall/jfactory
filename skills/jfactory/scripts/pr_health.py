@@ -147,7 +147,8 @@ def classify(repo, pr, now, verdict_hours=1, idle_hours=6):
     allows ('update' or 'rerun', with the run ids), or none."""
     head = pr['headRefOid']
     idle = now - last_activity(pr)
-    out = {'number': pr['number'], 'title': pr.get('title', ''), 'head': head, 'idle': idle, 'action': None}
+    out = {'number': pr['number'], 'title': pr.get('title', ''), 'head': head, 'idle': idle, 'action': None,
+           'queued': bool(pr.get('autoMergeRequest'))}
     checks = latest_checks(pr)
     failed = [c for c in checks if (c.get('status') or '').upper() == 'COMPLETED'
               and (c.get('conclusion') or '').upper() not in PASSING]
@@ -356,15 +357,21 @@ def main(argv=None):
         heads = {f"{r['number']}:{r['head']}" for r in results}
         done = {k: v for k, v in state.get('done', {}).items() if k.split(':', 1)[1] in heads}
         actions = []
-        # Merge train: at most one base update per check, oldest PR first. Updating every behind PR at once starts
-        # N CI runs for one merge slot (auto_merge.py also waits while an updated PR is still in flight).
-        updating = False
+        # Merge train: one PR holds the merge slot at a time, across checks. A PR is in the slot while auto-merge is
+        # queued and it is not behind, conflicted or failing, which includes a PR this check updated earlier whose
+        # new CI is still running. Only when the slot is free does the oldest verified behind PR get the base branch.
+        # Updating every behind PR at once starts N CI runs for one merge slot.
+        in_slot = next((r for r in sorted(results, key=lambda r: r['number']) if r.get('queued')
+                        and r.get('state') not in ('behind', 'conflict', 'ci-failed', 'partial')), None)
+        updating = in_slot is not None
         for result in sorted(results, key=lambda r: r['number']):
             if (result.get('action') or (None,))[0] == 'update':
                 if updating:
-                    result['step'] = 'Waits its turn: one PR catches up with the base branch per check.'
+                    holder = in_slot or updating_now
+                    result['step'] = (f"Waits its turn: #{holder['number']} holds the merge slot; one PR catches up "
+                                      'with the base branch at a time.')
                     continue
-                updating = True
+                updating, updating_now = True, result
             line = act(args.repo, result, done, now, dry=not args.act)
             if line:
                 actions.append(line)
