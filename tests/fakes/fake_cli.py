@@ -148,6 +148,14 @@ if tool == 'gh' and args[:2] == ['run', 'rerun']:
     done()
 if tool == 'gh' and args[:2] == ['pr', 'list']:
     done(db.get('pr_list', []))
+if tool == 'gh' and args[:1] == ['api'] and '/branches/' in args[1] and '/rules/' not in args[1] \
+        and not args[1].endswith('/protection'):
+    # A branch exists unless the test lists it as missing (coord.py launch --branch checks it).
+    if args[1].rsplit('/branches/', 1)[1] in db.get('missing_branches', []):
+        path.write_text(json.dumps(db))
+        sys.stderr.write('Branch not found (HTTP 404)')
+        sys.exit(1)
+    done({})
 if tool == 'gh' and args[:1] == ['api'] and '/check-runs' in args[1]:
     done(db.get('check_runs', {'check_runs': [{'name': 'checks', 'status': 'completed', 'conclusion': 'success'}]}))
 if tool == 'gh' and args[:1] == ['api'] and len(args) == 2:

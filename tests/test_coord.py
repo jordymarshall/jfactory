@@ -84,6 +84,14 @@ class CoordTest(unittest.TestCase):
         self.coord('launch', '1', 'a', '--brief', str(self.brief), '--branch', 'feat/checkpoint')
         self.assertEqual(self.db()['workspaces'][-1]['branch'], 'feat/checkpoint')
 
+    def test_program_launch_refuses_a_branch_that_does_not_exist(self):
+        # Conductor deletes a workspace made from a missing branch; launch must refuse instead of looking successful.
+        self.start(['a', '--objective', 'Save items'])
+        self.set_db(missing_branches=['feat/new'])
+        out = self.coord('launch', '1', 'a', '--brief', str(self.brief), '--branch', 'feat/new', ok=False)
+        self.assertIn('does not exist on GitHub', out)
+        self.assertEqual(self.db().get('workspaces', []), [])
+
     def checkpoint(self):
         self.start(['a', '--objective', 'Save items'])
         self.coord('launch', '1', 'a', '--brief', str(self.brief))

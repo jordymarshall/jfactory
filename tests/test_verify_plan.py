@@ -106,6 +106,18 @@ class PlanTest(unittest.TestCase):
             result = verify_plan.plan(order, config)
             self.assertEqual((result['level'], result['suites']), ('independent', ['brand-journey', 'unit']), order)
 
+    def test_pr_journeys_false_drops_journeys_from_every_planned_change(self):
+        config = {**CONFIG, 'suites': {'browser': {'target': 'app', 'run': 'x'}, 'unit': {'run': 'y'}, 'cli': {'run': 'z'}}}
+        # Negative control: by default a screen change runs its journey.
+        self.assertIn('browser', verify_plan.plan(['app/briefs/save.ts'], config)['suites'])
+        minimal = {**config, 'pr_journeys': False}
+        for files in (['app/briefs/save.ts'], ['app/auth.ts'], ['unknown/file.ts']):
+            self.assertNotIn('browser', verify_plan.plan(files, minimal)['suites'], files)
+        self.assertIn('unit', verify_plan.plan(['app/briefs/save.ts'], minimal)['suites'])
+        # The audit refuses minimum gates without a scheduled whole suite.
+        text = ' '.join(t for _, t in verify_plan.audit([], {**minimal, 'full_suite': 'on-request'}))
+        self.assertIn('"pr_journeys" is false', text)
+
     def test_force_independent_false_lets_test_and_instruction_edits_follow_their_feature(self):
         # Minimum gates (owner option): a `ci` feature's tests and instructions stay CI-only.
         minimal = {**CONFIG, 'force_independent': False}

@@ -449,6 +449,10 @@ def plan(files, config, impact=None, screens_only=False):
             if hits and suite not in suites and not ((light or unseen) and journey(suite)):
                 because[suite] = hits
                 suites.add(suite)
+    # Minimum gates (`"pr_journeys": false`, an owner choice): a change runs no journey suite on its PR or after merge;
+    # journeys run on the whole-suite schedule (`full_suite`, for example nightly) and on request.
+    if config.get('pr_journeys', True) is False:
+        suites = {s for s in suites if not journey(s)}
     # A change needs an independent verdict unless every affected feature is low risk (`ci`). Screens users see,
     # tests and agent instructions always need one, whatever the map says.
     # Unmapped files and gate changes are `full`, which always needs one.
@@ -763,6 +767,14 @@ def audit(files, config, root='.'):
                                      'the owner chose otherwise')))
     if policy is not None and policy not in FULL_SUITE:
         items.append(('FAIL', f'"full_suite" is "{policy}"; use one of {", ".join(FULL_SUITE)}'))
+    if config.get('pr_journeys', True) is False:
+        if policy == 'on-request':
+            items.append(('FAIL', '"pr_journeys" is false, so no PR or merge runs a journey, but "full_suite" is '
+                                  '"on-request": journeys would run only when someone asks. Use "nightly" or "merge" '
+                                  '(references/mapping.md, minimum gates)'))
+        else:
+            items.append(('PASS', 'Minimum gates: PRs and merges run no journeys; the whole suite runs '
+                                  f'{FULL_SUITE.get(policy or "nightly", "on its schedule")}'))
     budget = config.get('pr_budget_minutes')
     if not isinstance(budget, (int, float)) or isinstance(budget, bool):
         if not untimed and not undefined:

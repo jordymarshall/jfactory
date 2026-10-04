@@ -1,18 +1,54 @@
 {
   "version": 1,
-  "static": ["docs/**", "plan/**", "LICENSE", "CHANGELOG.md"],
-  "static_suites": ["static"],
-  "always_suites": ["unit"],
-  "full_suites": ["unit", "smoke"],
-  "full_suite": "on-request",
+  "static": [
+    "docs/**",
+    "plan/**",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "static_suites": [
+    "static"
+  ],
+  "always_suites": [
+    "unit"
+  ],
+  "full_suites": [
+    "unit",
+    "smoke"
+  ],
+  "full_suite": "nightly",
+  "pr_journeys": false,
+  "force_independent": false,
   "shards": 4,
   "suites": {
-    "static": {"run": "npm run lint", "minutes": 1},
-    "unit": {"run": "npm test", "minutes": 3},
-    "smoke": {"run": "npx playwright test e2e/smoke.spec.ts", "minutes": 1, "target": "local"},
-    "browser-briefs": {"run": "npx playwright test e2e/briefs.spec.ts", "minutes": 4, "target": "local"},
-    "browser-sign-in": {"run": "npx playwright test e2e/sign-in.spec.ts", "minutes": 3, "target": "local"},
-    "browser-marketing": {"run": "npx playwright test e2e/marketing.spec.ts", "minutes": 2, "target": "local"}
+    "static": {
+      "run": "npm run lint",
+      "minutes": 1
+    },
+    "unit": {
+      "run": "npm test",
+      "minutes": 3
+    },
+    "smoke": {
+      "run": "npx playwright test e2e/smoke.spec.ts",
+      "minutes": 1,
+      "target": "local"
+    },
+    "browser-briefs": {
+      "run": "npx playwright test e2e/briefs.spec.ts",
+      "minutes": 4,
+      "target": "local"
+    },
+    "browser-sign-in": {
+      "run": "npx playwright test e2e/sign-in.spec.ts",
+      "minutes": 3,
+      "target": "local"
+    },
+    "browser-marketing": {
+      "run": "npx playwright test e2e/marketing.spec.ts",
+      "minutes": 2,
+      "target": "local"
+    }
   },
   "targets": {
     "local": {
@@ -34,42 +70,87 @@
   },
   "features": {
     "save-brief": {
-      "paths": ["outcomes/save-a-brief.md", "app/src/app/briefs/**", "app/src/lib/briefs/**", "app/e2e/briefs.spec.ts"],
+      "paths": [
+        "outcomes/save-a-brief.md",
+        "app/src/app/briefs/**",
+        "app/src/lib/briefs/**",
+        "app/e2e/briefs.spec.ts"
+      ],
       "outcome": "outcomes/save-a-brief.md",
       "recipe": ".agents/skills/verify-app/features/save-brief.md",
-      "suites": ["unit", "browser-briefs"],
-      "verify": "independent"
+      "suites": [
+        "unit",
+        "browser-briefs"
+      ],
+      "verify": "ci",
+      "screens": false
     },
     "sign-in": {
-      "paths": ["outcomes/sign-in.md", "app/src/lib/auth.ts", "app/src/app/(auth)/**", "app/e2e/sign-in.spec.ts"],
+      "paths": [
+        "outcomes/sign-in.md",
+        "app/src/lib/auth.ts",
+        "app/src/app/(auth)/**",
+        "app/e2e/sign-in.spec.ts"
+      ],
       "outcome": "outcomes/sign-in.md",
       "recipe": ".agents/skills/verify-app/features/sign-in.md",
-      "suites": ["unit", "browser-sign-in"],
+      "suites": [
+        "unit",
+        "browser-sign-in"
+      ],
       "verify": "independent"
     },
     "shared-data": {
-      "paths": ["app/src/lib/db/**", "app/src/lib/api-client.ts"],
+      "paths": [
+        "app/src/lib/db/**",
+        "app/src/lib/api-client.ts"
+      ],
       "recipe": "Run the unit suite's data-layer tests; recorded coverage adds the journeys that execute the changed file",
-      "suites": ["unit", "smoke"],
+      "suites": [
+        "unit",
+        "smoke"
+      ],
       "verify": "independent"
     },
     "build-and-dependencies": {
-      "paths": ["package.json", "package-lock.json", "app/next.config.*", "app/tsconfig.json", "app/e2e/smoke.spec.ts", "app/playwright.config.ts"],
+      "paths": [
+        "package.json",
+        "package-lock.json",
+        "app/next.config.*",
+        "app/tsconfig.json",
+        "app/e2e/smoke.spec.ts",
+        "app/playwright.config.ts"
+      ],
       "recipe": "Build, run the unit suite and the smoke journey; journeys the change does not select run only in a whole-suite run (full_suite)",
-      "suites": ["unit", "smoke"],
+      "suites": [
+        "unit",
+        "smoke"
+      ],
       "verify": "independent"
     },
     "marketing-pages": {
-      "paths": ["app/src/app/(marketing)/**", "app/src/components/marketing/**"],
+      "paths": [
+        "app/src/app/(marketing)/**",
+        "app/src/components/marketing/**"
+      ],
       "outcome": "outcomes/understand-the-product.md",
       "recipe": "Review the diff against the outcome, the copy and design standards, and screenshots of each changed page at desktop and phone",
-      "suites": ["unit", "browser-marketing"],
-      "verify": "review"
+      "suites": [
+        "unit",
+        "browser-marketing"
+      ],
+      "verify": "ci",
+      "screens": false
     },
     "internal-tooling": {
-      "paths": ["scripts/**", "app/src/lib/logging/**"],
+      "paths": [
+        "scripts/**",
+        "app/src/lib/logging/**"
+      ],
       "recipe": "Run the unit suite; these files do not change what users see or store",
-      "suites": ["unit"],
+      "suites": [
+        "unit"
+      ],
       "verify": "ci"
     }
   }

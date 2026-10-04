@@ -12,8 +12,9 @@
 name: jfactory checks
 on:
   pull_request:
-    # `labeled` lets adding the full-suite label start the whole suite on an open PR.
-    types: [opened, synchronize, reopened, labeled]
+    # No `labeled`: every label change (a hold, a status label) would cancel and restart the run. The mode job reads
+    # the full-suite label live, so add the label, then re-run the run's jobs (references/ci-runners.md).
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
   schedule:
@@ -22,6 +23,9 @@ on:
 permissions:
   contents: read
   actions: read
+  # The mode job reads the PR's labels live.
+  issues: read
+  pull-requests: read
 env:
   JFACTORY_DIR: .agents/skills/jfactory
 jobs:
@@ -36,11 +40,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      # Debounce: every big job needs this one, so a push that lands within this minute cancels the run here, on the
+      # light pool, before any suite starts (references/ci-runners.md, queue operations).
+      - name: Wait one minute for a newer push
+        if: github.event_name == 'pull_request'
+        run: sleep 60
       - id: mode
         env:
-          # JSON keeps each label name exact, commas included.
-          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
-        run: python3 "$JFACTORY_DIR/scripts/verify_plan.py" full-suite --event "$GITHUB_EVENT_NAME" --labels-json "$LABELS" >> "$GITHUB_OUTPUT"
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Labels are read live, not from the event, so a re-run after adding the full-suite label sees it.
+          LABELS='[]'
+          if [ -n "$PR_NUMBER" ]; then LABELS=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels" -q '[.[].name]'); fi
+          python3 "$JFACTORY_DIR/scripts/verify_plan.py" full-suite --event "$GITHUB_EVENT_NAME" --labels-json "$LABELS" >> "$GITHUB_OUTPUT"
   map:
     # The map audit runs here once. Every tracked file must match a feature or a static pattern.
     runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_LIGHT_RUNNER || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}

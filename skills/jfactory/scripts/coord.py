@@ -59,7 +59,8 @@ def role_from_tier(tier):
     return role
 
 
-DEFAULT_POLICY = {'limit': 3, 'roles': {name: role_from_tier(tier) for name, tier in ROLE_TIERS.items()}}
+# repo_limit: running workers across ALL open programs; they share one CI queue (references/ci-runners.md).
+DEFAULT_POLICY = {'limit': 3, 'repo_limit': 6, 'roles': {name: role_from_tier(tier) for name, tier in ROLE_TIERS.items()}}
 POLICY_FILE = Path('.jfactory/coordination.json')
 
 
@@ -189,7 +190,7 @@ def policy(root):
     if path.is_file():
         override = json.loads(path.read_text())
         merged['limit'] = override.get('limit', merged['limit'])
-        merged['repo_limit'] = override.get('repo_limit')
+        merged['repo_limit'] = override.get('repo_limit', merged['repo_limit'])
         merged['merge_deploys'] = override.get('merge_deploys')
         # A role override changes only the fields it names; the rest, such as the fallback, stay.
         for name, fields in override.get('roles', {}).items():
@@ -962,6 +963,13 @@ def cmd_launch(args):
             raise Refused(f'{args.stack_on[0]} has no pushed branch to stack on yet')
     if args.branch:
         base = args.branch
+        # `--branch` names the branch to start FROM. Conductor deletes a workspace created from a branch that does
+        # not exist, and the launch still looked successful (2026-10-04); the worker creates its own branch.
+        try:
+            run('gh', 'api', f'repos/{args.repo}/branches/{base}', '--silent')
+        except Refused:
+            raise Refused(f'--branch {base} does not exist on GitHub; it names the branch to start from. Omit it '
+                          'and name the new branch in the brief instead')
     elif args.resume:
         base = unit['branch']
     if args.dry_run:
@@ -978,6 +986,8 @@ def cmd_launch(args):
                        '--message-file', body_file(message), '--json')
     workspace = created.get('workspace', created)
     session = created.get('session') or created.get('firstSession') or {}
+    if (workspace.get('state') or '').lower() == 'deleted':
+        raise Refused(f'Conductor deleted the new workspace for {args.unit} at creation; check the base branch {base}')
     attempts = unit['attempts'] + (0 if args.resume else 1)
     unit.update({'state': 'running', 'attempts': attempts, 'updated': now(),
                  'agent': role['agent'], 'model': role['model'], 'effort': role.get('effort'),
