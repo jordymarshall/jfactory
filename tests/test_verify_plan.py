@@ -596,6 +596,22 @@ class GateTest(unittest.TestCase):
                          ('review', {'docs': 'standards'}, True))
         self.assertTrue(verify_plan.plan(['docs/guide.md'], config)['static_only'])
 
+    def test_force_independent_false_lets_standards_documents_follow_their_feature(self):
+        # Minimum gates: a job document of a `ci` feature follows its level; a risky feature's still gets a verdict.
+        config = {**CONFIG, 'force_independent': False, '_standards': ['docs/journeys/briefs.md', 'docs/auth.md'],
+                  'features': {**CONFIG['features'],
+                               'docs': {'paths': ['docs/journeys/**'], 'verify': 'ci'},
+                               'auth-docs': {'paths': ['docs/auth.md'], 'verify': 'independent'}}}
+        journey = verify_plan.plan(['docs/journeys/briefs.md'], config)
+        self.assertEqual((journey['level'], journey['needs_verifier']), ('ci', False))
+        risky = verify_plan.plan(['docs/auth.md'], config)  # a document-only edit gets a document review
+        self.assertEqual((risky['level'], risky['needs_verifier']), ('review', True))
+        # A standards document that is also an agent instruction keeps its verdict.
+        config['_standards'].append('docs/journeys/AGENTS.md')
+        self.assertTrue(verify_plan.plan(['docs/journeys/AGENTS.md'], config)['needs_verifier'])
+        # Gate files never relax.
+        self.assertTrue(verify_plan.plan(['.jfactory/standards.md'], config)['needs_verifier'])
+
     def test_proof_headers_must_precede_a_table_separator(self):
         methods = ('| Method | How it applies |\n| --- | --- |\n'
                    '| Observe | Capture proof from the actual artifact |\n'

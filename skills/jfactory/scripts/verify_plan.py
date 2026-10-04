@@ -381,7 +381,9 @@ def plan(files, config, impact=None, screens_only=False):
             features |= hit
             # `force_independent: false` (owner choice) lets a test edit follow its feature's level. An agent
             # instruction always forces a verdict, wherever it lives: instructions are gate material.
-            relaxed = set() if config.get('force_independent', True) else {'tests'}
+            # Standards documents (job documents, the brand guide) follow their feature's level too; a risky
+            # feature's documents still get a verdict, and gate files such as .jfactory/standards.md never reach here.
+            relaxed = set() if config.get('force_independent', True) else {'tests', 'standards'}
             if reasons & (FORCE_INDEPENDENT - relaxed):
                 forced |= hit
                 shown.add(path)
@@ -394,7 +396,8 @@ def plan(files, config, impact=None, screens_only=False):
                 if not matches(path, backend):
                     seen |= hit
                     shown.add(path)
-            # With `force_independent: false`, a test edit no longer forces a review of a `ci` feature.
+            # With `force_independent: false`, a test or standards-document edit no longer forces a review of a `ci`
+            # feature; an agent instruction still does.
             if reason and not (reasons & relaxed and not reasons & (FORCE_INDEPENDENT - relaxed)):
                 for fid in hit:
                     reviewed.setdefault(fid, reason)
