@@ -24,6 +24,9 @@ def done(out=''):
 
 
 if tool == 'conductor':
+    if (db.get('strict_conductor_json') and '--json' not in args and
+            args[:2] in (['session', 'status'], ['workspace', 'get'])):
+        done('Status  idle\n')
     if db.get('conductor_sleep'):
         time.sleep(db['conductor_sleep'])
     if db.get('conductor_fail'):

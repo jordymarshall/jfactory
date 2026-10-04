@@ -79,6 +79,55 @@ class CoordTest(unittest.TestCase):
         unit = self.program_state()['units']['a']
         self.assertEqual((unit['state'], unit['session'], unit['attempts']), ('running', 's1', 1))
 
+    def test_program_launch_honors_explicit_branch(self):
+        self.start(['a', '--objective', 'Save items'])
+        self.coord('launch', '1', 'a', '--brief', str(self.brief), '--branch', 'feat/checkpoint')
+        self.assertEqual(self.db()['workspaces'][-1]['branch'], 'feat/checkpoint')
+
+    def checkpoint(self):
+        self.start(['a', '--objective', 'Save items'])
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'abc1234', 'headRefName': 'feat/checkpoint'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'abc1234')
+        self.coord('sync', '1')
+        self.coord('set', '1', 'a', '--state', 'blocked', '--note', 'Usage switch')
+
+    def test_resume_uses_checkpoint_without_consuming_retry(self):
+        self.checkpoint()
+        db = self.db()
+        state = self.program_state()
+        state['units']['a']['attempts'] = 3
+        body = db['issues']['1']['body']
+        db['issues']['1']['body'] = body.split('<!-- jfactory-program\n')[0] + \
+            '<!-- jfactory-program\n' + json.dumps(state) + '\n-->'
+        db['archived'] = ['w1']
+        db['sessions'] = {'s1': 'idle'}
+        db['strict_conductor_json'] = True
+        self.state.write_text(json.dumps(db))
+        self.coord('launch', '1', 'a', '--brief', str(self.brief), '--resume', '--fallback',
+                   '--reason', 'Claude reserve forecast crosses before next reading')
+        worker = self.db()['workspaces'][-1]
+        self.assertEqual((worker['branch'], worker['agent']), ('feat/checkpoint', 'codex'))
+        self.assertEqual(self.program_state()['units']['a']['attempts'], 3)
+        self.assertIn('resumed checkpoint', self.program_state()['units']['a']['note'])
+
+    def test_resume_refuses_missing_checkpoint_or_active_writer(self):
+        self.start(['a', '--objective', 'Save items'])
+        self.assertIn('reported pushed branch and head', self.coord(
+            'launch', '1', 'a', '--brief', str(self.brief), '--resume', '--reason', 'usage', ok=False))
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'abc1234', 'headRefName': 'feat/checkpoint'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'abc1234')
+        self.coord('sync', '1')
+        self.coord('set', '1', 'a', '--state', 'blocked', '--note', 'Usage switch')
+        self.set_db(sessions={'s1': 'working'}, archived=['w1'])
+        self.assertIn('previous session idle', self.coord(
+            'launch', '1', 'a', '--brief', str(self.brief), '--resume', '--reason', 'usage', ok=False))
+        self.set_db(sessions={'s1': 'idle'}, archived=[])
+        self.assertIn('workspace archived', self.coord(
+            'launch', '1', 'a', '--brief', str(self.brief), '--resume', '--reason', 'usage', ok=False))
+        self.assertEqual(len(self.db()['workspaces']), 1)
+
     def test_sync_archives_finished_workspaces_once_their_sessions_stop(self):
         self.start(['a', '--objective', 'x'], ['r', '--objective', 'verify a', '--role', 'verify', '--depends', 'a'],
                    ['b', '--objective', 'y'], limit=3)

@@ -12,7 +12,7 @@ SCRIPT = ROOT / 'skills/jfactory/scripts/runners.py'
 
 # Records every call and keeps containers in a JSON file: {name: {"state": ..., "repo": ..., "jit": ...}}.
 FAKE_DOCKER = r'''#!/usr/bin/env python3
-import json, os, sys
+import json, os, sys, tempfile
 from pathlib import Path
 state = Path(os.environ['FAKE_STATE'])
 args = sys.argv[1:]
@@ -21,7 +21,10 @@ with open(state / 'docker.log', 'a') as log:
 path = state / 'containers.json'
 boxes = json.loads(path.read_text()) if path.exists() else {}
 def save():
-    path.write_text(json.dumps(boxes))
+    # The supervisor writes while status reads. Publish one complete snapshot.
+    with tempfile.NamedTemporaryFile('w', dir=state, delete=False) as snapshot:
+        snapshot.write(json.dumps(boxes))
+    os.replace(snapshot.name, path)
 if args[:2] == ['image', 'inspect']:
     sys.exit(0 if (state / 'image').exists() else 1)
 if args[0] == 'build':
