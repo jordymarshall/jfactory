@@ -41,7 +41,7 @@ jobs:
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: python3 "$JFACTORY_DIR/scripts/verify_plan.py" full-suite --event "$GITHUB_EVENT_NAME" --labels-json "$LABELS" >> "$GITHUB_OUTPUT"
   map:
-    # The map check runs here once. Every tracked file must match a feature or a static pattern.
+    # The map audit runs here once. Every tracked file must match a feature or a static pattern.
     runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.JFACTORY_RUNNER || '"ubuntu-latest"') }}
     steps:
       - uses: actions/checkout@v4

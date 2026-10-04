@@ -162,7 +162,9 @@ def check_verification(root, report, states):
     if config is not None:
         check_targets(root, config, report, states)
     workflows = root / '.github' / 'workflows'
-    gate = [p for p in workflows.glob('*.y*ml') if 'verify_plan.py' in p.read_text() and ' check ' in p.read_text()] \
+    # The gate runs the `check` command (`verify_plan.py" [--repo R] check`), not any workflow whose text says "check".
+    gate = [p for p in sorted(workflows.glob('*.y*ml')) if re.search(r'verify_plan\.py"?(\s+--\S+\s+\S+)*\s+check\b',
+                                                                  p.read_text())] \
         if workflows.is_dir() else []
     if config is not None:
         journeys = sorted(n for n, d in config.get('suites', {}).items() if d.get('target'))

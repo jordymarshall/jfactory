@@ -87,6 +87,14 @@ class SetupCheckTest(unittest.TestCase):
         self.assertEqual(proc.returncode, code, proc.stdout + proc.stderr)
         return proc.stdout
 
+    def test_a_ci_workflow_that_mentions_check_is_not_the_gate(self):
+        # Sorted first, it once replaced the real gate and failed "lacks checks: read".
+        (self.root / '.github' / 'workflows' / 'a-ci.yml').write_text(
+            '# The map check runs here once.\njobs:\n  map:\n    steps:\n'
+            '      - run: python3 "$JFACTORY_DIR/scripts/verify_plan.py" audit\n')
+        self.assertIn('PASS: The jfactory verified workflow is installed: .github/workflows/jfactory-verified.yml',
+                      self.check('--remote', '--repo', 'o/r'))
+
     def test_claude_code_needs_the_skill_entry_and_the_subagent_hook(self):
         self.assertNotIn('Claude Code', self.check('--remote', '--repo', 'o/r'))
         (self.root / 'CLAUDE.md').write_text('@AGENTS.md\n')
