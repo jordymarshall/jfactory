@@ -49,6 +49,8 @@ jobs:
         with:
           python-version: '3.11'
       - run: python3 "$JFACTORY_DIR/scripts/verify_plan.py" audit
+      # Every skill stays discoverable in both Codex and Claude Code.
+      - run: python3 "$JFACTORY_DIR/scripts/sync_skills.py" --check
   suites:
     needs: mode
     if: needs.mode.outputs.mode != 'skip'

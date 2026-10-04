@@ -66,6 +66,7 @@ gh variable set JFACTORY_DEPLOY_RUNNER --body '["self-hosted","jfactory-deploy"]
 
 ## Keep it healthy
 
+- **One slot per runner, and room for other work.** Each runner gets its own CPUs. A runner that starts while a finished container is still being removed takes the least-used slot, never a busy one (fixed after two runners shared CPUs 0-1 while 6-7 sat idle). When the same machine also runs other work, such as a UX loop or a deploy pool, give each its own CPUs: `up --cpu-range 0-5` keeps the pool on CPUs 0-5, and the other service is pinned to the rest (for systemd, `AllowedCPUs=6-7`). On machines with two threads per core, 2 CPUs is one physical core per job.
 - **Match jobs to runners.** Queue time grows when the jobs waiting exceed the runners. Count jobs per PR times the PRs that push at the same time. If that is many times the runner count, jobs wait longer than they run. Before you add machines: run small changes' static checks (types, lint, related unit tests) in one job, keep the program's concurrency limit, and have agents check before they push ([CI confirms](delivery.md#ci-confirms-it-does-not-discover)). Compare each job's `started_at` with its `created_at` to measure the wait.
 
 - **No runner online means jobs wait** up to 24 hours, then fail. If the machines go away, delete the variable (`gh variable delete JFACTORY_RUNNER`) and jobs return to GitHub's runners. Report runner capacity as a delivery blocker; never bypass the gate instead.

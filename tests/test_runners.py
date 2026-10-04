@@ -35,7 +35,7 @@ elif args[0] == 'ps':
     for name, box in boxes.items():
         if box['repo'] == repo:
             pool = box.get('pool', '')
-            print(f"{box.get('slot', '')}\t{pool}" if slots else f"{name}\t{box['state']}\t{pool}")
+            print(f"{box.get('slot', '')}\t{pool}\t{box['state']}" if slots else f"{name}\t{box['state']}\t{pool}")
 elif args[0] == 'create':
     if os.environ.get('FAKE_DOCKER_FAIL'):
         print('no space left on device', file=sys.stderr)
@@ -153,6 +153,27 @@ class RunnersTest(unittest.TestCase):
         self.cli('serve', '--repo', 'acme/shop', '--once')
         self.assertEqual(len(self.containers()), 2)
         self.assertEqual(sum(a[0] == 'create' for a in self.log('docker.log')), 3)
+
+    def cpusets(self):
+        return [a[a.index('--cpuset-cpus') + 1] for a in self.log('docker.log') if a[0] == 'create']
+
+    def test_a_finished_container_being_removed_does_not_put_two_runners_on_one_slot(self):
+        # Seen on a 4-runner server: a container Docker was still removing held slot 1, every slot looked taken,
+        # and the new runner fell back to slot 0, sharing CPUs 0-1 while CPUs 6-7 sat idle.
+        self.write_config(count=4)
+        self.cli('serve', '--repo', 'acme/shop', '--once')
+        boxes = self.containers()
+        victim = next(n for n, b in boxes.items() if b['slot'] == '1')
+        boxes[victim]['state'] = 'removing'
+        (self.state / 'containers.json').write_text(json.dumps(boxes))
+        self.cli('serve', '--repo', 'acme/shop', '--once')
+        live = [b['slot'] for b in self.containers().values() if b['state'] == 'running']
+        self.assertEqual(sorted(live), ['0', '1', '2', '3'])
+
+    def test_cpu_range_keeps_runners_off_reserved_cpus(self):
+        self.write_config(count=3, cpu_range='0-5')
+        self.cli('serve', '--repo', 'acme/shop', '--once')
+        self.assertEqual(sorted(self.cpusets()), ['0,1', '2,3', '4,5'])
 
     def test_cache_dir_is_mounted_with_tool_variables_and_prepared_once_for_the_runner_user(self):
         cache = self.state / 'runner-cache'
