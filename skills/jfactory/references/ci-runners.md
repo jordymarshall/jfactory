@@ -88,10 +88,12 @@ The PR rate stays about the same, and the machine is fixed. Queue time falls onl
 5. **Use every CPU.** Each runner gets its own CPU slice. `runners.py` picks the least-used slot among live containers, so two jobs never share a slice while another slice sits idle.
 6. **Fix a red base branch first.** Failing tests wait for their timeouts, often minutes each and on every viewport. On a red base branch every PR pays that cost again.
 7. **Make each job cheaper:** related tests only, one build per run when there are several browser jobs, fewer duplicate viewport runs, and faster test fixtures. Measure before and after.
-8. **Cap the workers, not just the work.** Each program has its own concurrency limit, but all programs share one queue. Set `repo_limit` in `.jfactory/coordination.json` to about the number of main runners; `coord.py launch` refuses beyond it.
-9. **Debounce pushes.** The first job of a PR run waits about a minute on the light pool before any big job starts, so a quick second push cancels the run cheaply.
-10. **Watch the queue.** The stuck-PR check reports the number of waiting runs and the oldest wait, and keeps its issue open while the oldest wait is 30 minutes or more.
-11. **Then add machines.**
+8. **If the owner chooses it, trade PR coverage for speed.** The default stays as [proportional checks](verification.md#keep-each-pr-proportional) and [mapping](mapping.md) describe: a PR runs every mapped and coverage-selected suite its change affects. An owner who wants faster PRs can choose instead to run a critical set on every PR (the specs that guard sign-in, saved work, ownership and permissions, and spending) plus every spec the PR edits, and leave the other affected specs to the whole-suite run. That is a rule change: record it as an owner decision in the setup record and the project's verifier, set `full_suite` so the whole suite runs often enough to catch what PRs skip (for example nightly), and expect a regression outside the critical set to surface up to one whole-suite interval later.
+9. **Check the base branch incrementally.** A push to the base branch plans against the last *finished* base run (passed or failed), not the last green one. Otherwise a red base branch re-runs every suite since the last green run on each push and blocks the fix PRs. It still runs the suites that plan selects, including the journeys of changed features after merge ("Journeys on a PR follow what users can see" in [change-aware verification](verification.md#change-aware-verification-and-the-merge-gate)); the whole-suite run follows the owner's `full_suite` choice.
+10. **Cap the workers, not just the work.** Each program has its own concurrency limit, but all programs share one queue. Set `repo_limit` in `.jfactory/coordination.json` to about the number of main runners; `coord.py launch` refuses beyond it.
+11. **Debounce pushes.** The first job of a PR run waits about a minute on the light pool before any big job starts, so a quick second push cancels the run cheaply.
+12. **Watch the queue.** The stuck-PR check reports the number of waiting runs and the oldest wait, and keeps its issue open while the oldest wait is 30 minutes or more.
+13. **Then add machines.**
 
 ## Keep it healthy
 
