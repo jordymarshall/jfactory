@@ -89,6 +89,15 @@ def plan(root):
     return writes, removals, kept
 
 
+def inside(root, path):
+    """True when `path`, with every symlink in it resolved, stays inside the repository root."""
+    try:
+        path.resolve().relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--root', default='.')
@@ -108,9 +117,12 @@ def main(argv=None):
             return 1
         print('PASS: every skill is listed for Codex (.agents/skills) and Claude Code (.claude/skills)')
         return 0
+    # Check every path before writing any: a symlinked folder anywhere above a pointer could lead outside the repository.
+    outside = [p for p in [*writes, *removals] if not inside(root, p) or p.is_symlink() or p.parent.is_symlink()]
+    if outside:
+        raise SystemExit('Refusing to write through a symlink or outside the repository: '
+                         + ', '.join(str(p.relative_to(root)) for p in outside))
     for path, text in writes.items():
-        if any(p.is_symlink() for p in (path, path.parent)):
-            raise SystemExit(f'Refusing symlink: {path.relative_to(root)}')
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
         print(f'Wrote {path.relative_to(root)}')

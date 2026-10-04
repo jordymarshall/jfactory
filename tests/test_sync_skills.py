@@ -71,6 +71,17 @@ class SyncSkillsTests(unittest.TestCase):
         self.assertIn('Kept: .claude/skills/jfactory/SKILL.md', out)
         self.assertIn('Real instructions', (self.root / '.claude/skills/mine/SKILL.md').read_text())
 
+    def test_never_writes_outside_the_repository_through_a_symlinked_folder(self):
+        outside = self.root / 'outside'
+        repo = self.root / 'repo'
+        outside.mkdir()
+        skill(repo / '.agents/skills/project-proof', 'project-proof')
+        (repo / '.claude').symlink_to(outside, target_is_directory=True)
+        proc = subprocess.run([sys.executable, str(SCRIPT), '--root', str(repo)], capture_output=True, text=True)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn('Refusing to write through a symlink or outside the repository', proc.stdout + proc.stderr)
+        self.assertEqual(list(outside.iterdir()), [])
+
     def test_a_bundle_skill_never_takes_a_project_skills_name(self):
         skill(self.root / '.agents/skills/grilling', 'grilling', body='Project grilling.\n')
         skill(self.root / '.agents/skills/jfactory/skills/grilling', 'grilling', body='Bundle grilling.\n')
