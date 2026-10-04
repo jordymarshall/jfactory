@@ -116,6 +116,44 @@ def load(repo, number):
     return state
 
 
+def path_prefix(pattern):
+    """The fixed folder part of a glob: everything before the first wildcard."""
+    head = re.split(r'[*?\[]', pattern, maxsplit=1)[0]
+    return head
+
+
+def paths_overlap(mine, theirs):
+    """True when two units' path globs can name the same file: one fixed prefix contains the other."""
+    for a in mine:
+        for b in theirs:
+            pa, pb = path_prefix(a), path_prefix(b)
+            if pa.startswith(pb) or pb.startswith(pa):
+                return True
+    return False
+
+
+def overlapping_units(repo, program, uid, paths):
+    """Running units in any open, not-held program whose paths overlap `paths` (each program's own units too)."""
+    if not paths:
+        return []
+    issues = json.loads(gh(repo, 'issue', 'list', '--label', PROGRAM_LABEL, '--state', 'open', '--limit', '50',
+                           '--json', 'number'))
+    found = []
+    for issue in issues:
+        try:
+            other = load(repo, issue['number'])
+        except Refused:
+            continue
+        if held(other):
+            continue
+        for name, unit in other['units'].items():
+            if (issue['number'], name) == (int(program), uid) or unit['state'] not in ACTIVE:
+                continue
+            if paths_overlap(paths, unit.get('paths') or []):
+                found.append(f"#{issue['number']}/{name}")
+    return found
+
+
 def running_across_programs(repo):
     """Running units in every open, not-held program. Each program's own limit does not bound the total, and
     the total is what fills the shared CI queue (2026-10-04: three programs ran ten workers on four runners)."""
@@ -860,6 +898,7 @@ Report state changes from the repository root; each report is a comment the coor
   python3 {script} --repo {repo} report {number} {uid} --state blocked --question "decision you need"
 The owner may message you directly. Follow their feedback within this unit, and include it as an owner decision in the next report's --note so the coordinator can record it and relay it to other units. If it changes this unit's scope or affects other units, report --state blocked with a --question instead of expanding scope yourself.
 If a report says the program is on hold, stop at a safe boundary, push your work and report.
+Stay mergeable: your workspace is your own checkout and branch. Before every push, and whenever the coordinator says the base moved, merge origin/{state.get('base', 'main')} into your branch (no rebase, no force-push), resolve any conflicts yourself, rerun the checks the merge touches, then push once.
 """
 
 
@@ -907,6 +946,14 @@ def cmd_launch(args):
             raise Refused(f'Repository limit {repo_limit} reached across programs ({", ".join(busy)} running). '
                           'Every running worker pushes into one CI queue (references/ci-runners.md, queue '
                           'operations); wait for a unit to finish')
+    # Two workers editing the same files make merge conflicts and rework (2026-10-04: 5 conflicts across 9 PRs).
+    # Overlapping units wait (--depends) or stack on each other (--stack-on); --allow-overlap is a deliberate choice.
+    clash = [u for u in overlapping_units(args.repo, args.program, args.unit, unit.get('paths') or [])
+             if u.split('/', 1)[1] not in args.stack_on]
+    if clash and not args.allow_overlap:
+        raise Refused(f'{args.unit} edits the same paths as running unit(s) {", ".join(clash)}. Wait for them, '
+                      'make it depend on them (--depends), stack it (--stack-on), or pass --allow-overlap and tell '
+                      'both workers which files each owns')
     waiting = [d for d in unit['depends'] if state['units'][d]['state'] != 'merged' and d not in args.stack_on]
     if waiting:
         raise Refused(f'Dependencies not merged: {", ".join(waiting)}; wait or pass --stack-on to stack deliberately')
@@ -1029,6 +1076,7 @@ QUIET_LIMIT = 5
 
 def cmd_sync(args):
     state = load(args.repo, args.program)
+    before = {name: unit['state'] for name, unit in state['units'].items()}
     changes = fold_reports(state) + refresh_prs(state, args.repo)
     changes += route_verdicts(state, args.repo, args.program, announce=not args.dry_run)
     notes = session_states(state)
@@ -1062,6 +1110,15 @@ def cmd_sync(args):
               'a session, PR or the owner reports something new.')
     for note in notes:
         print('Check: ' + note)
+    # A merge moves the base under every running unit that edits the same files: tell those workers to update now,
+    # while the conflict is small (references/coordination.md, separate workspaces, separate files).
+    for name, unit in state['units'].items():
+        if unit['state'] == 'merged' and before.get(name) != 'merged':
+            touched = [n for n, other in state['units'].items() if other['state'] in ACTIVE and
+                       paths_overlap(unit.get('paths') or [], other.get('paths') or [])]
+            if touched:
+                print(f"Update from base: {name} merged and edits the same paths as {', '.join(touched)}; "
+                      'message those workers to merge the base into their branch now')
     running = sum(v['state'] in ACTIVE for v in state['units'].values())
     slots = max(state['limit'] - running, 0)
     if ready and not held(state):
@@ -1282,6 +1339,8 @@ def main(argv=None):
     p.add_argument('--role', help='PR workspace: verify, build or fix')
     p.add_argument('--pr', type=int, help='PR workspace: the pull request number')
     p.add_argument('--branch', help='Branch to start from; PR launches default to their head branch')
+    p.add_argument('--allow-overlap', action='store_true',
+                   help='Launch even though a running unit edits the same paths; name each file owner in both briefs')
     p.add_argument('--resume', action='store_true',
                    help='Resume a pushed checkpoint without consuming a failure retry; previous worker must be archived')
     p.add_argument('--message-file', help='PR workspace: the first message')

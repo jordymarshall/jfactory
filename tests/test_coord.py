@@ -84,6 +84,35 @@ class CoordTest(unittest.TestCase):
         self.coord('launch', '1', 'a', '--brief', str(self.brief), '--branch', 'feat/checkpoint')
         self.assertEqual(self.db()['workspaces'][-1]['branch'], 'feat/checkpoint')
 
+    def test_launch_refuses_units_that_edit_the_same_paths(self):
+        self.start(['a', '--objective', 'Library list', '--paths', 'app/library/**'],
+                   ['b', '--objective', 'Library detail', '--paths', 'app/library/detail/**'],
+                   ['c', '--objective', 'Briefs', '--paths', 'app/briefs/**'], limit=3)
+        self.coord('launch', '1', 'a', '--brief', str(self.brief))
+        # Negative control: a unit in other files launches alongside.
+        self.coord('launch', '1', 'c', '--brief', str(self.brief))
+        out = self.coord('launch', '1', 'b', '--brief', str(self.brief), ok=False)
+        self.assertIn('edits the same paths as running unit(s) #1/a', out)
+        self.assertEqual(len(self.db()['workspaces']), 2)
+        self.coord('launch', '1', 'b', '--brief', str(self.brief), '--allow-overlap')
+        self.assertEqual(len(self.db()['workspaces']), 3)
+        self.assertIn('merge origin/main into your branch', self.db()['workspaces'][-1]['message'])
+
+    def test_sync_names_running_units_a_merge_touched(self):
+        self.start(['a', '--objective', 'Library list', '--paths', 'app/library/**'],
+                   ['b', '--objective', 'Library detail', '--paths', 'app/library/detail/**'],
+                   ['c', '--objective', 'Briefs', '--paths', 'app/briefs/**'], limit=3)
+        for unit in ('a', 'c'):
+            self.coord('launch', '1', unit, '--brief', str(self.brief))
+        self.coord('launch', '1', 'b', '--brief', str(self.brief), '--allow-overlap')
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'abc1234', 'headRefName': 'feat/a'}})
+        self.coord('report', '1', 'a', '--state', 'in-review', '--pr', '7', '--head', 'abc1234')
+        self.coord('sync', '1')
+        self.set_db(prs={'7': {'state': 'MERGED', 'headRefOid': 'abc1234', 'headRefName': 'feat/a'}})
+        out = self.coord('sync', '1')
+        self.assertIn('Update from base: a merged and edits the same paths as b', out)
+        self.assertNotIn(' c;', out)
+
     def test_program_launch_refuses_a_branch_that_does_not_exist(self):
         # Conductor deletes a workspace made from a missing branch; launch must refuse instead of looking successful.
         self.start(['a', '--objective', 'Save items'])
