@@ -24,7 +24,11 @@ permissions:
 concurrency:
   # A CI run for a push (not a PR) gets its own group, so it never cancels a PR's status run.
   group: jfactory-verified-${{ (github.event_name == 'workflow_run' && github.event.workflow_run.event != 'pull_request' && format('run-{0}', github.run_id)) || github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number }}
-  cancel-in-progress: true
+  # Queue, never cancel: a cancelled run stays on the PR as a red X even after a later run passes.
+  # Each run takes about 20 seconds and reads the PR's current state, so running them in order
+  # leaves the newest result last.
+  cancel-in-progress: false
+  queue: max
 env:
   JFACTORY_DIR: .agents/skills/jfactory
 jobs:
