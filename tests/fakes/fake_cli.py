@@ -226,6 +226,10 @@ if tool == 'gh':
     if args[:2] == ['issue', 'reopen']:
         issues[args[2]]['state'] = 'OPEN'
         done()
+    if args[:2] == ['issue', 'list'] and db.get('list_lag', 0) > 0:
+        # GitHub's label listing lags a new issue: the next `list_lag` listings return nothing.
+        db['list_lag'] -= 1
+        done([])
     if args[:2] == ['issue', 'list']:
         wanted = opt('--state', 'open').upper()
         done([{'number': int(k), 'title': v.get('title', 'x'), 'url': v['url'], 'state': v['state']}

@@ -29,6 +29,7 @@ class HubTest(unittest.TestCase):
                     'JFACTORY_CONDUCTOR': str(bins / 'conductor'), 'JFACTORY_GIT': str(bins / 'git'),
                     'CONDUCTOR_WORKSPACE_ID': 'w-here'}
         self.env.pop('CONDUCTOR_SESSION_ID', None)
+        self.env['JFACTORY_HUB_RETRY_SECONDS'] = '0.01'
         (self.tmp / 'brief.md').write_text(BRIEF)
 
     def tool(self, script, *args, session=None, code=0):
@@ -82,6 +83,20 @@ class HubTest(unittest.TestCase):
         self.assertIn('You are the hub', self.hub('check', session='hub-b'))
         # The open question survives the take-over.
         self.assertIn('Ship on Friday?', self.hub('ledger', 'list'))
+
+    def test_a_lagging_issue_list_neither_hides_the_hub_nor_creates_a_second_one(self):
+        # Seen live on jordymarshall/jfactory: `check` right after `claim` said there was no hub issue.
+        self.hub('claim', session='hub-a')
+        db = self.db()
+        db['list_lag'] = 2
+        self.state.write_text(json.dumps(db))
+        self.assertIn('You are the hub', self.hub('check', session='hub-a'))
+        db = self.db()
+        db['list_lag'] = 2
+        self.state.write_text(json.dumps(db))
+        self.hub('claim', session='hub-b')
+        hubs = [i for i in self.db()['issues'].values() if i['labels'][0]['name'] == 'jfactory-hub']
+        self.assertEqual(len(hubs), 1)
 
     def test_a_worker_is_redirected_to_its_coordinator(self):
         self.program()

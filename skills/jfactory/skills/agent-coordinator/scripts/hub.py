@@ -28,6 +28,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 
 HUB_LABEL = 'jfactory-hub'
@@ -96,10 +97,17 @@ def current_repo():
 
 # The hub issue
 
-def find_hub(repo):
-    found = json.loads(gh(repo, 'issue', 'list', '--label', HUB_LABEL, '--state', 'open', '--limit', '5',
-                          '--json', 'number,title,url,state') or '[]')
-    return found[0] if found else None
+def find_hub(repo, attempts=4):
+    """The open hub issue. GitHub's label listing lags a new issue by seconds (seen live on 2026-10-04), so an empty
+    answer is retried before concluding there is no hub; otherwise two quick claims would create two hub issues."""
+    for attempt in range(attempts):
+        found = json.loads(gh(repo, 'issue', 'list', '--label', HUB_LABEL, '--state', 'open', '--limit', '5',
+                              '--json', 'number,title,url,state') or '[]')
+        if found:
+            return sorted(found, key=lambda issue: issue['number'])[0]
+        if attempt < attempts - 1:
+            time.sleep(float(os.environ.get('JFACTORY_HUB_RETRY_SECONDS', '2')) * (attempt + 1) / 2)
+    return None
 
 
 def load(repo):
