@@ -418,6 +418,7 @@ The tools inside the bundle:
 | `setup_check.py` | Checks that setup's records exist and agree with the evidence (map, standards, outcomes, gates, receipts); `--remote` also checks the GitHub gates. Whether the outcomes, job goals and standards are right is for the owner and verifiers to judge |
 | `verify_plan.py` | Works out what a PR must verify, posts verdicts and computes the `jfactory verified` status |
 | `claude_subagent_guard.py` | Claude Code hook: lets only read-only subagents run in the agent's own session |
+| `sync_skills.py` | Lists every project skill for both Codex and Claude Code; `--check` fails on drift |
 | `coord.py` | Runs parallel programs: issue dashboard, launches, reports, verdicts, merges and clean-up |
 | `usage.py` | Reads remaining Claude and Codex usage and picks the model for each tier |
 | `evidence.py` | Optionally records real check runs and rejects failed, stale or wrong-scope evidence |

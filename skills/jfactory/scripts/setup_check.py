@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import verify_plan  # noqa: E402
+import sync_skills  # noqa: E402
 
 AREAS = ['Documentation', 'Product direction', 'Workspace tools', 'Verification', 'Environments', 'PR delivery']
 STATES = {'verified', 'configured but unverified', 'blocked', 'not run by request', 'not applicable'}
@@ -745,6 +746,20 @@ def check_claude_host(root, report):
                            'Conductor workspaces (references/coordination.md)')
 
 
+def check_skill_hosts(root, report):
+    """Every project skill is discoverable in both Codex and Claude Code (scripts/sync_skills.py)."""
+    if not any((root / host).is_dir() for host in sync_skills.HOSTS):
+        return
+    writes, removals, _ = sync_skills.plan(root)
+    drift = sorted(str(p.relative_to(root)) for p in [*writes, *removals])
+    if drift:
+        report.add('FAIL', f'{len(drift)} skill entr{"y is" if len(drift) == 1 else "ies are"} missing or stale, so one '
+                           'agent host cannot find those skills: ' + ', '.join(drift[:6])
+                           + '. Run scripts/sync_skills.py and commit the result')
+    else:
+        report.add('PASS', 'Every project skill is listed for Codex (.agents/skills) and Claude Code (.claude/skills)')
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--root', default='.', help='repository root (default: current directory)')
@@ -766,6 +781,7 @@ def main(argv=None):
     check_delivery(root, report, states)
     check_runners(root, report, states)
     check_claude_host(root, report)
+    check_skill_hosts(root, report)
     remote_ok = False
     if args.remote:
         repo = args.repo

@@ -103,7 +103,7 @@ class SetupCheckTest(unittest.TestCase):
         self.assertIn('WARN: Claude Code subagents can change files here', out)
         skill = self.root / '.claude' / 'skills' / 'jfactory' / 'SKILL.md'
         skill.parent.mkdir(parents=True)
-        skill.write_text('---\nname: jfactory\n---\n')
+        skill.write_text('---\nname: jfactory\n---\n\nThis is the Claude Code entry for jfactory. Read the bundle.\n')
         shutil.copy(ROOT / 'skills' / 'jfactory' / 'templates' / 'claude-settings.json',
                     self.root / '.claude' / 'settings.json')
         self.assertIn('PASS: Claude Code loads jfactory, and its hook keeps in-session subagents read-only',

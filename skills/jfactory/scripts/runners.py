@@ -169,22 +169,38 @@ def build(pull=False):
             raise Refused('docker build failed; see the output above')
 
 
-def cpu_slice(slot, count):
+def cpu_list(cpu_range=None):
+    """The CPUs a pool may use: all of them, or a range such as "0-5" that keeps other work (a UX loop, a deploy
+    pool) on the rest of the machine."""
+    if not cpu_range:
+        return list(range(os.cpu_count() or 1))
+    cpus = []
+    for part in str(cpu_range).split(','):
+        first, _, last = part.strip().partition('-')
+        cpus += list(range(int(first), int(last or first) + 1))
+    return cpus
+
+
+def cpu_slice(slot, count, cpu_range=None):
     """The CPUs runner `slot` of `count` may use. Tools size their workers by the CPUs they can see (Vitest and Jest
     start one worker per CPU), so an unpinned container on a big machine starts many workers per job and the machine
     runs out of memory; a slice makes each job behave as on a hosted runner with the same CPUs."""
-    total = os.cpu_count() or 1
-    size = max(1, total // count)
-    first = (slot * size) % total
-    return f'{first}-{min(first + size, total) - 1}'
+    cpus = cpu_list(cpu_range)
+    size = max(1, len(cpus) // count)
+    first = (slot * size) % len(cpus)
+    return ','.join(str(c) for c in cpus[first:first + size])
 
 
 def free_slot(repo, count, pool=''):
+    """The slot for a new runner: a free one, else the least-used one. Only running or created containers hold a
+    slot. A finished container that Docker is still removing once made every slot look taken, and the old fallback
+    to slot 0 then put two jobs on the same CPUs while others sat idle."""
     out = docker('ps', '-a', '--filter', f'label={OWNER_LABEL}={repo}', '--format',
-                 '{{.Label "jfactory.slot"}}\t{{.Label "%s"}}' % POOL_LABEL).stdout
-    rows = [(line.split('\t') + [''])[:2] for line in out.splitlines() if line.strip()]
-    used = {int(slot) for slot, owner in rows if slot.isdigit() and owner == pool}
-    return next((n for n in range(count) if n not in used), 0)
+                 '{{.Label "jfactory.slot"}}\t{{.Label "%s"}}\t{{.State}}' % POOL_LABEL).stdout
+    rows = [(line.split('\t') + ['', ''])[:3] for line in out.splitlines() if line.strip()]
+    used = [int(slot) for slot, owner, state in rows
+            if slot.isdigit() and owner == pool and state in ('running', 'created')]
+    return min(range(count), key=lambda n: (used.count(n), n))
 
 
 def prepare_cache(cache_dir):
@@ -215,7 +231,7 @@ def start_one(repo, config):
     if pool:
         cmd += ['--label', f'{POOL_LABEL}={pool}']
     if config.get('pin_cpus', True):
-        cmd += ['--cpuset-cpus', cpu_slice(slot, config['count'])]
+        cmd += ['--cpuset-cpus', cpu_slice(slot, config['count'], config.get('cpu_range'))]
     if config.get('cpus'):
         cmd += ['--cpus', str(config['cpus'])]
     if config.get('memory'):
@@ -298,7 +314,7 @@ def cmd_up(args):
     labels = list(dict.fromkeys([own, *[x.strip() for x in args.labels.split(',') if x.strip()]]))
     config = {'count': args.count, 'labels': labels, 'pool': pool,
               'prefix': prefix(repo, args.host or os.uname().nodename.split('.')[0], pool),
-              'cpus': args.cpus, 'memory': args.memory, 'shm_size': args.shm_size,
+              'cpus': args.cpus, 'cpu_range': args.cpu_range, 'memory': args.memory, 'shm_size': args.shm_size,
               'cache_dir': os.path.abspath(args.cache_dir) if args.cache_dir else None}
     if args.build or docker('image', 'inspect', IMAGE, check=False).returncode:
         build(args.pull)
@@ -406,6 +422,8 @@ def main(argv=None):
     up.add_argument('--labels', default='', help='Extra comma-separated labels after self-hosted and jfactory')
     up.add_argument('--host', help='Machine name used in runner names (default: hostname)')
     up.add_argument('--cpus', type=float, help='CPU limit per runner')
+    up.add_argument('--cpu-range', help='CPUs this pool may use, such as 0-5; the rest stay free for other work '
+                                        '(another pool, a UX loop). Default: every CPU')
     up.add_argument('--memory', help='Memory limit per runner, for example 6g; needs Docker with the cgroup memory controller')
     up.add_argument('--shm-size', default='2g', help='Shared memory per runner; browsers need more than the default')
     up.add_argument('--cache-dir', help='Host folder shared by this machine\'s runners as /cache, so jobs reuse Node, npm '
