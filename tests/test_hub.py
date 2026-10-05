@@ -178,6 +178,21 @@ class HubTest(unittest.TestCase):
         self.assertIn('H2 answer-undelivered', self.hub('ledger', 'list'))
         self.assertIn('-> Later', self.hub('ledger', 'list'))
 
+    def test_an_unreadable_program_list_still_delivers_through_the_hub_issue(self):
+        # Verifier finding on 9dd447c: a failing program list stopped delivery before any fallback or save.
+        self.program()
+        self.hub('claim', session='hub-a')
+        self.hub('ledger', 'add', '--kind', 'question', '--text', 'Wait or ship?', '--from', 'coord-1', '--owner', 'coord-1')
+        self.env['JFACTORY_CONDUCTOR'] = str(self.tmp / 'missing-conductor')
+        db = self.db()
+        db['program_list_fail'] = True
+        self.state.write_text(json.dumps(db))
+        out = self.hub('ledger', 'resolve', 'H1', '--answer', 'Wait for the release', '--relay')
+        number = next(k for k, i in self.db()['issues'].items() if i['labels'][0]['name'] == 'jfactory-hub')
+        self.assertIn(f'(issue #{number} comment)', out)
+        comments = [c['body'] for c in self.db()['issues'][number]['comments']]
+        self.assertTrue(any('`coord-1`' in c and 'Wait for the release' in c for c in comments), comments)
+
     def test_a_hold_is_sent_to_the_agent_that_owns_the_action(self):
         self.program()
         self.hub('claim', session='hub-a')

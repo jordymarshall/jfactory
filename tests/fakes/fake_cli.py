@@ -230,6 +230,10 @@ if tool == 'gh':
     if args[:2] == ['issue', 'reopen']:
         issues[args[2]]['state'] = 'OPEN'
         done()
+    if args[:2] == ['issue', 'list'] and db.get('program_list_fail') and 'jfactory-program' in args:
+        path.write_text(json.dumps(db))
+        sys.stderr.write('gh: program list refused')
+        sys.exit(1)
     if args[:2] == ['issue', 'list'] and db.get('list_lag', 0) > 0:
         # GitHub's label listing lags a new issue: the next `list_lag` listings return nothing.
         db['list_lag'] -= 1
