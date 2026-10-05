@@ -33,6 +33,17 @@ if tool == 'conductor':
         path.write_text(json.dumps(db))
         sys.stderr.write('conductor: service unavailable')
         sys.exit(1)
+    if args[:1] == ['--help']:
+        done('conductor help\n')
+    if args[:2] == ['message', 'create']:
+        # Messages to sessions, for the agent hub's tests.
+        db.setdefault('messages', []).append({'session': opt('--session'),
+                                              'text': Path(opt('--message-file')).read_text()})
+        done('State       queued\n')
+    if args[:3] == ['--json', 'session', 'create']:
+        n = len(db.setdefault('created_sessions', [])) + 1
+        db['created_sessions'].append({'workspace': opt('--workspace'), 'text': Path(opt('--message-file')).read_text()})
+        done({'id': f'new-hub-{n}'})
     if args[:2] == ['workspace', 'list']:
         # `listed` holds workspaces other than those this fake created; archived ones drop out of the list.
         done({'data': [w for w in db.get('listed', []) if w['id'] not in db.get('archived', [])],
@@ -191,6 +202,9 @@ if tool == 'gh':
     if args[:2] == ['label', 'create']:
         db.setdefault('labels', []).append(args[2])
         done()
+    if args[:2] == ['issue', 'pin']:
+        issues[args[2]]['pinned'] = True
+        done()
     if args[:2] == ['issue', 'create']:
         n = str(len(issues) + 1)
         issues[n] = {'title': opt('--title'), 'body': Path(opt('--body-file')).read_text(), 'comments': [], 'state': 'OPEN',
@@ -201,6 +215,10 @@ if tool == 'gh':
     if args[:2] == ['issue', 'edit']:
         issues[args[2]]['body'] = Path(opt('--body-file')).read_text()
         done()
+    if args[:2] == ['issue', 'comment'] and db.get('comment_fail'):
+        path.write_text(json.dumps(db))
+        sys.stderr.write('gh: comment refused')
+        sys.exit(1)
     if args[:2] == ['issue', 'comment']:
         issue = issues[args[2]]
         issue['comments'].append({'body': Path(opt('--body-file')).read_text(),
@@ -212,6 +230,14 @@ if tool == 'gh':
     if args[:2] == ['issue', 'reopen']:
         issues[args[2]]['state'] = 'OPEN'
         done()
+    if args[:2] == ['issue', 'list'] and db.get('program_list_fail') and 'jfactory-program' in args:
+        path.write_text(json.dumps(db))
+        sys.stderr.write('gh: program list refused')
+        sys.exit(1)
+    if args[:2] == ['issue', 'list'] and db.get('list_lag', 0) > 0:
+        # GitHub's label listing lags a new issue: the next `list_lag` listings return nothing.
+        db['list_lag'] -= 1
+        done([])
     if args[:2] == ['issue', 'list']:
         wanted = opt('--state', 'open').upper()
         done([{'number': int(k), 'title': v.get('title', 'x'), 'url': v['url'], 'state': v['state']}

@@ -45,6 +45,8 @@ Settle an open design or empirical question with a throwaway prototype before bu
 
 A scheduled stuck-PR check (`scripts/pr_health.py`, no AI model) keeps one "Stuck PRs" issue with the next step for each PR that stopped moving; see [the stuck-PR check](references/coordination.md#the-stuck-pr-check). Do not rely on a watch loop inside one chat.
 
+When the owner wants one agent to talk to above every coordinator, use the [agent-coordinator skill](skills/agent-coordinator/SKILL.md): it registers the session as the agent hub in a pinned GitHub issue, relays owner questions and answers, keeps a ledger outside its chat and hands over before its context fills. Only coordinators message the hub; workers report to their coordinator.
+
 If your task contract names a program issue, you are a worker: follow the [worker protocol](references/coordination.md#5-worker-protocol) and report through the tool.
 
 ## Deliver a pull request

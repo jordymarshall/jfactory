@@ -52,6 +52,10 @@ The issue body has one writer, the coordinator. Workers never edit it; they add 
 
 The tool is a guard, not a supervisor. It runs only when an agent calls it, and it does not judge whether evidence is meaningful.
 
+## The agent hub
+
+When the owner asks for one agent to talk to, that session runs the [agent-coordinator skill](../skills/agent-coordinator/SKILL.md) and becomes the **agent hub**. The hub is recorded in one pinned issue, "Agent hub" (label `jfactory-hub`). Coordinators send it messages tagged `QUESTION`, `BLOCKER`, `RISK`, `MILESTONE` or `DIGEST` (routine progress, at most one every 30 minutes). Workers never message it: the launch footer tells them to report only to their coordinator, and the hub redirects any worker that does. `coord.py sync` prints the current hub, and records the session that runs it as the program's coordinator, so the hub can find every coordinator.
+
 ## Model policy
 
 Each unit has a role, and each role is one tier of [model selection](models.md). The tool builds its roles from the same table as the usage reader, so the two cannot drift:
