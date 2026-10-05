@@ -253,6 +253,31 @@ class UsageTests(unittest.TestCase):
         self.assertIsNone(out['choice']['frontier'][0])  # holds rather than launch a forbidden model
         self.assertIn('gpt-6-astra skipped: forbidden', out['choices'][0]['reason'])
 
+    def test_model_rules_bind_probes_and_bad_settings_stop_the_script(self):
+        rules = self.state / 'coordination.json'
+        rules.write_text(json.dumps({'models': {'codex': 'gpt-6.1-sol'}, 'forbidden_models': ['gpt-6-astra', 'gpt-6-luna']}))
+        self.claude(5, 1, 45)
+        self.codex_log(10, 45)
+        (self.state / 'probe-claude.json').write_text(json.dumps(claude_events(30, 92, 0)))
+        (self.state / 'probe-codex.json').write_text(rollout(20, 0))
+        self.run_usage('--coordination', str(rules))
+        calls = self.calls()
+        self.assertIn('session create --agent codex --model gpt-6.1-sol', calls)
+        self.assertNotIn('gpt-6-luna', calls)
+        # A settings file that exists but is broken, or a named file that is missing, stops before any probe or choice.
+        for bad in ('{"forbidden_models": ["gpt-6-astra"]', None):
+            path = self.state / 'broken.json'
+            if bad is None:
+                path.unlink()
+            else:
+                path.write_text(bad)
+            (self.state / 'calls.log').write_text('')
+            result = subprocess.run([sys.executable, str(SCRIPT), '--json', '--coordination', str(path)], env=self.env,
+                                    capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('usage.py:', result.stderr)
+            self.assertNotIn('session create', self.calls())
+
     def test_policy_matches_model_reference(self):
         sys.path.insert(0, str(SCRIPT.parent))
         try:

@@ -191,8 +191,10 @@ def age_minutes(reading):
     return (now() - observed).total_seconds() / 60 if observed else float('inf')
 
 
-def probe(agent, codex_home):
-    model, effort = PROBES[agent]
+def probe(agent, codex_home, rules=({}, set())):
+    model, effort = probe_model(agent, rules)
+    if not model:
+        return None
     args = ['session', 'create', '--agent', agent, '--model', model, '--name', 'jfactory usage probe',
             '--message', PROBE_MESSAGE]
     if effort:
@@ -226,13 +228,31 @@ def earliest_reset(reading, reserve):
     return min(times) if times else None
 
 
-def model_rules(path='.jfactory/coordination.json'):
-    """The repository's `models` (agent -> model) and `forbidden_models` from .jfactory/coordination.json."""
-    try:
-        data = json.loads(Path(path).read_text())
-    except (OSError, ValueError):
+DEFAULT_COORDINATION = '.jfactory/coordination.json'
+
+
+def model_rules(path=DEFAULT_COORDINATION, required=False):
+    """The repository's `models` (agent -> model) and `forbidden_models` from .jfactory/coordination.json.
+    A missing default file means no rules. A settings file that exists but cannot be read, or a path the caller named
+    that is missing, stops the script: silently dropping the rules could launch a forbidden model."""
+    path = Path(path)
+    if not path.exists():
+        if required:
+            raise SystemExit(f'usage.py: {path} does not exist')
         return {}, set()
-    return dict(data.get('models') or {}), set(data.get('forbidden_models') or [])
+    try:
+        data = json.loads(path.read_text())
+        return dict(data.get('models') or {}), set(data.get('forbidden_models') or [])
+    except (OSError, ValueError, AttributeError, TypeError) as error:
+        raise SystemExit(f'usage.py: cannot read the model rules in {path}: {error}')
+
+
+def probe_model(agent, rules):
+    """The probe's model under the repository's rules, or None when no allowed model is left."""
+    models, forbidden = rules
+    model, effort = PROBES[agent]
+    model = models.get(agent, model)
+    return (None, None) if model in forbidden else (model, effort)
 
 
 def choose(tier, readings, reserve, implementer=None, allow_same_family=False, rules=None):
@@ -286,10 +306,10 @@ def collect(args):
     probing = not args.no_probe and in_conductor()
     claude = read_claude(claude_sessions()) if in_conductor() else None
     if probing and (not claude or age_minutes(claude) > args.max_age):
-        claude = probe('claude', args.codex_home) or claude
+        claude = probe('claude', args.codex_home, args.rules) or claude
     codex = read_codex(args.codex_home)
     if probing and (not codex or age_minutes(codex) > args.max_age):
-        codex = probe('codex', args.codex_home) or codex
+        codex = probe('codex', args.codex_home, args.rules) or codex
     for reading in (claude, codex):
         if reading:
             reading['age_minutes'] = round(age_minutes(reading), 1)
@@ -317,15 +337,16 @@ def main():
     parser.add_argument('--codex-home', default=os.environ.get('CODEX_HOME') or str(Path.home() / '.codex'))
     parser.add_argument('--map', default='.jfactory/verification.json',
                         help='verification map whose "allow_same_family" lets a verifier fall back to the implementer\'s family')
-    parser.add_argument('--coordination', default='.jfactory/coordination.json',
+    parser.add_argument('--coordination',
                         help='repository settings whose "models" and "forbidden_models" override the policy')
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
 
+    # Rules come first: probes launch sessions, so they obey the rules too.
+    args.rules = model_rules(args.coordination or DEFAULT_COORDINATION, required=bool(args.coordination))
     readings = collect(args)
     same = allow_same_family(args.map)
-    rules = model_rules(args.coordination)
-    choices = [choose(tier, readings, args.reserve, args.implementer, same, rules) for tier in (args.tier or list(POLICY))]
+    choices = [choose(tier, readings, args.reserve, args.implementer, same, args.rules) for tier in (args.tier or list(POLICY))]
     if args.json:
         print(json.dumps({'checked_at': iso(now()), 'reserve_percent': args.reserve, 'accounts': readings,
                           'choices': choices}, indent=2))

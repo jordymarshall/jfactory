@@ -28,8 +28,9 @@ A repository can bind the models for its own agents in `.jfactory/coordination.j
 {"models": {"codex": "gpt-6.1-sol"}, "forbidden_models": ["gpt-6-astra"]}
 ```
 
-- `models` maps an agent to the one model every role uses for it: the primary, the usage fallback and the verifier alternate. A launch that names `--model` keeps that model, unless it is forbidden.
-- `forbidden_models` lists models no launch may use. `coord.py launch` (program units and PR workspaces) refuses them with a clear error, including an explicit `--model`. `usage.py` skips them and holds a tier rather than choose one (`--coordination PATH` reads another file).
+- `models` maps an agent to the one model every role uses for it: the primary, the usage fallback, the verifier alternate and the usage probe. A launch that names another `--model` for that agent is refused.
+- `forbidden_models` lists models no launch may use. `coord.py launch` (program units and PR workspaces) refuses them with a clear error, including an explicit `--model`. `usage.py` skips them, holds a tier rather than choose one, and never probes with them (`--coordination PATH` reads another file).
+- A settings file that exists but cannot be read stops `coord.py launch` and `usage.py` with an error; neither falls back to defaults. A missing default file means no rules.
 - Use it when the owner limits a model, for example to save usage. Record the owner's decision next to the setting.
 
 ## 2. Read remaining usage for both accounts
