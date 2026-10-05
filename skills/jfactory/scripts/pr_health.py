@@ -21,7 +21,9 @@ workflow (templates/jfactory-pr-health.yml). For each open, non-draft PR into th
 With --act it does two safe things, each at most once per PR head, and it keeps the report issue:
 
   - A `behind` PR with a verified verdict at its head: ask GitHub to merge the base branch into it (update-branch).
-    One PR per check, oldest first (a merge train).
+    One PR per check, oldest first (a merge train). With --verified-behind merge (an owner choice for throughput)
+    it does not: moving a verified head throws its verdict away, so the step tells the coordinator to admin-merge the
+    verified head instead (behind only, no conflict), and the base branch's CI checks the squash.
   - A CI failure that is only infrastructure (cancelled, startup failure, the runner was lost, or the job never ran
     a step): re-run the failed jobs. It never re-runs a test failure.
 
@@ -30,7 +32,7 @@ closes it when nothing is stuck and reopens it when something is. The issue body
 actions, so the next run does not repeat one. Without --act the tool changes nothing: it reads the issue, prints
 the table and says which actions it would take.
 
-  pr_health.py --repo OWNER/NAME [--act] [--verdict-hours 1] [--idle-hours 6]
+  pr_health.py --repo OWNER/NAME [--act] [--verdict-hours 1] [--idle-hours 6] [--verified-behind update|merge]
 
 Exit status is 0, or 2 when gh fails.
 """
@@ -162,7 +164,7 @@ def first_line(record):
     return (text.strip().splitlines() or ['no evidence given'])[0][:120]
 
 
-def classify(repo, pr, now, verdict_hours=1, idle_hours=6):
+def classify(repo, pr, now, verdict_hours=1, idle_hours=6, verified_behind='update'):
     """Return a dict with the PR's state, the time since its last activity, the next step and the action it
     allows ('update' or 'rerun', with the run ids), or none."""
     head = pr['headRefOid']
@@ -207,6 +209,10 @@ def classify(repo, pr, now, verdict_hours=1, idle_hours=6):
         return state('partial', f'{step} Verdict ({kind}): "{said}"')
     if merge_state == 'BEHIND':
         if verdict and verdict.get('verdict') == 'verified':
+            if verified_behind == 'merge':
+                return state('behind', f'Coordinator: admin-merge the verified head {head[:7]} without updating it '
+                                       f'(gh pr merge --squash --admin --match-head-commit {head}); the base branch\'s '
+                                       'CI checks the squash, and a break there is fixed forward at once.')
             return state('behind', f'Merge the base branch into the PR (verified at {head[:7]}); then the verifier '
                                    f're-checks only the merge with --since {head[:7]}.', ('update', None))
         return state('behind', 'Author: merge the base branch into the PR branch, so the verdict covers the final head.')
@@ -363,6 +369,9 @@ def main(argv=None):
     parser.add_argument('--act', action='store_true', help='do the safe actions and keep the report issue')
     parser.add_argument('--verdict-hours', type=float, default=1)
     parser.add_argument('--idle-hours', type=float, default=6)
+    parser.add_argument('--verified-behind', choices=['update', 'merge'], default='update',
+                        help='update: merge the base branch into a verified, behind PR (a merge train); merge: leave '
+                             'its verified head alone and tell the coordinator to admin-merge it (an owner choice)')
     parser.add_argument('--now', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     now = when(args.now) if args.now else datetime.now(timezone.utc)
@@ -370,7 +379,7 @@ def main(argv=None):
         base = json.loads(vp.run('gh', 'api', f'repos/{args.repo}'))['default_branch']
         prs = json.loads(vp.run('gh', 'pr', 'list', '--repo', args.repo, '--base', base, '--state', 'open',
                                 '--limit', '100', '--json', FIELDS))
-        results = [classify(args.repo, pr, now, args.verdict_hours, args.idle_hours)
+        results = [classify(args.repo, pr, now, args.verdict_hours, args.idle_hours, args.verified_behind)
                    for pr in prs if not pr.get('isDraft')]
         issue = find_issue(args.repo)
         state = read_state(issue)
