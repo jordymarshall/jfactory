@@ -241,10 +241,26 @@ def model_rules(path=DEFAULT_COORDINATION, required=False):
             raise SystemExit(f'usage.py: {path} does not exist')
         return {}, set()
     try:
-        data = json.loads(path.read_text())
-        return dict(data.get('models') or {}), set(data.get('forbidden_models') or [])
-    except (OSError, ValueError, AttributeError, TypeError) as error:
+        return parse_model_rules(json.loads(path.read_text()))
+    except (OSError, ValueError) as error:
         raise SystemExit(f'usage.py: cannot read the model rules in {path}: {error}')
+
+
+def parse_model_rules(data):
+    """Validate the settings' model rules; raise ValueError on any wrong type, so no reader silently drops a rule.
+    `models` is an object mapping an agent to a non-empty model id; `forbidden_models` is a list of model ids."""
+    if not isinstance(data, dict):
+        raise ValueError('the settings must be a JSON object')
+    models = data.get('models', {})
+    forbidden = data.get('forbidden_models', [])
+    if not isinstance(models, dict) or not all(isinstance(k, str) and k and isinstance(v, str) and v
+                                               for k, v in models.items()):
+        raise ValueError('"models" must map each agent to a model id, for example {"codex": "gpt-6.1-sol"}')
+    if not isinstance(forbidden, list) or not all(isinstance(m, str) and m for m in forbidden):
+        raise ValueError('"forbidden_models" must be a list of model ids, for example ["gpt-6-astra"]')
+    if any(model in forbidden for model in models.values()):
+        raise ValueError('"models" names a model that "forbidden_models" forbids')
+    return dict(models), set(forbidden)
 
 
 def probe_model(agent, rules):

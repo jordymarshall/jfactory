@@ -265,7 +265,8 @@ class UsageTests(unittest.TestCase):
         self.assertIn('session create --agent codex --model gpt-6.1-sol', calls)
         self.assertNotIn('gpt-6-luna', calls)
         # A settings file that exists but is broken, or a named file that is missing, stops before any probe or choice.
-        for bad in ('{"forbidden_models": ["gpt-6-astra"]', None):
+        for bad in ('{"forbidden_models": ["gpt-6-astra"]', '{"forbidden_models": "gpt-6-astra"}',
+                    '{"models": {"codex": 5}}', '[]', None):
             path = self.state / 'broken.json'
             if bad is None:
                 path.unlink()

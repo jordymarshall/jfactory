@@ -252,6 +252,8 @@ def policy(root):
             override = json.loads(path.read_text())
         except ValueError as error:
             raise Refused(f'Cannot read the model rules in {POLICY_FILE}: {error}; fix it before launching')
+        if not isinstance(override, dict):
+            raise Refused(f'Cannot read the model rules in {POLICY_FILE}: the settings must be a JSON object')
         merged['limit'] = override.get('limit', merged['limit'])
         merged['repo_limit'] = override.get('repo_limit', merged['repo_limit'])
         merged['merge_deploys'] = override.get('merge_deploys')
@@ -280,9 +282,8 @@ def model_rules(root):
     if not path.is_file():
         return {}, set()
     try:
-        data = json.loads(path.read_text())
-        return dict(data.get('models') or {}), set(data.get('forbidden_models') or [])
-    except (OSError, ValueError, AttributeError, TypeError) as error:
+        return usage.parse_model_rules(json.loads(path.read_text()))
+    except (OSError, ValueError) as error:
         raise Refused(f'Cannot read the model rules in {POLICY_FILE}: {error}; fix it before launching')
 
 

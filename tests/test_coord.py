@@ -540,9 +540,12 @@ class CoordTest(unittest.TestCase):
         self.assertEqual((worker['agent'], worker['model']), ('codex', 'gpt-6.1-sol'))
         self.assertIn('breaks the one-model rule', self.coord('launch', '1', 'b', '--brief', str(self.brief), '--agent',
                                                              'codex', '--model', 'gpt-6-luna', ok=False))
-        (self.tmp / '.jfactory' / 'coordination.json').write_text('{"forbidden_models": ["gpt-6-astra"]')
-        self.assertIn('Cannot read the model rules', self.coord('launch', '1', 'b', '--brief', str(self.brief), '--agent',
-                                                                'codex', ok=False))
+        for broken in ('{"forbidden_models": ["gpt-6-astra"]', '{"forbidden_models": "gpt-6-astra"}',
+                       '{"models": {"codex": ""}}', '{"models": ["gpt-6.1-sol"]}', '[]',
+                       '{"models": {"codex": "gpt-6-astra"}, "forbidden_models": ["gpt-6-astra"]}'):
+            (self.tmp / '.jfactory' / 'coordination.json').write_text(broken)
+            self.assertIn('Cannot read the model rules', self.coord('launch', '1', 'b', '--brief', str(self.brief),
+                                                                    '--fallback', '--reason', 'Claude 95%', ok=False))
         (self.tmp / '.jfactory' / 'coordination.json').write_text(json.dumps(
             {'models': {'codex': 'gpt-6.1-sol'}, 'forbidden_models': ['gpt-6-astra']}))
         self.assertIn('codex/gpt-6-astra is forbidden by "forbidden_models"',
