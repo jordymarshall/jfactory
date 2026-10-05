@@ -186,7 +186,7 @@ Do not depend on a loop inside one agent chat to watch PRs. The chat ends, and t
 | `conflict` | The author merges the base branch and resolves the conflicts. |
 | `ci-failed` | The author fixes the failing check. An infrastructure failure gets one automatic re-run per head. |
 | `partial` | The latest verdict at the head is `partially-verified`, `blocked` or `failed`. The table quotes the first line of its evidence and names who acts. |
-| `behind` | A verified PR gets the base branch merged in automatically, once per head, one PR at a time (oldest first, a merge train: [queue operations](ci-runners.md#queue-operations-fewer-jobs-before-more-machines)). The verifier then re-checks only the merge with `--since`. |
+| `behind` | A verified PR gets the base branch merged in automatically, once per head, one PR at a time (oldest first, a merge train: [queue operations](ci-runners.md#queue-operations-fewer-jobs-before-more-machines)). The verifier then re-checks only the merge with `--since`. With `--verified-behind merge` (an owner choice for throughput) the check leaves the verified head alone: the coordinator admin-merges it (`gh pr merge --squash --admin --match-head-commit <head>`) when it is only behind, with no conflict, and the base branch's CI checks the squash. A break there is fixed forward at once. |
 | `needs-verdict` | CI is green for more than 1 hour, and no verdict exists at the head. The verifier posts one. |
 | `gate-failed`, `not-queued`, `no-ci`, `idle` | The table says what is missing. `idle` means no commit, check or comment for more than 6 hours. |
 

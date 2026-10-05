@@ -116,6 +116,17 @@ class PrHealthTest(unittest.TestCase):
         self.assertTrue([t for t in tokens if t[1][:2] == ['pr', 'list']])
         self.assertEqual({t[2] for t in tokens if t not in writes}, {'built-in'})
 
+    def test_verified_behind_merge_leaves_the_verified_head_alone(self):
+        # Owner choice (Loopcraft, 2026-10-05): an update moves a verified head and throws its verdict away, so the
+        # coordinator admin-merges a verified PR that is only behind. Unverified PRs are unchanged (no update either way).
+        self.set(pr_list=[pr(9, comments=[verdict()], merge='BEHIND'), pr(10, merge='BEHIND')])
+        out = self.run_tool('--act', '--verified-behind', 'merge')
+        self.assertFalse(self.db().get('updates'))
+        self.assertIn(f'admin-merge the verified head {HEAD[:7]}', self.row(out, 9))
+        self.assertIn(f'--match-head-commit {HEAD}', self.row(out, 9))
+        self.assertIn('Author: merge the base branch', self.row(out, 10))
+        self.assertNotIn('#9: merged the base branch', out)
+
     def test_updates_a_verified_behind_pr_once_per_head(self):
         self.set(pr_list=[pr(9, comments=[verdict()], merge='BEHIND')])
         out = self.run_tool('--act')

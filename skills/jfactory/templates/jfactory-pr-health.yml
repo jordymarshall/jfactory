@@ -6,6 +6,8 @@
 # (a fine-grained token with contents and pull requests write) so CI runs on the merge commit that update-branch makes.
 # Without it, the report names the PR as no-ci after the update. The secret is used for that write only: reads use the
 # built-in token, because a fine-grained token often cannot read check and status results.
+# Add --verified-behind merge to the command when the owner prefers admin-merging a verified PR that is only behind to
+# updating it (an update moves the head and needs a new verdict; references/coordination.md#the-stuck-pr-check).
 name: jfactory PR health
 on:
   schedule:
