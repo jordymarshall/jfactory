@@ -93,7 +93,37 @@ The PR rate stays about the same, and the machine is fixed. Queue time falls onl
 10. **Cap the workers, not just the work.** Each program has its own concurrency limit, but all programs share one queue. Set `repo_limit` in `.jfactory/coordination.json` from the jobs each worker adds per hour and the runners (start near the number of main runners; raise it when each PR needs fewer jobs); `coord.py launch` refuses beyond it.
 11. **Debounce pushes.** The first job of a PR run waits about a minute on the light pool before any big job starts, so a quick second push cancels the run cheaply.
 12. **Watch the queue.** The stuck-PR check reports the number of waiting runs and the oldest wait, and keeps its issue open while the oldest wait is 30 minutes or more.
-13. **Then add machines.**
+13. **Then add machines** ([adding machines](#adding-machines-lessons-from-a-live-setup)).
+
+## Adding machines: lessons from a live setup
+
+One night of adding CI machines on a cloud provider (Hetzner Cloud, 2026-10-05) failed several times in ways that are easy to avoid. Terms used below:
+
+- A **base server** is the always-on machine.
+- A **burst server** is a temporary machine added while jobs queue.
+- **Hosted overflow** sends jobs to GitHub's own runners.
+- A **vCPU** is one virtual processor.
+- A **canary** is a short test job.
+- To **fail closed** is to stop and register nothing when a check fails.
+
+Check these before you add a machine:
+
+- **Provider limits apply to the whole account.** Hetzner's resource limits (dedicated vCPU, shared vCPU, server count) are per account ([Hetzner FAQ](https://docs.hetzner.com/cloud/general/faq/)), so a new project does not get new capacity. On 2026-10-05 a second project was refused the same way as the first. A new account can start with a dedicated-vCPU limit of 0. The API does not show the limits: read them in the console (Limits) and ask for more there. Know the limits before you design the capacity, and ask the owner to raise them first.
+- **HTTP 403 `resource_limit_exceeded` means a limit, not a bad token.** Do not retry in a loop, and do not replace the token. Report the exact error and the limit to raise.
+- **HTTP 401 means a bad token.** Check the token's length before anything else (a Hetzner Cloud token has 64 characters; a token pasted twice has 128). Never print the value.
+- **Know which project a token belongs to.** List its servers. Burst servers usually share a project with the base server, so the delete guards below matter.
+- **Running sessions keep old environment values.** After a shared variable changes, start a fresh session (in Conductor, new workspaces get it after "Build computer") and check the value's length there.
+- **Server types and prices differ by region.** A type can exist only in some regions (Hetzner's CPX62 is EU only), and the same type costs more in some regions. Check the type in the target region before you promise it. Measure the latency cost when jobs in one region reach a database in another.
+- **Resize with "CPU and RAM only".** A provider cannot shrink a disk, so a full resize cannot be reversed. A resize also powers the server off: drain it first, and never resize the base automatically.
+- **A powered-off server is still billed.** Delete idle burst servers; never only stop them.
+- **Check the hosted budget before overflow.** When GitHub's Actions budget is used up, jobs on `ubuntu-latest` fail within seconds. No step runs. The annotation says "an Actions budget is preventing further use".
+- **Warm a new machine before it takes jobs.** On a fresh machine with the [shared cache](#warm-runners-share-a-cache-on-the-machine), several runners install Node into the empty toolcache at once. The first jobs then fail in their first minute with `npm: command not found` (exit 127) or `EEXIST`. Pre-install the tool versions in the toolcache, or give each runner its own `RUNNER_TOOL_CACHE`.
+- **Give each build enough memory.** A Next build that reached its container's memory limit was killed (`CONSTRAINT_MEMCG`, a memory-cgroup limit). A cap alone does not prevent this. Give each runner enough memory for the largest build. Here a Next build needs 6 GB. Keep the sum of all runners' memory within the machine.
+- **Fail closed.** First warm up the tools. Then run a canary: `node -v`, `npm -v` and a short build step in the runner image. Register runners with GitHub only after both pass. If either fails, register nothing and delete the machine.
+- **Guard every delete.** Select burst servers by a label AND a name prefix, refuse the base server by name, and fetch the server again just before the delete.
+- **Cap the spend.** Set a daily spend cap. Before each create, add the new server's cost to today's spend. Count a reserve for one long job and the idle time before delete. Refuse the create if the total passes the cap. Above the cap, ask the owner.
+- **Drain by removing idle runners.** `runners.py down` waits for busy runners. Idle runners keep taking new jobs meanwhile, so on a long queue the drain may not finish. At its `--wait` deadline (30 minutes by default), `down` names the busy runners it left and exits non-zero. So stop the supervisor first. Under systemd, stop the service; with `Restart=always`, `down` alone lets systemd start the supervisor again. Then remove only the runners GitHub lists as idle, and let busy ones finish.
+- **Check before you act on a failure report.** Read the job records (runner name, start time, result) before you stop capacity. A report that "every job fails" can describe only the first minute.
 
 ## Keep it healthy
 
