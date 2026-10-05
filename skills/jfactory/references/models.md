@@ -20,6 +20,19 @@ Use this when jfactory launches or delegates to another agent: a Conductor works
 - [`usage.py`](../scripts/usage.py) encodes this table and the coordination tool builds its roles from it; change both together. A test compares them. Confirm the ids with `conductor model` before launching. If an id is missing, use the tier's other model and report the missing id.
 - Host subagents can use only the host's own models. Apply the tier where the host offers its model; otherwise inherit the current model and say so. Launch a Conductor session on another provider only when the task warrants a separate agent.
 
+### Repository model rules (enforced)
+
+A repository can bind the models for its own agents in `.jfactory/coordination.json`. The tools read these settings at every launch, so they also bind programs created before the rules existed:
+
+```json
+{"models": {"codex": "gpt-6.1-sol"}, "forbidden_models": ["gpt-6-astra"]}
+```
+
+- `models` maps an agent to the one model every role uses for it: the primary, the usage fallback, the verifier alternate and the usage probe. A launch that names another `--model` for that agent is refused.
+- `forbidden_models` lists models no launch may use. `coord.py launch` (program units and PR workspaces) refuses them with a clear error, including an explicit `--model`. `usage.py` skips them, holds a tier rather than choose one, and never probes with them (`--coordination PATH` reads another file).
+- A settings file that exists but cannot be read stops `coord.py launch` and `usage.py` with an error; neither falls back to defaults. A missing default file means no rules.
+- Use it when the owner limits a model, for example to save usage. Record the owner's decision next to the setting.
+
 ## 2. Read remaining usage for both accounts
 
 Run the usage reader before choosing a model for a new launch, before each launch batch during [coordination](coordination.md), and when an agent stops at a usage limit:
