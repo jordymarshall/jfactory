@@ -239,6 +239,20 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(out['choice']['verify'], ('claude', 'opus-5-5-1m', 'low'))
         self.assertFalse(out['fast']['verify'])
 
+    def test_repository_model_rules_replace_and_forbid_models(self):
+        # Owner, 2026-10-05 (Loopcraft): every Codex session uses gpt-6.1-sol; gpt-6-astra is forbidden.
+        rules = self.state / 'coordination.json'
+        rules.write_text(json.dumps({'models': {'codex': 'gpt-6.1-sol'}, 'forbidden_models': ['gpt-6-astra']}))
+        self.claude(20, 95, 1)
+        self.codex_log(10, 1)
+        out = self.run_usage('--coordination', str(rules))
+        self.assertEqual(out['choice']['frontier'], ('codex', 'gpt-6.1-sol', None))
+        self.assertEqual(out['choice']['trivial'], ('codex', 'gpt-6.1-sol', None))
+        rules.write_text(json.dumps({'forbidden_models': ['gpt-6-astra']}))
+        out = self.run_usage('--coordination', str(rules))
+        self.assertIsNone(out['choice']['frontier'][0])  # holds rather than launch a forbidden model
+        self.assertIn('gpt-6-astra skipped: forbidden', out['choices'][0]['reason'])
+
     def test_policy_matches_model_reference(self):
         sys.path.insert(0, str(SCRIPT.parent))
         try:

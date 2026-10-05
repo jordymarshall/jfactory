@@ -529,6 +529,27 @@ class CoordTest(unittest.TestCase):
         self.coord('launch', '1', 'a', '--brief', str(self.brief))
         self.assertEqual(self.db()['workspaces'][0]['model'], 'gpt-5.6-sol')
 
+    def test_repository_model_rules_bind_old_programs_and_refuse_forbidden_models(self):
+        # The program saves its role policy (Astra fallback) BEFORE the repository adds the rules; launches still obey them.
+        self.start(['a', '--objective', 'x'], ['b', '--objective', 'y'], limit=3)
+        (self.tmp / '.jfactory').mkdir(exist_ok=True)
+        (self.tmp / '.jfactory' / 'coordination.json').write_text(json.dumps(
+            {'models': {'codex': 'gpt-6.1-sol'}, 'forbidden_models': ['gpt-6-astra']}))
+        self.coord('launch', '1', 'a', '--brief', str(self.brief), '--fallback', '--reason', 'Claude weekly 95%')
+        worker = self.db()['workspaces'][-1]
+        self.assertEqual((worker['agent'], worker['model']), ('codex', 'gpt-6.1-sol'))
+        self.assertIn('codex/gpt-6-astra is forbidden by "forbidden_models"',
+                      self.coord('launch', '1', 'b', '--brief', str(self.brief), '--agent', 'codex',
+                                 '--model', 'gpt-6-astra', ok=False))
+        message = self.tmp / 'pr.md'
+        message.write_text('Fix PR 7.')
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a'}})
+        self.coord('launch', '--role', 'fix', '--pr', '7', '--branch', 'feat/a', '--agent', 'codex',
+                   '--message-file', str(message))
+        self.assertEqual(self.db()['workspaces'][-1]['model'], 'gpt-6.1-sol')
+        self.assertIn('is forbidden', self.coord('launch', '--role', 'build', '--pr', '7', '--agent', 'codex',
+                                                 '--model', 'gpt-6-astra', '--message-file', str(message), ok=False))
+
     def test_partial_role_override_keeps_the_rest_of_the_role(self):
         (self.tmp / '.jfactory').mkdir()
         (self.tmp / '.jfactory' / 'coordination.json').write_text(json.dumps(

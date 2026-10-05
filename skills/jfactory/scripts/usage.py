@@ -226,9 +226,23 @@ def earliest_reset(reading, reserve):
     return min(times) if times else None
 
 
-def choose(tier, readings, reserve, implementer=None, allow_same_family=False):
+def model_rules(path='.jfactory/coordination.json'):
+    """The repository's `models` (agent -> model) and `forbidden_models` from .jfactory/coordination.json."""
+    try:
+        data = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return {}, set()
+    return dict(data.get('models') or {}), set(data.get('forbidden_models') or [])
+
+
+def choose(tier, readings, reserve, implementer=None, allow_same_family=False, rules=None):
     notes = []
-    options = POLICY[tier]
+    models, forbidden = rules or ({}, set())
+    options = [(a, models.get(a, m), e, f) for a, m, e, f in POLICY[tier]]
+    for a, m, *_ in list(options):
+        if m in forbidden:
+            notes.append(f'{a}/{m} skipped: forbidden by the repository')
+    options = [o for o in options if o[1] not in forbidden]
     if tier == 'verify' and implementer:
         other = [option for option in options if option[0] != implementer]
         if allow_same_family:
@@ -303,12 +317,15 @@ def main():
     parser.add_argument('--codex-home', default=os.environ.get('CODEX_HOME') or str(Path.home() / '.codex'))
     parser.add_argument('--map', default='.jfactory/verification.json',
                         help='verification map whose "allow_same_family" lets a verifier fall back to the implementer\'s family')
+    parser.add_argument('--coordination', default='.jfactory/coordination.json',
+                        help='repository settings whose "models" and "forbidden_models" override the policy')
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
 
     readings = collect(args)
     same = allow_same_family(args.map)
-    choices = [choose(tier, readings, args.reserve, args.implementer, same) for tier in (args.tier or list(POLICY))]
+    rules = model_rules(args.coordination)
+    choices = [choose(tier, readings, args.reserve, args.implementer, same, rules) for tier in (args.tier or list(POLICY))]
     if args.json:
         print(json.dumps({'checked_at': iso(now()), 'reserve_percent': args.reserve, 'accounts': readings,
                           'choices': choices}, indent=2))
