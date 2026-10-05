@@ -33,6 +33,8 @@ Only coordinators message the hub. Each message starts with one tag:
 
 Workers report to their coordinator. When a worker messages you, run `hub.py route --from <its session> --reply`: it tells the worker to go through its coordinator.
 
+**Check the records before you brief or decide.** Before you write a brief, answer a coordinator or apply a default, search the repository's records for prior decisions on the subject: the task tracker and its tasks, dated design reviews and decisions, `outcomes/`, ops documents and this ledger (`hub.py ledger list`). Cite the sources that agree in the brief or the answer. If the new decision contradicts an old one, either keep the old guidance, or record a dated decision (what changes, why, who decided) and have the owning agent mark the old lines superseded. Every number in a brief or a decision comes from a measured or recorded source, never a guess. Every brief you write carries the same rule for its worker.
+
 ## 3. What goes out to the owner
 
 Message the owner only for:

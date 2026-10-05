@@ -239,6 +239,7 @@ class HubTest(unittest.TestCase):
         launch = next(w for w in self.db()['workspaces'] if w['name'].endswith('grid') or 'grid' in w['message'])
         self.assertIn('Never message the agent hub', launch['message'])
         self.assertIn('Never print secrets in tool output', launch['message'])
+        self.assertIn('No regressions against past decisions', launch['message'])
         self.assertIn("run the reviewer's checklist on your own change", launch['message'])
         self.assertIn('verify_plan.py prereview', launch['message'])
         # PR agents get the checklist and the routing rule appended to whatever their launcher wrote.
