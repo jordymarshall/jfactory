@@ -59,6 +59,7 @@ def managed_block(skill_path):
             'Check the installed version and overlapping PRs when working across worktrees. '
             'Review status does not establish verification or merge readiness. After verification, enable protected auto-merge under the repository\'s standing authorization; follow jfactory\'s auto-merge procedure. '
             'In-session subagents only do read-only research; work that splits into independent units or is too big for one session goes to separate Conductor workspaces launched with coord.py. '
+            f'Run the reviewer\'s checklist on your own change before every push and every verdict request: `python3 {skill_path}/scripts/verify_plan.py prereview` checks the PR description, the map, screenshots for changed screens and the planned local suites, and prints the items left to you (evidence for each criterion, an adversarial self-review). '
             'CI confirms what you already checked: run the planned checks before each push, classify a CI failure before re-running it (infrastructure gets one re-run), and fix a red base branch first. '
             'Keep auto-merge off when required proof, permissions or enforced checks are missing. Never bypass checks or push the base branch directly. Respect the repository\'s release policy. '
             'Preserve this repository’s product decisions and applicable instructions.\n\n'

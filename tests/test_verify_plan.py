@@ -1084,6 +1084,95 @@ class RunTest(unittest.TestCase):
     def ran(self):
         return sorted(p.name for p in self.root.glob('ran-*'))
 
+    def body(self, text):
+        path = self.root.parent / f'{self.root.name}-body.md'
+        path.write_text(text)
+        return str(path)
+
+    def test_prereview_runs_the_reviewers_checklist_before_a_push(self):
+        # Owner, 2026-10-04: agents always run the review checklist before CI.
+        self.change('cli/run.py')
+        good = self.body('## Objective\nRun the CLI faster for every user.\n')
+        out = self.run_script('prereview', '--base', 'main', '--body-file', good)
+        self.assertIn('PASS: Map audit passes', out)
+        self.assertIn('PASS: PR description starts with its objective', out)
+        self.assertIn('PASS: cli passed', out)
+        self.assertEqual(self.ran(), ['ran-cli', 'ran-unit'])
+        self.assertIn('NOTE: Not pushed yet', out)
+        self.assertIn('Self-review the diff as an adversarial verifier would', out)
+        # A missing objective and an unmapped file each fail it.
+        out = self.run_script('prereview', '--base', 'main', '--body-file', self.body('Some notes\n'),
+                              '--skip-suites', code=1)
+        self.assertIn('FAIL: PR description must start with "## Objective"', out)
+        self.change('lib/new.py')
+        self.assertIn('FAIL: Map audit', self.run_script('prereview', '--base', 'main', '--body-file', good,
+                                                        '--skip-suites', code=1))
+
+    def fake_pr(self, **pr):
+        """A fake `gh` whose `pr view` answers with this PR (state, headRefOid, body)."""
+        exe = self.root.parent / f'{self.root.name}-gh'
+        data = self.root.parent / f'{self.root.name}-pr.json'
+        data.write_text(json.dumps(pr))
+        exe.write_text(f'#!/bin/sh\ncat "{data}"\n')
+        exe.chmod(0o755)
+        os.environ['JFACTORY_GH'] = str(exe)
+        self.addCleanup(os.environ.pop, 'JFACTORY_GH', None)
+
+    def head(self):
+        return subprocess.run(['git', '-C', str(self.root), 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
+
+    def test_prereview_wants_screenshots_at_every_viewport_for_changed_screens(self):
+        self.change('app/briefs/a.py')
+        plain = self.body('## Objective\nSave briefs for every user.\n')
+        out = self.run_script('prereview', '--base', 'main', '--body-file', plain, code=1)
+        self.assertIn('FAIL: Changed screens (briefs) need screenshots', out)
+        # Verifier finding: one desktop image is not enough; the phone size is required too.
+        desktop = self.body('## Objective\nSave briefs for every user.\n\n![desktop](evidence/briefs-1440.png)\n')
+        self.assertIn('missing 390', self.run_script('prereview', '--base', 'main', '--body-file', desktop, code=1))
+        both = self.body('## Objective\nSave briefs for every user.\n\n![briefs at 1440](a.png)\n'
+                         '![briefs at 390x667](b.png)\n')
+        self.assertIn('PASS: Screenshots linked for the changed screens at 1440, 390',
+                      self.run_script('prereview', '--base', 'main', '--body-file', both))
+
+    def test_prereview_why_its_right_names_the_outcomes_and_standards_when_they_exist(self):
+        (self.root / 'outcomes').mkdir()
+        (self.root / 'outcomes/README.md').write_text('# Outcomes\n')
+        (self.root / '.jfactory/standards.md').write_text('# Standards\n')
+        self.write_config(static=['README.md', '.gitignore', 'outcomes/**', '.jfactory/standards.md'])
+        self.git('add', '-A')
+        self.git('commit', '-qm', 'docs')
+        self.change('cli/run.py')
+        thin = self.body("## Objective\nRun the CLI faster.\n\n## Why it's right\n- Serves the CLI users.\n")
+        out = self.run_script('prereview', '--base', 'main', '--body-file', thin, '--skip-suites', code=1)
+        self.assertIn("FAIL: 'Why it's right' must name outcomes/README.md, .jfactory/standards.md", out)
+        full = self.body("## Objective\nRun the CLI faster.\n\n## Why it's right\n- `outcomes/README.md`: speed.\n"
+                         "- No job document changes.\n- `.jfactory/standards.md`: performance row.\n")
+        self.run_script('prereview', '--base', 'main', '--body-file', full)
+
+    def test_prereview_for_a_verdict_needs_an_open_pr_at_this_head_and_run_suites(self):
+        self.change('cli/run.py')
+        good = self.body('## Objective\nRun the CLI faster for every user.\n')
+        # Not pushed and no upstream: a verdict request fails.
+        self.assertIn('FAIL: Push first', self.run_script('prereview', '--base', 'main', '--body-file', good,
+                                                          '--for', 'verdict', code=1))
+        remote = self.root.parent / f'{self.root.name}-remote.git'
+        subprocess.run(['git', 'init', '-q', '--bare', str(remote)], check=True)
+        self.git('remote', 'add', 'origin', str(remote))
+        self.git('push', '-q', '-u', 'origin', 'task')
+        self.fake_pr(state='CLOSED', headRefOid=self.head(), body='## Objective\nRun the CLI faster for every user.\n')
+        self.assertIn('PR is CLOSED', self.run_script('prereview', '--base', 'main', '--for', 'verdict', code=1))
+        self.fake_pr(state='OPEN', headRefOid='0' * 40, body='## Objective\nRun the CLI faster for every user.\n')
+        self.assertIn('needs an open PR whose head is this commit',
+                      self.run_script('prereview', '--base', 'main', '--for', 'verdict', code=1))
+        self.fake_pr(state='OPEN', headRefOid=self.head(), body='## Objective\nRun the CLI faster for every user.\n')
+        self.assertIn('PASS: The PR is open at head', self.run_script('prereview', '--base', 'main', '--for', 'verdict'))
+        # A list-only run never passes: it fails a verdict request and is 'incomplete' before a push.
+        self.assertIn('FAIL: Planned local suites, not run',
+                      self.run_script('prereview', '--base', 'main', '--for', 'verdict', '--skip-suites', code=1))
+        out = self.run_script('prereview', '--base', 'main', '--skip-suites', code=3)
+        self.assertIn('Prereview incomplete', out)
+        self.assertNotIn('Prereview passed', out)
+
     def test_full_suite_command_reads_the_owners_choice(self):
         self.assertEqual(self.run_script('full-suite', '--event', 'schedule').strip(), 'mode=full')
         self.write_config(full_suite='on-request')

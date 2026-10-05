@@ -1524,6 +1524,118 @@ def cmd_smoke(args):
     return 0 if ok else 1
 
 
+MANUAL_REVIEW = (
+    'Each acceptance criterion has evidence at the head you push (command and result, or a link).',
+    'Self-review the diff as an adversarial verifier would: against the job document, the standards map and the '
+    "feature's risks (saved data, access, spending, motion and reduced motion, accessibility, test locators).",
+)
+IMAGE_REF_RE = re.compile(r'!\[([^\]]*)\]\(([^)\s]+)[^)]*\)|(\S+\.(?:png|jpe?g|webp|gif))\b', re.I)
+
+
+def image_refs(body):
+    """Every screenshot reference in a description: markdown images (alt text and target) and bare image links."""
+    body = re.sub(r'<!--.*?(-->|$)', '', body or '', flags=re.S)
+    return [' '.join(part for part in match.groups() if part) for match in IMAGE_REF_RE.finditer(body)]
+
+
+def why_section(body):
+    body = re.sub(r'<!--.*?(-->|$)', '', body or '', flags=re.S)
+    match = re.search(r"^#+\s*Why it.s right.*?$(.*?)(?=^#+\s|\Z)", body, re.S | re.M | re.I)
+    return match.group(1) if match else ''
+
+
+def cmd_prereview(args):
+    """The reviewer's checklist, run by the author before every push and every verdict request (owner, 2026-10-04):
+    what a script can check is checked here; the rest is printed for the author to do."""
+    config = load_config(root='.')
+    result = plan(git_files(args.base), config, screens_only=True)
+    failed, notes = [], []
+
+    def check(ok, good, bad):
+        (notes if ok else failed).append(good if ok else bad)
+
+    audit_fails = [text for level, text in audit(tracked_files(), config) if level == 'FAIL']
+    check(not audit_fails, 'Map audit passes: every tracked file is mapped', 'Map audit: ' + '; '.join(audit_fails))
+    # The PR itself is always read from GitHub; --body-file replaces only its description text.
+    try:
+        pr = json.loads(run('gh', 'pr', 'view', '--json', 'state,headRefOid,body'))
+    except (Refused, ValueError):
+        pr = None
+    body = Path(args.body_file).read_text() if args.body_file else (pr or {}).get('body')
+    if result['level'] == 'static':
+        notes.append('Static-only change: no PR description sections required')
+    elif body is None:
+        check(args.mode == 'push', 'No PR yet: open it from the PR template; rerun prereview before the verdict',
+              'No PR description found: open the PR before asking for a verdict')
+    else:
+        check(states_objective(body), 'PR description starts with its objective',
+              'PR description must start with "## Objective" and the objective')
+        why = why_its_right_problem(body, config)
+        check(not why, "PR description has 'Why it's right' naming its outcomes/<job>.md documents", why)
+        section = why_section(body)
+        wanted = [doc for doc in ('outcomes/README.md', '.jfactory/standards.md') if Path(doc).is_file()]
+        missing = [doc for doc in wanted if doc not in section]
+        check(not missing, "'Why it's right' also names " + (', '.join(wanted) or 'nothing else required'),
+              "'Why it's right' must name " + ', '.join(missing) + ' (the outcomes it serves and the standards rows it meets)')
+        if result['screen_features']:
+            refs = image_refs(body)
+            viewports = [str(v) for v in config.get('screenshot_viewports', ['1440', '390'])]
+            lacking = [v for v in viewports if not any(v in ref for ref in refs)]
+            needed = len(result['screen_features']) * len(viewports)
+            check(not lacking and len(refs) >= needed,
+                  f'Screenshots linked for the changed screens at {", ".join(viewports)} ({len(refs)} images)',
+                  'Changed screens (' + ', '.join(result['screen_features']) + f') need screenshots at each viewport '
+                  f'({", ".join(viewports)}; name each image or its alt text with the width): ' +
+                  (f'missing {", ".join(lacking)}' if lacking else f'{len(refs)} of at least {needed} images'))
+    dirty = run('git', 'status', '--porcelain').strip()
+    upstream = subprocess.run(['git', 'rev-parse', '@{u}'], capture_output=True, text=True).stdout.strip()
+    head = run('git', 'rev-parse', 'HEAD').strip()
+    pushed = bool(upstream) and upstream == head and not dirty
+    if args.mode == 'verdict':
+        check(pushed, f'Head {head[:7]} is pushed and the tree is clean',
+              'Push first: the verdict is for the pushed head, with a clean working tree')
+        check(bool(pr) and pr.get('state') == 'OPEN' and pr.get('headRefOid') == head,
+              f'The PR is open at head {head[:7]}',
+              'The verdict needs an open PR whose head is this commit' +
+              (f" (PR is {pr.get('state')} at {str(pr.get('headRefOid'))[:7]})" if pr else ' (no PR found)'))
+    elif not pushed:
+        notes.append('Not pushed yet: push once after this passes')
+    defs = config.get('suites', {})
+    local = [s for s in result['suites'] if not defs.get(s, {}).get('target') and s not in live_suites(config)]
+    if args.skip_suites and local:
+        # A list-only run never certifies the local checks: a verdict request needs them run.
+        (failed if args.mode == 'verdict' else notes).append(
+            'Planned local suites, not run (--skip-suites): ' + ', '.join(local))
+    for suite in local:
+        command = defs.get(suite, {}).get('run')
+        if placeholder(command):
+            failed.append(f'Suite {suite} has no "run" command in {CONFIG}')
+            continue
+        if args.skip_suites:
+            continue
+        print(f'::group::{suite}: {command}', flush=True)
+        code, minutes = shell(command, dict(os.environ))
+        print('::endgroup::', flush=True)
+        check(code == 0, f'{suite} passed in {minutes} min', f'{suite} failed ({code})')
+    for line in notes:
+        print(f'PASS: {line}' if not line.startswith(('No PR yet', 'Not pushed', 'Planned local')) else f'NOTE: {line}')
+    for line in failed:
+        print(f'FAIL: {line}')
+    print('\nStill yours to do before you push (the verifier checks these too):')
+    for n, item in enumerate(MANUAL_REVIEW, 1):
+        print(f'  {n}. {item}')
+    if failed:
+        print(f'\nPrereview found {len(failed)} problem(s). Fix them, rerun prereview, then push once.')
+        return 1
+    if args.skip_suites and local:
+        print('\nPrereview incomplete: the planned local suites were listed, not run. Run it without --skip-suites '
+              'before you push.')
+        return 3
+    print('\nPrereview passed. Do the manual items, then push once.' if args.mode == 'push'
+          else '\nPrereview passed for the verdict request.')
+    return 0
+
+
 def cmd_verdict(args):
     refusal = cause_refusal(args.verdict, args.cause, args.rule_change, args.rule_decision)
     if refusal:
@@ -1726,6 +1838,13 @@ def main(argv=None):
                    help='Skip the map check, when a separate CI job runs `audit` once for the whole run')
     add_event_flags(p)
     p.set_defaults(func=cmd_ci)
+    p = sub.add_parser('prereview', help="Run the reviewer's checklist on your own change before a push or a verdict")
+    p.add_argument('--base', default='origin/main')
+    p.add_argument('--for', dest='mode', choices=['push', 'verdict'], default='push',
+                   help='push (default): before pushing; verdict: the head must be pushed and the PR open')
+    p.add_argument('--body-file', help='Check this PR description instead of the open PR\'s')
+    p.add_argument('--skip-suites', action='store_true', help='List the planned local suites without running them')
+    p.set_defaults(func=cmd_prereview)
     p = sub.add_parser('smoke', help='Prove a target starts and answers where verification runs')
     p.add_argument('--target', required=True)
     p.add_argument('--no-setup', action='store_true', help='Skip the setup command (dependencies already installed)')

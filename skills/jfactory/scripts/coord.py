@@ -737,6 +737,18 @@ def cmd_launch_pr(args):
     if effort not in catalog[agent]['efforts']:
         raise Refused(f'Effort {effort} is not offered for {agent}')
     fast = fast and not (args.agent or args.model) and model in catalog[agent].get('fastModeModels', [])
+    # Every PR agent gets the routing rule and the review checklist, whatever message its launcher wrote.
+    vp = Path(__file__).resolve().with_name('verify_plan.py')
+    try:
+        vp = vp.relative_to(repo_root().resolve())
+    except ValueError:
+        pass
+    footer = (f"\n\nREVIEW CHECKLIST: before you push or post a verdict, run python3 {vp} prereview "
+              f"{'--for verdict ' if args.role == 'verify' else ''}on the PR's head and act on what it reports"
+              f"{' (the author should already have run it; its failures are findings)' if args.role == 'verify' else ''}. "
+              'You report only to the agent that launched you, never to the agent hub or the owner.\n')
+    message = Path(args.message_file).read_text() + footer
+    args.message_file = body_file(message)
     branch = args.branch
     if not branch:
         branch = json.loads(gh(args.repo, 'pr', 'view', str(args.pr), '--json', 'headRefName'))['headRefName']
@@ -917,6 +929,7 @@ def worker_footer(state, number, uid, repo):
         script = script.relative_to(repo_root().resolve())
     except ValueError:
         pass
+    vp = script.with_name('verify_plan.py')
     orders = '\n'.join(f'{i}. {o}' for i, o in enumerate(state['standing'], 1)) or 'None recorded.'
     return f"""
 
@@ -933,6 +946,7 @@ Report state changes from the repository root; each report is a comment the coor
   python3 {script} --repo {repo} report {number} {uid} --state blocked --question "decision you need"
 The owner may message you directly. Follow their feedback within this unit, and include it as an owner decision in the next report's --note so the coordinator can record it and relay it to other units. If it changes this unit's scope or affects other units, report --state blocked with a --question instead of expanding scope yourself.
 If a report says the program is on hold, stop at a safe boundary, push your work and report.
+Before every push and before you report in-review, run the reviewer's checklist on your own change: python3 {vp} prereview (add --for verdict before the in-review report). Fix what it finds, then push once.
 Stay mergeable: your workspace is your own checkout and branch. Before every push, and whenever the coordinator says the base moved, merge origin/{state.get('base', 'main')} into your branch (no rebase, no force-push), resolve any conflicts yourself, rerun the checks the merge touches, then push once.
 """
 

@@ -45,6 +45,8 @@ class InstallTests(unittest.TestCase):
         self.assertIn('the same failure twice means stop and report', block)
         self.assertIn('In-session subagents only do read-only research', block)
         self.assertIn('CI confirms what you already checked', block)
+        self.assertIn("Run the reviewer's checklist on your own change before every push and every verdict request", block)
+        self.assertIn('.agents/skills/jfactory/scripts/verify_plan.py prereview', block)
 
     def test_installs_without_git_and_records_unknown_revision(self):
         real = installer.subprocess.check_output

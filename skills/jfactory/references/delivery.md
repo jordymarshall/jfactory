@@ -12,6 +12,19 @@ Before preparing the change explanation or responding to review feedback, read t
 
 Report the PR URL, remote head SHA and actual merge state: open with auto-merge disabled, queued for auto-merge, or merged with its merge SHA. If no remote, credentials, or PR capability exists, preserve the local commit/patch and state that PR delivery is blocked. Never fabricate a URL or treat an installed skill as proof release gates are configured. A ready PR means ready for human review, not customer acceptance; protected auto-merge may merge it before the owner reads the handoff.
 
+## Review checklist before CI
+
+Owner rule, 2026-10-04, for every repository jfactory sets up: every agent runs the reviewer's checklist on its own change before it pushes for CI and before it asks for a verdict. The checklist is what the independent verifier checks, so most failed verdicts and red gates come from skipping it.
+
+1. Each acceptance criterion has evidence at the head you push.
+2. The PR description starts with `## Objective` and has a `## Why it's right` section with three bullets: the outcomes it serves (`outcomes/README.md`), the affected `outcomes/<job>.md` documents, and the `.jfactory/standards.md` rows it meets.
+3. `verify_plan.py audit` passes, so every new file is mapped.
+4. Changed screens have screenshots at the desktop and phone sizes the project uses (`screenshot_viewports` in the map; default 1440 and 390), named or captioned with the width.
+5. The planned local checks pass.
+6. You reviewed the diff as an adversarial verifier would: against the job document, the standards and the feature's risks.
+
+`verify_plan.py prereview` checks items 2 to 5 and prints 1 and 6. Use `--for verdict` before asking for a verdict: it also requires the head pushed, the tree clean and the PR open at that head. `--skip-suites` only lists the suites; it never reports a pass. Fix what it finds, then push once.
+
 ## CI confirms; it does not discover
 
 An agent that pushes to find out what fails makes CI its test runner. Every push then waits in the runner queue, and a failure costs a full CI round. Check first, and use CI to confirm.
