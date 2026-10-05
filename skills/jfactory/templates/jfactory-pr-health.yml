@@ -4,7 +4,8 @@
 # the base branch into a verified PR that is behind, and it re-runs CI jobs that failed for infrastructure reasons only.
 # Warning: GitHub starts no workflow for a commit the built-in token makes. Add a JFACTORY_PR_HEALTH_TOKEN secret
 # (a fine-grained token with contents and pull requests write) so CI runs on the merge commit that update-branch makes.
-# Without it, the report names the PR as no-ci after the update.
+# Without it, the report names the PR as no-ci after the update. The secret is used for that write only: reads use the
+# built-in token, because a fine-grained token often cannot read check and status results.
 name: jfactory PR health
 on:
   schedule:
@@ -23,6 +24,8 @@ permissions:
   # Re-runs CI jobs that failed for infrastructure reasons only.
   actions: write
   checks: read
+  # Reads commit status results in each PR's check summary.
+  statuses: read
 env:
   JFACTORY_DIR: .agents/skills/jfactory
 jobs:
@@ -37,5 +40,6 @@ jobs:
           python-version: '3.11'
       - name: Report and nudge stuck PRs
         env:
-          GH_TOKEN: ${{ secrets.JFACTORY_PR_HEALTH_TOKEN || github.token }}
+          GH_TOKEN: ${{ github.token }}
+          JFACTORY_WRITE_TOKEN: ${{ secrets.JFACTORY_PR_HEALTH_TOKEN }}
         run: python3 "$JFACTORY_DIR/scripts/pr_health.py" --repo "$GITHUB_REPOSITORY" --act
