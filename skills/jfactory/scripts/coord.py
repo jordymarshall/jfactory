@@ -248,7 +248,12 @@ def policy(root):
     merged['merge_deploys'] = None
     path = root / POLICY_FILE
     if path.is_file():
-        override = json.loads(path.read_text())
+        try:
+            override = json.loads(path.read_text())
+        except ValueError as error:
+            raise Refused(f'Cannot read the model rules in {POLICY_FILE}: {error}; fix it before launching')
+        if not isinstance(override, dict):
+            raise Refused(f'Cannot read the model rules in {POLICY_FILE}: the settings must be a JSON object')
         merged['limit'] = override.get('limit', merged['limit'])
         merged['repo_limit'] = override.get('repo_limit', merged['repo_limit'])
         merged['merge_deploys'] = override.get('merge_deploys')
@@ -261,7 +266,42 @@ def policy(root):
             if not role.get('agent') or not role.get('model'):
                 raise Refused(f'Role {name} in {POLICY_FILE} needs an agent and a model')
             merged['roles'][name] = role
+    models, _ = model_rules(root)
+    for role in merged['roles'].values():
+        for part in (role, role.get('fallback'), role.get('alternate')):
+            if part and models.get(part.get('agent')):
+                part['model'] = models[part['agent']]
     return merged
+
+
+def model_rules(root):
+    """The repository's model rules from .jfactory/coordination.json: `models` maps an agent to the one model every
+    role uses for it (for example {"codex": "gpt-6.1-sol"}), and `forbidden_models` lists models no launch may use.
+    They are read at every launch, not saved with a program, so an older program's saved role policy obeys them too."""
+    path = root / POLICY_FILE
+    if not path.is_file():
+        return {}, set()
+    try:
+        return usage.parse_model_rules(json.loads(path.read_text()))
+    except (OSError, ValueError) as error:
+        raise Refused(f'Cannot read the model rules in {POLICY_FILE}: {error}; fix it before launching')
+
+
+def enforce_model(agent, model, rules, explicit=False):
+    """The model to launch: the repository's one model for this agent, never a forbidden one. A caller who names another
+    model for a mapped agent is refused, because the owner set one model for that agent."""
+    models, forbidden = rules
+    if explicit and model in forbidden:
+        hint = f'; this repository uses {models[agent]} for {agent}' if models.get(agent) else ''
+        raise Refused(f'{agent}/{model} is forbidden by "forbidden_models" in {POLICY_FILE}{hint}')
+    if models.get(agent):
+        if explicit and model != models[agent]:
+            raise Refused(f'{agent}/{model} breaks the one-model rule in {POLICY_FILE}: {agent} uses {models[agent]} only')
+        model = models[agent]
+    if model in forbidden:
+        hint = f'; this repository uses {models[agent]} for {agent}' if models.get(agent) else ''
+        raise Refused(f'{agent}/{model} is forbidden by "forbidden_models" in {POLICY_FILE}{hint}')
+    return model
 
 
 def repo_root():
@@ -731,6 +771,7 @@ def cmd_launch_pr(args):
         raise Refused(f'{name!r} does not follow the <role>-<repo>-<pr> convention')
     (agent, model, effort, fast), _ = usage.POLICY[PR_ROLE_TIERS[args.role]]
     agent, model, effort = args.agent or agent, args.model or model, args.effort or effort or 'medium'
+    model = enforce_model(agent, model, model_rules(repo_root()), explicit=bool(args.model))
     catalog = {a['agent']: a for a in run_json('conductor', 'model', '--json')['agents']}
     if agent not in catalog or model not in catalog[agent]['models']:
         raise Refused(f'{agent}/{model} is not offered by Conductor; run `conductor model`')
@@ -1033,6 +1074,7 @@ def cmd_launch(args):
     for key in ('agent', 'model', 'effort'):
         if getattr(args, key):
             role[key] = getattr(args, key)
+    role['model'] = enforce_model(role['agent'], role['model'], model_rules(repo_root()), explicit=bool(args.model))
     pinned = role.pop('pin_efforts', {}).get(role['agent'])
     if pinned:
         if args.effort and args.effort != pinned:
