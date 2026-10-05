@@ -787,7 +787,7 @@ def cmd_launch_pr(args):
     footer = (f"\n\nREVIEW CHECKLIST: before you push or post a verdict, run python3 {vp} prereview "
               f"{'--for verdict ' if args.role == 'verify' else ''}on the PR's head and act on what it reports"
               f"{' (the author should already have run it; its failures are findings)' if args.role == 'verify' else ''}. "
-              'You report only to the agent that launched you, never to the agent hub or the owner.\n')
+              'You report only to the agent that launched you, never to the agent hub or the owner. Never print secrets in tool output: no ps aux, ps -ef or pgrep -a/-f listings, no /proc/*/cmdline or /proc/*/environ, no unfiltered env or printenv, and no environment dumps. Use pgrep -l or pgrep -x for process IDs and names, and test a variable for presence or length only. If a secret reaches output, stop and report it.\n')
     message = Path(args.message_file).read_text() + footer
     args.message_file = body_file(message)
     branch = args.branch
@@ -981,6 +981,7 @@ COORDINATION
 You are worker `{uid}` in jfactory program {state['_issue']['url']}. Follow the worker protocol in jfactory's coordination procedure.
 Only this unit is yours. Do not edit the program issue body, launch workspaces or change other units' branches.
 Never message the agent hub or the owner directly about this unit's work; report only to your coordinator with the commands below. The coordinator relays owner questions and answers.
+Never print secrets in tool output: no ps aux, ps -ef or pgrep -a/-f listings, no /proc/*/cmdline or /proc/*/environ, no unfiltered env or printenv, and no environment dumps. Use pgrep -l or pgrep -x for process IDs and names, and test a variable for presence or length only. If a secret reaches output, stop and report it.
 Report state changes from the repository root; each report is a comment the coordinator reads:
   python3 {script} --repo {repo} report {number} {uid} --state running --note "started"
   python3 {script} --repo {repo} report {number} {uid} --state in-review --pr <number> --head <sha> --note "criteria results and evidence links"
