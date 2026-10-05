@@ -97,7 +97,16 @@ The PR rate stays about the same, and the machine is fixed. Queue time falls onl
 
 ## Adding machines: lessons from a live setup
 
-One night of adding CI machines on a cloud provider (Hetzner Cloud, 2026-10-05) failed several times in ways that are easy to avoid. Terms: a **base server** is the always-on machine; a **burst server** is a temporary machine added while jobs queue; **hosted overflow** sends jobs to GitHub's own runners; a **vCPU** is one virtual processor; a **canary** is a short test job; to **fail closed** is to stop and register nothing when a check fails. Check these before you add any of them:
+One night of adding CI machines on a cloud provider (Hetzner Cloud, 2026-10-05) failed several times in ways that are easy to avoid. Terms used below:
+
+- A **base server** is the always-on machine.
+- A **burst server** is a temporary machine added while jobs queue.
+- **Hosted overflow** sends jobs to GitHub's own runners.
+- A **vCPU** is one virtual processor.
+- A **canary** is a short test job.
+- To **fail closed** is to stop and register nothing when a check fails.
+
+Check these before you add a machine:
 
 - **Provider limits apply to the whole account.** Hetzner's resource limits (dedicated vCPU, shared vCPU, server count) are per account ([Hetzner FAQ](https://docs.hetzner.com/cloud/general/faq/)), so a new project does not get new capacity. On 2026-10-05 a second project was refused the same way as the first. A new account can start with a dedicated-vCPU limit of 0. The API does not show the limits: read them in the console (Limits) and ask for more there. Know the limits before you design the capacity, and ask the owner to raise them first.
 - **HTTP 403 `resource_limit_exceeded` means a limit, not a bad token.** Do not retry in a loop, and do not replace the token. Report the exact error and the limit to raise.
@@ -109,10 +118,10 @@ One night of adding CI machines on a cloud provider (Hetzner Cloud, 2026-10-05) 
 - **A powered-off server is still billed.** Delete idle burst servers; never only stop them.
 - **Check the hosted budget before overflow.** When GitHub's Actions budget is used up, jobs on `ubuntu-latest` fail within seconds. No step runs. The annotation says "an Actions budget is preventing further use".
 - **Warm a new machine before it takes jobs.** On a fresh machine with the [shared cache](#warm-runners-share-a-cache-on-the-machine), several runners install Node into the empty toolcache at once. The first jobs then fail in their first minute with `npm: command not found` (exit 127) or `EEXIST`. Pre-install the tool versions in the toolcache, or give each runner its own `RUNNER_TOOL_CACHE`.
-- **Give each build enough memory.** A Next build that reached its container's memory limit was killed (`CONSTRAINT_MEMCG`, a memory-cgroup limit). A cap alone does not prevent this. Give each runner enough memory for the largest build (6 GB for a Next build here), and keep the sum of all runners' memory within the machine.
-- **Fail closed.** Register runners with GitHub only after the warm-up passes. Then run a canary: `node -v`, `npm -v` and a short build step in the runner image. If the canary fails, register nothing and delete the machine.
+- **Give each build enough memory.** A Next build that reached its container's memory limit was killed (`CONSTRAINT_MEMCG`, a memory-cgroup limit). A cap alone does not prevent this. Give each runner enough memory for the largest build. Here a Next build needs 6 GB. Keep the sum of all runners' memory within the machine.
+- **Fail closed.** First warm up the tools. Then run a canary: `node -v`, `npm -v` and a short build step in the runner image. Register runners with GitHub only after both pass. If either fails, register nothing and delete the machine.
 - **Guard every delete.** Select burst servers by a label AND a name prefix, refuse the base server by name, and fetch the server again just before the delete.
-- **Cap the spend.** Set a daily spend cap and refuse a create that would pass it, counting a reserve for one long job and the idle time before delete. Above the cap, ask the owner.
+- **Cap the spend.** Set a daily spend cap. Before each create, add the new server's cost to today's spend. Count a reserve for one long job and the idle time before delete. Refuse the create if the total passes the cap. Above the cap, ask the owner.
 - **Drain by removing idle runners.** `runners.py down` waits for busy runners. Idle runners keep taking new jobs meanwhile, so on a long queue the drain may not finish. At its `--wait` deadline (30 minutes by default), `down` names the busy runners it left and exits non-zero. So stop the supervisor first. Under systemd, stop the service; with `Restart=always`, `down` alone lets systemd start the supervisor again. Then remove only the runners GitHub lists as idle, and let busy ones finish.
 - **Check before you act on a failure report.** Read the job records (runner name, start time, result) before you stop capacity. A report that "every job fails" can describe only the first minute.
 
