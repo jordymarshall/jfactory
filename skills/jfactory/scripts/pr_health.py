@@ -34,6 +34,7 @@ the table and says which actions it would take.
 
 Exit status is 0, or 2 when gh fails.
 """
+import os
 import argparse
 import json
 import re
@@ -60,6 +61,25 @@ INFRA_MESSAGES = re.compile(r'lost communication with the server|The job was not
                             r'runner .* (?:was|has been) (?:deleted|removed)|The operation was canceled', re.I)
 SETUP_STEP = 'Set up job'
 JOB_URL = re.compile(r'/actions/runs/(\d+)/job/(\d+)')
+
+
+def as_writer(fn, *args):
+    """Run one write with JFACTORY_WRITE_TOKEN when it is set. Reads use GH_TOKEN (the workflow's built-in token, which
+    can read check and status results). A fine-grained token often cannot read them ("Resource not accessible by
+    personal access token" on statusCheckRollup), but only such a token makes GitHub start CI on the merge commit
+    that update-branch creates."""
+    token = os.environ.get('JFACTORY_WRITE_TOKEN')
+    if not token:
+        return fn(*args)
+    old = os.environ.get('GH_TOKEN')
+    os.environ['GH_TOKEN'] = token
+    try:
+        return fn(*args)
+    finally:
+        if old is None:
+            os.environ.pop('GH_TOKEN', None)
+        else:
+            os.environ['GH_TOKEN'] = old
 
 
 def when(text):
@@ -325,8 +345,8 @@ def act(repo, result, done, now, dry=False):
     if dry:
         return f"#{result['number']}: would {'merge the base branch into the PR' if kind == 'update' else 're-run the failed jobs'} (dry run)."
     if kind == 'update':
-        vp.run('gh', 'api', '-X', 'PUT', f"repos/{repo}/pulls/{result['number']}/update-branch",
-               '-f', f"expected_head_sha={result['head']}")
+        as_writer(vp.run, 'gh', 'api', '-X', 'PUT', f"repos/{repo}/pulls/{result['number']}/update-branch",
+                  '-f', f"expected_head_sha={result['head']}")
         line = f"#{result['number']}: merged the base branch into the PR (it was verified at {result['head'][:7]})."
     else:
         for run_id in result['action'][1]:

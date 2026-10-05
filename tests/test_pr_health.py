@@ -105,6 +105,17 @@ class PrHealthTest(unittest.TestCase):
         self.assertFalse(db.get('updates') or db.get('reruns') or db.get('issues'))
         self.assertFalse([c for c in db['calls'] if c[1:3] in (['issue', 'create'], ['issue', 'edit'])])
 
+    def test_reads_use_the_built_in_token_and_only_update_branch_uses_the_write_token(self):
+        # 2026-10-05 (Loopcraft): a fine-grained token could not read statusCheckRollup, so every run failed.
+        self.set(pr_list=[pr(9, comments=[verdict()], merge='BEHIND')])
+        self.env.update({'GH_TOKEN': 'built-in', 'JFACTORY_WRITE_TOKEN': 'writer'})
+        self.run_tool('--act')
+        tokens = self.db()['tokens']
+        writes = [t for t in tokens if t[0] == 'gh' and t[1] == ['api', '-X']]
+        self.assertEqual([t[2] for t in writes], ['writer'])
+        self.assertTrue([t for t in tokens if t[1][:2] == ['pr', 'list']])
+        self.assertEqual({t[2] for t in tokens if t not in writes}, {'built-in'})
+
     def test_updates_a_verified_behind_pr_once_per_head(self):
         self.set(pr_list=[pr(9, comments=[verdict()], merge='BEHIND')])
         out = self.run_tool('--act')

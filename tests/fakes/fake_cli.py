@@ -11,6 +11,7 @@ path = Path(os.environ['FAKE_STATE'])
 db = json.loads(path.read_text())
 tool, args = sys.argv[1], sys.argv[2:]
 db.setdefault('calls', []).append([tool, *args])
+db.setdefault('tokens', []).append([tool, args[:2], os.environ.get('GH_TOKEN')])
 
 
 def opt(name, default=None):
