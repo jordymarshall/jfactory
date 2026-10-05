@@ -902,6 +902,7 @@ class CoordTest(unittest.TestCase):
         self.assertEqual(out.splitlines()[0], 'w1')
         workspace = self.db()['workspaces'][0]
         self.assertIn('Never print secrets in tool output', workspace['message'])
+        self.assertIn('No regressions against past decisions', workspace['message'])
         self.assertEqual((workspace['name'], workspace['branch'], workspace['agent'], workspace['model'],
                           workspace['effort'], workspace['fast'], workspace['repo_url'], workspace['project']),
                          ('verify-r-7', 'feat/a', 'codex', 'gpt-6.1-sol', 'low', False, 'https://github.com/o/r', None))
