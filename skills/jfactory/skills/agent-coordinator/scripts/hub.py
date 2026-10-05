@@ -281,22 +281,27 @@ PENDING = ('open', 'answer-undelivered', 'hold-undelivered')
 
 def deliver(repo, session, text, state):
     """Send `text` to an agent: Conductor first, else a comment on its program issue, else on the hub issue.
-    Returns where it went, or None when every route failed (the caller keeps the item pending)."""
+    Every step may fail without stopping the next one. Returns where it went, or None when every route failed
+    (the caller then keeps the item pending and saves it)."""
     try:
         if message(session, text):
             return f'session {session}'
     except Refused:
         pass  # Conductor failed in an unexpected way: fall back to a comment
-    _, program = route(repo, session, state) if session else ('unknown', None)
-    target = program['number'] if program else state.get('_number')
-    if not target:
-        return None
-    try:
-        gh(repo, 'issue', 'comment', str(target), '--body-file',
-           text_file(f"@agent `{session or 'unknown'}`: {text}"))
-    except Refused:
-        return None
-    return f'issue #{target} comment'
+    program = None
+    if session:
+        try:
+            _, program = route(repo, session, state)
+        except Refused:
+            program = None  # the program list could not be read: the hub issue still works
+    note = f"@agent `{session or 'unknown'}`: {text}"
+    for target in dict.fromkeys(t for t in ((program or {}).get('number'), state.get('_number')) if t):
+        try:
+            gh(repo, 'issue', 'comment', str(target), '--body-file', text_file(note))
+            return f'issue #{target} comment'
+        except Refused:
+            continue
+    return None
 
 
 def cmd_ledger(args):
