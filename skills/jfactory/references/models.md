@@ -33,6 +33,21 @@ A repository can bind the models for its own agents in `.jfactory/coordination.j
 - A settings file that exists but cannot be read stops `coord.py launch` and `usage.py` with an error; neither falls back to defaults. A missing default file means no rules.
 - Use it when the owner limits a model, for example to save usage. Record the owner's decision next to the setting.
 
+### UI work rules (enforced)
+
+Some models do UI work badly. A repository can limit UI work to the models it trusts with a `ui` section in the same file:
+
+```json
+{"ui": {"allowed_models": {"codex": ["gpt-6-astra"], "claude": ["opus-5-5-1m", "fable-5-1"]},
+        "paths": ["src/app/*", "src/components/*", "*.css"]}}
+```
+
+- UI work is work whose result people see on a screen: screens, components, layout, styles, motion, and the review or verdict of changed screens.
+- `allowed_models` maps each agent to the only models UI work may use, best first. An agent it leaves out cannot do UI work. For UI work it replaces `models` and `forbidden_models`, so it can allow a model that is forbidden for other work.
+- A launch is UI work when it passes `--ui`, when its program unit was added with `--ui`, or when its paths match `paths`. For a PR workspace, the paths are the PR's changed files. Patterns are globs in which `*` also matches `/`.
+- `coord.py launch` maps a role's model that is not allowed to the agent's first allowed model, and refuses an explicit `--model` outside the list. `usage.py --ui` chooses each tier from the allowed models only, and holds a tier rather than choose another model.
+- Path matching cannot see work that a unit's `--paths` does not name. Mark such units `--ui`.
+
 ## 2. Read remaining usage for both accounts
 
 Run the usage reader before choosing a model for a new launch, before each launch batch during [coordination](coordination.md), and when an agent stops at a usage limit:

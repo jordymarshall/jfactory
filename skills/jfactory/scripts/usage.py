@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Read Claude and Codex plan usage and choose each tier's model under the jfactory model policy."""
 import argparse
+import fnmatch
 import json
 import os
 import subprocess
@@ -263,6 +264,51 @@ def parse_model_rules(data):
     return dict(models), set(forbidden)
 
 
+def parse_ui_rules(data):
+    """The settings' `ui` rules, or None. UI work is work whose result people see on a screen; some models do it badly.
+    `allowed_models` maps each agent to the only models UI work may use, best first; an agent it leaves out cannot do
+    UI work. `paths` lists globs (`*` also matches `/`) whose changes make a launch UI work. For UI work these rules
+    replace `models` and `forbidden_models`. Raise ValueError on any wrong type, so no reader silently drops a rule."""
+    ui = data.get('ui') if isinstance(data, dict) else None
+    if ui is None:
+        return None
+    allowed = ui.get('allowed_models') if isinstance(ui, dict) else None
+    if not isinstance(allowed, dict) or not allowed or not all(
+            isinstance(k, str) and k and isinstance(v, list) and v and all(isinstance(m, str) and m for m in v)
+            for k, v in allowed.items()):
+        raise ValueError('"ui.allowed_models" must map each agent to a non-empty list of model ids, '
+                         'for example {"claude": ["opus-5-5-1m"]}')
+    paths = ui.get('paths', [])
+    if not isinstance(paths, list) or not all(isinstance(p, str) and p for p in paths):
+        raise ValueError('"ui.paths" must be a list of path globs, for example ["src/components/*"]')
+    return {'allowed': {k: list(v) for k, v in allowed.items()}, 'paths': list(paths)}
+
+
+def ui_rules(path=DEFAULT_COORDINATION, required=False):
+    """The repository's UI rules from .jfactory/coordination.json, or None. Fails like model_rules."""
+    path = Path(path)
+    if not path.exists():
+        if required:
+            raise SystemExit(f'usage.py: {path} does not exist')
+        return None
+    try:
+        return parse_ui_rules(json.loads(path.read_text()))
+    except (OSError, ValueError) as error:
+        raise SystemExit(f'usage.py: cannot read the UI rules in {path}: {error}')
+
+
+def ui_paths(paths, ui):
+    """The changed paths that make work UI work under the rules."""
+    return [p for p in paths if any(fnmatch.fnmatchcase(p, pattern) for pattern in ui['paths'])] if ui else []
+
+
+def ui_model(agent, model, ui):
+    """The model this agent uses for UI work: the given one when allowed, else the agent's first allowed model,
+    or None when the agent cannot do UI work."""
+    allowed = ui['allowed'].get(agent) or []
+    return model if model in allowed else (allowed[0] if allowed else None)
+
+
 def probe_model(agent, rules):
     """The probe's model under the repository's rules, or None when no allowed model is left."""
     models, forbidden = rules
@@ -271,14 +317,20 @@ def probe_model(agent, rules):
     return (None, None) if model in forbidden else (model, effort)
 
 
-def choose(tier, readings, reserve, implementer=None, allow_same_family=False, rules=None):
+def choose(tier, readings, reserve, implementer=None, allow_same_family=False, rules=None, ui=None):
     notes = []
     models, forbidden = rules or ({}, set())
-    options = [(a, models.get(a, m), e, f) for a, m, e, f in POLICY[tier]]
-    for a, m, *_ in list(options):
-        if m in forbidden:
-            notes.append(f'{a}/{m} skipped: forbidden by the repository')
-    options = [o for o in options if o[1] not in forbidden]
+    if ui:
+        # UI work: the repository's UI allowlist replaces `models` and `forbidden_models`.
+        options = [(a, ui_model(a, m, ui), e, f) for a, m, e, f in POLICY[tier]]
+        notes += [f'{a} skipped: no model allowed for UI work' for a, m, *_ in options if not m]
+        options = [o for o in options if o[1]]
+    else:
+        options = [(a, models.get(a, m), e, f) for a, m, e, f in POLICY[tier]]
+        for a, m, *_ in list(options):
+            if m in forbidden:
+                notes.append(f'{a}/{m} skipped: forbidden by the repository')
+        options = [o for o in options if o[1] not in forbidden]
     if tier == 'verify' and implementer:
         other = [option for option in options if option[0] != implementer]
         if allow_same_family:
@@ -355,14 +407,20 @@ def main():
                         help='verification map whose "allow_same_family" lets a verifier fall back to the implementer\'s family')
     parser.add_argument('--coordination',
                         help='repository settings whose "models" and "forbidden_models" override the policy')
+    parser.add_argument('--ui', action='store_true',
+                        help='choose for UI work under the "ui" rules in the repository settings')
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
 
     # Rules come first: probes launch sessions, so they obey the rules too.
     args.rules = model_rules(args.coordination or DEFAULT_COORDINATION, required=bool(args.coordination))
+    ui = ui_rules(args.coordination or DEFAULT_COORDINATION, required=bool(args.coordination)) if args.ui else None
+    if args.ui and not ui:
+        raise SystemExit('usage.py: --ui needs a "ui" section with "allowed_models" in the repository settings')
     readings = collect(args)
     same = allow_same_family(args.map)
-    choices = [choose(tier, readings, args.reserve, args.implementer, same, args.rules) for tier in (args.tier or list(POLICY))]
+    choices = [choose(tier, readings, args.reserve, args.implementer, same, args.rules, ui)
+               for tier in (args.tier or list(POLICY))]
     if args.json:
         print(json.dumps({'checked_at': iso(now()), 'reserve_percent': args.reserve, 'accounts': readings,
                           'choices': choices}, indent=2))
