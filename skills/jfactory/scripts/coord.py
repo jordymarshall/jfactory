@@ -304,6 +304,43 @@ def enforce_model(agent, model, rules, explicit=False):
     return model
 
 
+def ui_rules(root):
+    """The repository's UI rules from .jfactory/coordination.json, or None; see usage.parse_ui_rules."""
+    path = root / POLICY_FILE
+    if not path.is_file():
+        return None
+    try:
+        return usage.parse_ui_rules(json.loads(path.read_text()))
+    except (OSError, ValueError) as error:
+        raise Refused(f'Cannot read the UI rules in {POLICY_FILE}: {error}; fix it before launching')
+
+
+def ui_work(ui, flagged, paths):
+    """Why this launch is UI work, or None. Refuses --ui when the repository has no UI rules."""
+    if flagged and not ui:
+        raise Refused(f'--ui needs a "ui" section with "allowed_models" in {POLICY_FILE}')
+    if not ui:
+        return None
+    if flagged:
+        return 'marked UI work'
+    matched = usage.ui_paths(paths, ui)
+    if matched:
+        return f'UI paths changed: {", ".join(matched[:3])}{" ..." if len(matched) > 3 else ""}'
+    return None
+
+
+def enforce_ui(agent, model, ui, explicit=False):
+    """The model for UI work: only the repository's UI allowlist counts, and it replaces `models` and
+    `forbidden_models`. A caller who names a model outside the list is refused."""
+    allowed = ui['allowed'].get(agent) or []
+    names = '; '.join(f'{a}: {", ".join(m)}' for a, m in ui['allowed'].items())
+    if not allowed:
+        raise Refused(f'{agent} may not do UI work under "ui.allowed_models" in {POLICY_FILE} ({names})')
+    if explicit and model not in allowed:
+        raise Refused(f'{agent}/{model} may not do UI work under "ui.allowed_models" in {POLICY_FILE} ({names})')
+    return usage.ui_model(agent, model, ui)
+
+
 def repo_root():
     try:
         out = subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], text=True, stderr=subprocess.DEVNULL)
@@ -771,7 +808,17 @@ def cmd_launch_pr(args):
         raise Refused(f'{name!r} does not follow the <role>-<repo>-<pr> convention')
     (agent, model, effort, fast), _ = usage.POLICY[PR_ROLE_TIERS[args.role]]
     agent, model, effort = args.agent or agent, args.model or model, args.effort or effort or 'medium'
-    model = enforce_model(agent, model, model_rules(repo_root()), explicit=bool(args.model))
+    ui = ui_rules(repo_root())
+    files = []
+    if ui and ui['paths'] and not args.ui:
+        files = run('gh', 'api', f'repos/{args.repo}/pulls/{args.pr}/files', '--paginate',
+                    '--jq', '.[].filename | @json').splitlines()
+        files = [json.loads(line) for line in files if line.strip()]
+    why_ui = ui_work(ui, args.ui, files)
+    if why_ui:
+        model = enforce_ui(agent, model, ui, explicit=bool(args.model))
+    else:
+        model = enforce_model(agent, model, model_rules(repo_root()), explicit=bool(args.model))
     catalog = {a['agent']: a for a in run_json('conductor', 'model', '--json')['agents']}
     if agent not in catalog or model not in catalog[agent]['models']:
         raise Refused(f'{agent}/{model} is not offered by Conductor; run `conductor model`')
@@ -801,14 +848,15 @@ def cmd_launch_pr(args):
                '--agent', agent, '--model', model, '--effort', effort, *(['--fast-mode'] if fast else []),
                '--message-file', args.message_file, '--json']
     if args.dry_run:
-        print(f'Would launch {name} on {agent}/{model} ({effort}) from {branch}: conductor {" ".join(command)}')
+        ui_note = f'; {why_ui}' if why_ui else ''
+        print(f'Would launch {name} on {agent}/{model} ({effort}{ui_note}) from {branch}: conductor {" ".join(command)}')
         return
     created = run_json('conductor', *command)
     workspace = created.get('workspace', created)
     wid = workspace.get('id') or created.get('workspaceId')
     session = created.get('session') or created.get('firstSession') or {}
     print(wid)
-    print(f"Launched {name} on {agent}/{model} ({effort}) from {branch}: "
+    print(f"Launched {name} on {agent}/{model} ({effort}{'; ' + why_ui if why_ui else ''}) from {branch}: "
           f"{session.get('deepLink') or workspace.get('deepLink') or created.get('deepLink') or ''}".rstrip())
     print(f'It is archived automatically once PR #{args.pr} merges or closes and its sessions are idle.')
 
@@ -941,12 +989,14 @@ def cmd_add(args):
     missing = [d for d in args.depends if d not in state['units']]
     if missing:
         raise Refused(f'Add dependencies first: {", ".join(missing)}')
+    if args.ui and not ui_rules(repo_root()):
+        raise Refused(f'--ui needs a "ui" section with "allowed_models" in {POLICY_FILE}')
     allowed = state['policy'][args.role].get('efforts')
     if args.effort and allowed and args.effort not in allowed:
         raise Refused(f'Effort {args.effort} is outside the {args.role} policy: {", ".join(allowed)}')
     state['units'][args.unit] = {'objective': args.objective, 'role': args.role, 'depends': args.depends,
                                  'effort': args.effort, 'requires': args.requires,
-                                 'paths': args.paths, 'state': 'planned', 'attempts': 0, 'updated': now(),
+                                 'paths': args.paths, 'ui': bool(args.ui), 'state': 'planned', 'attempts': 0, 'updated': now(),
                                  'note': ''}
     save(args.repo, args.program, state)
     print(summary(state))
@@ -1075,7 +1125,14 @@ def cmd_launch(args):
     for key in ('agent', 'model', 'effort'):
         if getattr(args, key):
             role[key] = getattr(args, key)
-    role['model'] = enforce_model(role['agent'], role['model'], model_rules(repo_root()), explicit=bool(args.model))
+    ui = ui_rules(repo_root())
+    why_ui = ui_work(ui, args.ui or unit.get('ui'), unit.get('paths') or [])
+    if why_ui:
+        role['model'] = enforce_ui(role['agent'], role['model'], ui, explicit=bool(args.model))
+        choice += f'; {why_ui}'
+    else:
+        role['model'] = enforce_model(role['agent'], role['model'], model_rules(repo_root()),
+                                      explicit=bool(args.model))
     pinned = role.pop('pin_efforts', {}).get(role['agent'])
     if pinned:
         if args.effort and args.effort != pinned:
@@ -1422,6 +1479,8 @@ def main(argv=None):
     p.add_argument('--effort', help='Chosen by difficulty within the role policy, e.g. low, medium or high')
     p.add_argument('--depends', type=listing, default=[])
     p.add_argument('--paths', type=listing, default=[])
+    p.add_argument('--ui', action='store_true',
+                   help='UI work: launches use only the "ui.allowed_models" in the repository settings')
     p.add_argument('--requires', type=listing, default=[],
                    help='Evidence scopes a verified verdict must include, e.g. application,unit')
     p.set_defaults(func=cmd_add)
@@ -1450,6 +1509,8 @@ def main(argv=None):
     p.add_argument('--allow-same-family', action='store_true')
     p.add_argument('--fallback', action='store_true', help='Use the role fallback at a usage limit or forecast reserve crossing')
     p.add_argument('--reason', help='Usage reading that justifies --fallback')
+    p.add_argument('--ui', action='store_true',
+                   help='UI work: use only the "ui.allowed_models" in the repository settings')
     p.add_argument('--dry-run', action='store_true')
     p.set_defaults(func=cmd_launch)
     p = sub.add_parser('report', help='Worker: report this unit\'s state')

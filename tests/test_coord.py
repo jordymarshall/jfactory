@@ -560,6 +560,60 @@ class CoordTest(unittest.TestCase):
         self.assertIn('is forbidden', self.coord('launch', '--role', 'build', '--pr', '7', '--agent', 'codex',
                                                  '--model', 'gpt-6-astra', '--message-file', str(message), ok=False))
 
+    def test_ui_rules_bind_ui_units_and_ui_prs(self):
+        # Owner, 2026-10-06 (Loopcraft): UI work never runs on Sol or Sonnet; only Astra, Opus 5.5 or Fable 5.1.
+        (self.tmp / '.jfactory').mkdir(exist_ok=True)
+        settings = self.tmp / '.jfactory' / 'coordination.json'
+        settings.write_text(json.dumps(
+            {'models': {'codex': 'gpt-6.1-sol'}, 'forbidden_models': ['gpt-6-astra'],
+             'ui': {'allowed_models': {'codex': ['gpt-6-astra'], 'claude': ['opus-5-5-1m']},
+                    'paths': ['src/components/*', '*.css']}}))
+        self.start(['screen', '--objective', 'x', '--paths', 'src/components/nav'],
+                   ['flagged', '--objective', 'y', '--ui'], ['data', '--objective', 'z', '--paths', 'src/db'], limit=4)
+        # A UI unit at its Codex fallback gets Astra, which the general rules forbid, never Sol.
+        out = self.coord('launch', '1', 'screen', '--brief', str(self.brief), '--fallback', '--reason', 'Claude 95%')
+        self.assertEqual(self.db()['workspaces'][-1]['model'], 'gpt-6-astra')
+        self.assertIn('UI paths changed: src/components/nav', self.program_state()['units']['screen']['note'])
+        self.assertIn('may not do UI work', self.coord('launch', '1', 'flagged', '--brief', str(self.brief),
+                                                       '--agent', 'codex', '--model', 'gpt-6.1-sol', ok=False))
+        self.assertIn('may not do UI work', self.coord('launch', '1', 'flagged', '--brief', str(self.brief),
+                                                       '--agent', 'claude', '--model', 'sonnet-5-1m', ok=False))
+        self.coord('launch', '1', 'flagged', '--brief', str(self.brief))
+        self.assertEqual(self.db()['workspaces'][-1]['model'], 'opus-5-5-1m')
+        # Non-UI work keeps the general rules.
+        self.coord('launch', '1', 'data', '--brief', str(self.brief), '--fallback', '--reason', 'Claude 95%')
+        self.assertEqual(self.db()['workspaces'][-1]['model'], 'gpt-6.1-sol')
+        # A PR whose files match the UI paths is UI work; its fixer and reviewer cannot run on Sol.
+        message = self.tmp / 'pr.md'
+        message.write_text('Fix PR 7.')
+        self.set_db(prs={'7': {'state': 'OPEN', 'headRefOid': 'aaa1111', 'headRefName': 'feat/a',
+                               'files': ['README.md', 'app/site.css']},
+                         '8': {'state': 'OPEN', 'headRefOid': 'bbb2222', 'headRefName': 'feat/b',
+                               'files': ['src/db/x.py']}})
+        out = self.coord('launch', '--role', 'verify', '--pr', '7', '--branch', 'feat/a', '--message-file', str(message))
+        self.assertEqual(self.db()['workspaces'][-1]['model'], 'gpt-6-astra')
+        self.assertIn('UI paths changed: app/site.css', out)
+        self.coord('launch', '--role', 'verify', '--pr', '8', '--branch', 'feat/b', '--message-file', str(message))
+        self.assertEqual(self.db()['workspaces'][-1]['model'], 'gpt-6.1-sol')
+        self.assertIn('may not do UI work', self.coord('launch', '--role', 'fix', '--pr', '8', '--ui', '--agent',
+                                                       'codex', '--model', 'gpt-6.1-sol', '--message-file',
+                                                       str(message), ok=False))
+        # A changed file whose name has a space still matches.
+        settings.write_text(json.dumps({'models': {'codex': 'gpt-6.1-sol'},
+                                        'ui': {'allowed_models': {'codex': ['gpt-6-astra']},
+                                               'paths': ['src/ui components/*']}}))
+        self.set_db(prs={'9': {'state': 'OPEN', 'headRefOid': 'ccc3333', 'headRefName': 'feat/c',
+                               'files': ['src/ui components/nav.tsx']}})
+        self.coord('launch', '--role', 'verify', '--pr', '9', '--branch', 'feat/c', '--message-file', str(message))
+        self.assertEqual(self.db()['workspaces'][-1]['model'], 'gpt-6-astra')
+        for broken in ({'ui': {'allowed_models': {'codex': []}}}, {'ui': None}):
+            settings.write_text(json.dumps(broken))
+            self.assertIn('Cannot read the UI rules', self.coord('launch', '--role', 'fix', '--pr', '9',
+                                                                 '--message-file', str(message), ok=False))
+        settings.write_text('{}')
+        self.assertIn('--ui needs a "ui" section', self.coord('add', '1', 'late', '--objective', 'w', '--requires',
+                                                              'unit', '--ui', ok=False))
+
     def test_partial_role_override_keeps_the_rest_of_the_role(self):
         (self.tmp / '.jfactory').mkdir()
         (self.tmp / '.jfactory' / 'coordination.json').write_text(json.dumps(

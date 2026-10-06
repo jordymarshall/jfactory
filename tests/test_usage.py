@@ -279,6 +279,41 @@ class UsageTests(unittest.TestCase):
             self.assertIn('usage.py:', result.stderr)
             self.assertNotIn('session create', self.calls())
 
+    def test_ui_rules_replace_the_model_rules_for_ui_work(self):
+        # Owner, 2026-10-06 (Loopcraft): UI work never runs on Sol or Sonnet; only Astra, Opus 5.5 or Fable 5.1.
+        rules = self.state / 'coordination.json'
+        rules.write_text(json.dumps({'models': {'codex': 'gpt-6.1-sol'}, 'forbidden_models': ['gpt-6-astra'],
+                                     'ui': {'allowed_models': {'codex': ['gpt-6-astra'],
+                                                               'claude': ['opus-5-5-1m', 'fable-5-1']}}}))
+        self.claude(20, 95, 1)
+        self.codex_log(10, 1)
+        out = self.run_usage('--coordination', str(rules))
+        self.assertEqual(out['choice']['fast'], ('codex', 'gpt-6.1-sol', None))  # non-UI work keeps the model rules
+        out = self.run_usage('--coordination', str(rules), '--ui')
+        for tier in ('frontier', 'fast', 'trivial', 'verify'):
+            self.assertEqual(out['choice'][tier][:2], ('codex', 'gpt-6-astra'), tier)
+        self.claude(20, 10, 1)
+        out = self.run_usage('--coordination', str(rules), '--ui', '--tier', 'verify', '--implementer', 'codex')
+        self.assertEqual(out['choice']['verify'], ('claude', 'opus-5-5-1m', 'low'))
+        # An agent with no allowed model is skipped, and the tier holds rather than fall back to it.
+        rules.write_text(json.dumps({'ui': {'allowed_models': {'claude': ['opus-5-5-1m']}}}))
+        self.claude(20, 95, 1)
+        out = self.run_usage('--coordination', str(rules), '--ui', '--tier', 'fast')
+        self.assertIsNone(out['choice']['fast'][0])
+        self.assertIn('codex skipped: no model allowed for UI work', out['choices'][0]['reason'])
+        for bad in ('{"ui": {"allowed_models": {}}}', '{"ui": {"allowed_models": {"codex": []}}}',
+                    '{"ui": {"allowed_models": {"codex": "gpt-6-astra"}}}',
+                    '{"ui": {"allowed_models": {"codex": ["gpt-6-astra"]}, "paths": "src"}}', '{"ui": null}', '{}'):
+            rules.write_text(bad)
+            # A broken UI section stops the reader for non-UI work too; --ui without one stops it as well.
+            for flags in (['--ui'], [] if bad != '{}' else ['--ui']):
+                (self.state / 'calls.log').write_text('')
+                result = subprocess.run([sys.executable, str(SCRIPT), '--json', *flags, '--coordination', str(rules)],
+                                        env=self.env, capture_output=True, text=True, timeout=60)
+                self.assertNotEqual(result.returncode, 0, bad)
+                self.assertIn('usage.py:', result.stderr)
+                self.assertNotIn('session create', self.calls())
+
     def test_policy_matches_model_reference(self):
         sys.path.insert(0, str(SCRIPT.parent))
         try:
