@@ -143,7 +143,8 @@ if tool == 'gh' and args[:2] == ['api', 'graphql']:
     sys.exit(1 if 'errors' in reply else 0)
 if tool == 'gh' and args[:1] == ['api'] and args[1].endswith('/files'):
     number = args[1].split('/')[-2]
-    done('\n'.join(db['prs'][number].get('files', ['src/x.py'])))
+    files = db['prs'][number].get('files', ['src/x.py'])
+    done('\n'.join(json.dumps(f) if '@json' in ' '.join(args) else f for f in files))
 # pr_health.py: an Actions job, a check run's annotations, update-branch and re-runs.
 if tool == 'gh' and args[:1] == ['api'] and '/actions/jobs/' in args[1]:
     done(db['jobs'][args[1].rsplit('/', 1)[1]])

@@ -598,9 +598,18 @@ class CoordTest(unittest.TestCase):
         self.assertIn('may not do UI work', self.coord('launch', '--role', 'fix', '--pr', '8', '--ui', '--agent',
                                                        'codex', '--model', 'gpt-6.1-sol', '--message-file',
                                                        str(message), ok=False))
-        settings.write_text(json.dumps({'ui': {'allowed_models': {'codex': []}}}))
-        self.assertIn('Cannot read the UI rules', self.coord('launch', '--role', 'fix', '--pr', '8',
-                                                             '--message-file', str(message), ok=False))
+        # A changed file whose name has a space still matches.
+        settings.write_text(json.dumps({'models': {'codex': 'gpt-6.1-sol'},
+                                        'ui': {'allowed_models': {'codex': ['gpt-6-astra']},
+                                               'paths': ['src/ui components/*']}}))
+        self.set_db(prs={'9': {'state': 'OPEN', 'headRefOid': 'ccc3333', 'headRefName': 'feat/c',
+                               'files': ['src/ui components/nav.tsx']}})
+        self.coord('launch', '--role', 'verify', '--pr', '9', '--branch', 'feat/c', '--message-file', str(message))
+        self.assertEqual(self.db()['workspaces'][-1]['model'], 'gpt-6-astra')
+        for broken in ({'ui': {'allowed_models': {'codex': []}}}, {'ui': None}):
+            settings.write_text(json.dumps(broken))
+            self.assertIn('Cannot read the UI rules', self.coord('launch', '--role', 'fix', '--pr', '9',
+                                                                 '--message-file', str(message), ok=False))
         settings.write_text('{}')
         self.assertIn('--ui needs a "ui" section', self.coord('add', '1', 'late', '--objective', 'w', '--requires',
                                                               'unit', '--ui', ok=False))

@@ -47,6 +47,8 @@ Some models do UI work badly. A repository can limit UI work to the models it tr
 - A launch is UI work when it passes `--ui`, when its program unit was added with `--ui`, or when its paths match `paths`. For a PR workspace, the paths are the PR's changed files. Patterns are globs in which `*` also matches `/`.
 - `coord.py launch` maps a role's model that is not allowed to the agent's first allowed model, and refuses an explicit `--model` outside the list. `usage.py --ui` chooses each tier from the allowed models only, and holds a tier rather than choose another model.
 - Path matching cannot see work that a unit's `--paths` does not name. Mark such units `--ui`.
+- A `ui` section that is present but wrong, including `null`, stops `coord.py launch` and `usage.py`, also for non-UI work.
+- Usage probes do no UI work, so they keep the general model rules and the cheap probe models, also under `--ui`.
 
 ## 2. Read remaining usage for both accounts
 

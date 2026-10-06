@@ -269,9 +269,9 @@ def parse_ui_rules(data):
     `allowed_models` maps each agent to the only models UI work may use, best first; an agent it leaves out cannot do
     UI work. `paths` lists globs (`*` also matches `/`) whose changes make a launch UI work. For UI work these rules
     replace `models` and `forbidden_models`. Raise ValueError on any wrong type, so no reader silently drops a rule."""
-    ui = data.get('ui') if isinstance(data, dict) else None
-    if ui is None:
+    if not isinstance(data, dict) or 'ui' not in data:
         return None
+    ui = data['ui']
     allowed = ui.get('allowed_models') if isinstance(ui, dict) else None
     if not isinstance(allowed, dict) or not allowed or not all(
             isinstance(k, str) and k and isinstance(v, list) and v and all(isinstance(m, str) and m for m in v)
@@ -408,14 +408,18 @@ def main():
     parser.add_argument('--coordination',
                         help='repository settings whose "models" and "forbidden_models" override the policy')
     parser.add_argument('--ui', action='store_true',
-                        help='choose for UI work under the "ui" rules in the repository settings')
+                        help='choose for UI work under the "ui" rules in the repository settings; usage probes do '
+                             'no UI work, so they keep the general model rules')
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
 
     # Rules come first: probes launch sessions, so they obey the rules too.
     args.rules = model_rules(args.coordination or DEFAULT_COORDINATION, required=bool(args.coordination))
-    ui = ui_rules(args.coordination or DEFAULT_COORDINATION, required=bool(args.coordination)) if args.ui else None
-    if args.ui and not ui:
+    # A present UI section is checked on every run, so broken rules stop the reader even for non-UI work.
+    ui = ui_rules(args.coordination or DEFAULT_COORDINATION, required=bool(args.coordination))
+    if not args.ui:
+        ui = None
+    elif not ui:
         raise SystemExit('usage.py: --ui needs a "ui" section with "allowed_models" in the repository settings')
     readings = collect(args)
     same = allow_same_family(args.map)

@@ -303,12 +303,16 @@ class UsageTests(unittest.TestCase):
         self.assertIn('codex skipped: no model allowed for UI work', out['choices'][0]['reason'])
         for bad in ('{"ui": {"allowed_models": {}}}', '{"ui": {"allowed_models": {"codex": []}}}',
                     '{"ui": {"allowed_models": {"codex": "gpt-6-astra"}}}',
-                    '{"ui": {"allowed_models": {"codex": ["gpt-6-astra"]}, "paths": "src"}}', '{}'):
+                    '{"ui": {"allowed_models": {"codex": ["gpt-6-astra"]}, "paths": "src"}}', '{"ui": null}', '{}'):
             rules.write_text(bad)
-            result = subprocess.run([sys.executable, str(SCRIPT), '--json', '--ui', '--coordination', str(rules)],
-                                    env=self.env, capture_output=True, text=True, timeout=60)
-            self.assertNotEqual(result.returncode, 0, bad)
-            self.assertIn('usage.py:', result.stderr)
+            # A broken UI section stops the reader for non-UI work too; --ui without one stops it as well.
+            for flags in (['--ui'], [] if bad != '{}' else ['--ui']):
+                (self.state / 'calls.log').write_text('')
+                result = subprocess.run([sys.executable, str(SCRIPT), '--json', *flags, '--coordination', str(rules)],
+                                        env=self.env, capture_output=True, text=True, timeout=60)
+                self.assertNotEqual(result.returncode, 0, bad)
+                self.assertIn('usage.py:', result.stderr)
+                self.assertNotIn('session create', self.calls())
 
     def test_policy_matches_model_reference(self):
         sys.path.insert(0, str(SCRIPT.parent))

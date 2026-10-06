@@ -812,7 +812,8 @@ def cmd_launch_pr(args):
     files = []
     if ui and ui['paths'] and not args.ui:
         files = run('gh', 'api', f'repos/{args.repo}/pulls/{args.pr}/files', '--paginate',
-                    '--jq', '.[].filename').split()
+                    '--jq', '.[].filename | @json').splitlines()
+        files = [json.loads(line) for line in files if line.strip()]
     why_ui = ui_work(ui, args.ui, files)
     if why_ui:
         model = enforce_ui(agent, model, ui, explicit=bool(args.model))
